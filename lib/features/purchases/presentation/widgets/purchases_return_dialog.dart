@@ -2,6 +2,8 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:clothes_inventory/core/utils/translation_utils.dart';
 import 'package:flutter/services.dart';
+import 'package:clothes_inventory/features/invoices/domain/invoice_suggestion.dart';
+import 'package:clothes_inventory/features/invoices/presentation/widgets/invoice_return_raw_autocomplete.dart';
 import 'package:clothes_inventory/features/purchases/data/purchases_repository.dart';
 
 class PurchasesReturnDialog extends StatefulWidget {
@@ -10,10 +12,13 @@ class PurchasesReturnDialog extends StatefulWidget {
     required this.parseFlexibleNumber,
     required this.formatInvoiceQuantity,
     required this.animateDialogEntrance,
+    required this.lookupPurchaseInvoiceSuggestion,
+    required this.searchPurchaseInvoicesForReturn,
     required this.loadInvoiceLines,
     required this.onReturnPurchaseItem,
     required this.onRefreshActiveInvoiceLines,
     required this.activeInvoiceId,
+    this.activeInvoiceDisplayNumber,
     required this.activeInvoiceLines,
     this.initialPurchaseId,
     this.initialPurchaseItemId,
@@ -25,7 +30,13 @@ class PurchasesReturnDialog extends StatefulWidget {
   final int? initialPurchaseItemId;
   final double? initialQuantity;
   final int? activeInvoiceId;
+  final String? activeInvoiceDisplayNumber;
   final List<PurchaseInvoiceLine> activeInvoiceLines;
+
+  final Future<InvoiceSuggestion?> Function(int purchaseId)
+      lookupPurchaseInvoiceSuggestion;
+  final Future<List<InvoiceSuggestion>> Function(String prefix)
+      searchPurchaseInvoicesForReturn;
 
   final int? Function(String value) parseFlexibleInt;
   final double? Function(String value) parseFlexibleNumber;
@@ -51,11 +62,16 @@ class PurchasesReturnDialog extends StatefulWidget {
     int? initialPurchaseItemId,
     double? initialQuantity,
     required int? activeInvoiceId,
+    String? activeInvoiceDisplayNumber,
     required List<PurchaseInvoiceLine> activeInvoiceLines,
     required int? Function(String value) parseFlexibleInt,
     required double? Function(String value) parseFlexibleNumber,
     required String Function(double value) formatInvoiceQuantity,
     required Widget Function(Widget child) animateDialogEntrance,
+    required Future<InvoiceSuggestion?> Function(int purchaseId)
+        lookupPurchaseInvoiceSuggestion,
+    required Future<List<InvoiceSuggestion>> Function(String prefix)
+        searchPurchaseInvoicesForReturn,
     required Future<List<PurchaseInvoiceLine>> Function(int purchaseId)
     loadInvoiceLines,
     required Future<String?> Function({
@@ -74,11 +90,14 @@ class PurchasesReturnDialog extends StatefulWidget {
         initialPurchaseItemId: initialPurchaseItemId,
         initialQuantity: initialQuantity,
         activeInvoiceId: activeInvoiceId,
+        activeInvoiceDisplayNumber: activeInvoiceDisplayNumber,
         activeInvoiceLines: activeInvoiceLines,
         parseFlexibleInt: parseFlexibleInt,
         parseFlexibleNumber: parseFlexibleNumber,
         formatInvoiceQuantity: formatInvoiceQuantity,
         animateDialogEntrance: animateDialogEntrance,
+        lookupPurchaseInvoiceSuggestion: lookupPurchaseInvoiceSuggestion,
+        searchPurchaseInvoicesForReturn: searchPurchaseInvoicesForReturn,
         loadInvoiceLines: loadInvoiceLines,
         onReturnPurchaseItem: onReturnPurchaseItem,
         onRefreshActiveInvoiceLines: onRefreshActiveInvoiceLines,
@@ -103,15 +122,65 @@ class _PurchasesReturnDialogState extends State<PurchasesReturnDialog> {
   final Map<int, String> _selectedQtyByItemId = <int, String>{};
   bool _submittingReturns = false;
 
+  InvoiceSuggestion? _lockedSuggestion;
+
+  int? _resolvePurchaseIdFromField() {
+    final locked = _lockedSuggestion;
+    final t = _purchaseIdController.text.trim();
+    if (locked != null) {
+      if (t == locked.invoiceNumber.trim()) {
+        return locked.id;
+      }
+      final parsed = widget.parseFlexibleInt(t);
+      if (parsed == locked.id) {
+        return locked.id;
+      }
+    }
+    return widget.parseFlexibleInt(t);
+  }
+
+  void _invalidateLockIfNeeded() {
+    final locked = _lockedSuggestion;
+    if (locked == null) return;
+    final t = _purchaseIdController.text.trim();
+    if (t.isEmpty) {
+      setState(() => _lockedSuggestion = null);
+      return;
+    }
+    if (t != locked.invoiceNumber.trim()) {
+      final parsed = widget.parseFlexibleInt(t);
+      if (parsed != locked.id) {
+        setState(() => _lockedSuggestion = null);
+      }
+    }
+  }
+
   @override
   void initState() {
     super.initState();
     final resolvedInitialPurchaseId =
         widget.initialPurchaseId ?? widget.activeInvoiceId;
-    _purchaseIdController = TextEditingController(
-      text: resolvedInitialPurchaseId?.toString() ?? '',
-    );
-    _primeInitialState(resolvedInitialPurchaseId);
+    _purchaseIdController = TextEditingController();
+
+    if (resolvedInitialPurchaseId != null) {
+      _prepareEntry(resolvedInitialPurchaseId);
+    }
+  }
+
+  Future<void> _prepareEntry(int purchaseId) async {
+    final suggestion =
+        await widget.lookupPurchaseInvoiceSuggestion(purchaseId);
+    if (!mounted) return;
+    setState(() {
+      if (suggestion != null) {
+        _purchaseIdController.text = suggestion.invoiceNumber;
+        _lockedSuggestion = suggestion;
+      } else {
+        _purchaseIdController.text = purchaseId.toString();
+        _lockedSuggestion = null;
+      }
+    });
+    await _primeInitialState(purchaseId);
   }
 
   Future<void> _primeInitialState(int? resolvedInitialPurchaseId) async {
@@ -234,7 +303,7 @@ class _PurchasesReturnDialogState extends State<PurchasesReturnDialog> {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final veryDense = MediaQuery.sizeOf(context).height < 720;
-    final purchaseId = widget.parseFlexibleInt(_purchaseIdController.text);
+    final purchaseId = _resolvePurchaseIdFromField();
     final canUseInvoicePicker =
         purchaseId != null && purchaseId == widget.activeInvoiceId;
 
@@ -316,7 +385,8 @@ class _PurchasesReturnDialogState extends State<PurchasesReturnDialog> {
                             ),
                             if (purchaseId != null)
                               Text(
-                                '${'Purchase ID'.tr()}: $purchaseId',
+                                '${'Invoice'.tr()}: '
+                                '${widget.activeInvoiceDisplayNumber ?? '—'} (#$purchaseId)',
                                 style: Theme.of(context).textTheme.bodySmall
                                     ?.copyWith(
                                       color: colorScheme.onPrimaryContainer
@@ -351,35 +421,38 @@ class _PurchasesReturnDialogState extends State<PurchasesReturnDialog> {
                               ),
                             ),
                             child: Text(
-                              '${'Purchase ID'.tr()}: $purchaseId',
+                              '${'invoice_return.active_invoice_hint'.tr()}: '
+                              '${widget.activeInvoiceDisplayNumber ?? '—'} '
+                              '(#$purchaseId)',
                               style: Theme.of(context).textTheme.bodyMedium,
                             ),
                           )
                         else ...[
-                          TextField(
+                          InvoiceReturnRawAutocomplete(
                             controller: _purchaseIdController,
-                            keyboardType: TextInputType.number,
-                            inputFormatters: [
-                              FilteringTextInputFormatter.allow(
-                                RegExp(r'[0-9٠-٩]'),
-                              ),
-                            ],
-                            onTap: () {
-                              _purchaseIdController.selection = TextSelection(
-                                baseOffset: 0,
-                                extentOffset: _purchaseIdController.text.length,
-                              );
+                            searchSuggestions:
+                                widget.searchPurchaseInvoicesForReturn,
+                            onSuggestionSelected: (suggestion) {
+                              setState(() {
+                                _lockedSuggestion = suggestion;
+                                _selectedPurchaseItemIds.clear();
+                                _selectedQtyByItemId.clear();
+                                _invoiceItemsLoadError = null;
+                              });
                             },
-                            decoration: InputDecoration(
-                              labelText: 'Purchase ID'.tr(),
-                            ),
-                            onChanged: (_) {
+                            onTextEdited: () {
+                              _invalidateLockIfNeeded();
                               setState(() {
                                 _selectedPurchaseItemIds.clear();
                                 _selectedQtyByItemId.clear();
                                 _invoiceItemsLoadError = null;
                               });
                             },
+                            labelText:
+                                'invoice_return.search_invoice_label_purchase'
+                                    .tr(),
+                            hintText:
+                                'invoice_return.search_invoice_hint_prefix'.tr(),
                           ),
                           const SizedBox(height: 8),
                           Align(

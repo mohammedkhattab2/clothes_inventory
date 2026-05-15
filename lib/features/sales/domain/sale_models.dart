@@ -1,4 +1,24 @@
-enum PaymentMethod { cash, vodafoneCash }
+import 'package:clothes_inventory/core/utils/number_utils.dart';
+
+enum PaymentMethod { cash, vodafoneCash, cashAndWallet }
+
+/// Invoice-level discount applied after line totals (subtotal).
+enum InvoiceHeaderDiscountKind { percent, fixed }
+
+double computeInvoiceHeaderDiscountAmount({
+  required double subtotal,
+  required InvoiceHeaderDiscountKind kind,
+  required double value,
+}) {
+  if (subtotal <= 0) return 0;
+  switch (kind) {
+    case InvoiceHeaderDiscountKind.percent:
+      final pct = value.clamp(0, 100);
+      return roundCurrency(subtotal * pct / 100);
+    case InvoiceHeaderDiscountKind.fixed:
+      return roundCurrency(value.clamp(0, subtotal));
+  }
+}
 
 enum SaleStatus { pending, completed, partial, cancelled }
 
@@ -80,8 +100,10 @@ class SaleDraftItem {
 class SaleCreateRequest {
   const SaleCreateRequest({
     required this.items,
-    required this.taxPercentage,
+    this.headerDiscountKind = InvoiceHeaderDiscountKind.percent,
+    this.headerDiscountValue = 0,
     required this.paidAmount,
+    this.paidWalletAmount = 0,
     required this.paymentMethod,
     this.isPending = false,
     this.pendingSaleId,
@@ -93,10 +115,30 @@ class SaleCreateRequest {
   final int? customerId;
   final String? newCustomerName;
   final List<SaleDraftItem> items;
-  final double taxPercentage;
+  final InvoiceHeaderDiscountKind headerDiscountKind;
+  final double headerDiscountValue;
   final double paidAmount;
+  /// Used when [paymentMethod] is [PaymentMethod.cashAndWallet]; stored as
+  /// a separate wallet (`vodafone_cash`) payment row.
+  final double paidWalletAmount;
   final PaymentMethod paymentMethod;
   final bool isPending;
   final int? pendingSaleId;
   final String? notes;
+}
+
+/// Replace line items/totals of an existing completed/partial sale (no returns).
+/// Customer and existing payment rows are unchanged.
+class SaleAmendRequest {
+  const SaleAmendRequest({
+    required this.saleId,
+    required this.items,
+    this.headerDiscountKind = InvoiceHeaderDiscountKind.percent,
+    this.headerDiscountValue = 0,
+  });
+
+  final int saleId;
+  final List<SaleDraftItem> items;
+  final InvoiceHeaderDiscountKind headerDiscountKind;
+  final double headerDiscountValue;
 }

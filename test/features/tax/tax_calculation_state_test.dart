@@ -5,8 +5,8 @@ import 'package:clothes_inventory/features/sales/domain/sale_models.dart';
 import 'package:clothes_inventory/features/sales/presentation/sales_cubit.dart';
 
 void main() {
-  group('SalesState tax calculations', () {
-    test('computes subtotal, tax amount, and total correctly', () {
+  group('SalesState header discount calculations', () {
+    test('computes subtotal, discount amount, and total correctly (percent)', () {
       const state = SalesState(
         cart: [
           SaleDraftItem(
@@ -29,15 +29,16 @@ void main() {
             unitPrice: 20,
           ),
         ],
-        taxPercentage: 14,
+        headerDiscountKind: InvoiceHeaderDiscountKind.percent,
+        headerDiscountValue: 14,
       );
 
       expect(state.subtotal, 115);
-      expect(state.taxAmount, 16.1);
-      expect(state.total, 131.1);
+      expect(state.headerDiscountAmount, 16.1);
+      expect(state.total, 98.9);
     });
 
-    test('keeps total equal to subtotal when tax is zero', () {
+    test('keeps total equal to subtotal when header discount is zero', () {
       const state = SalesState(
         cart: [
           SaleDraftItem(
@@ -52,13 +53,14 @@ void main() {
         ],
       );
 
-      expect(state.taxAmount, 0);
+      expect(state.headerDiscountAmount, 0);
       expect(state.total, state.subtotal);
     });
   });
 
-  group('PurchasesState tax calculations', () {
-    test('computes subtotal, tax amount, and total correctly', () {
+  group('PurchasesState header discount calculations', () {
+    test('computes subtotal, discount amount, and total correctly (percent)',
+        () {
       const state = PurchasesState(
         cart: [
           PurchaseDraftItem(
@@ -77,15 +79,16 @@ void main() {
             unitPrice: 30,
           ),
         ],
-        taxPercentage: 10,
+        headerDiscountKind: InvoiceHeaderDiscountKind.percent,
+        headerDiscountValue: 10,
       );
 
       expect(state.subtotal, 120);
-      expect(state.taxAmount, 12);
-      expect(state.total, 132);
+      expect(state.headerDiscountAmount, 12);
+      expect(state.total, 108);
     });
 
-    test('keeps total equal to subtotal when tax is zero', () {
+    test('keeps total equal to subtotal when header discount is zero', () {
       const state = PurchasesState(
         cart: [
           PurchaseDraftItem(
@@ -98,7 +101,7 @@ void main() {
         ],
       );
 
-      expect(state.taxAmount, 0);
+      expect(state.headerDiscountAmount, 0);
       expect(state.total, state.subtotal);
     });
   });

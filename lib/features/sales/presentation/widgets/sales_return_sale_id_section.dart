@@ -1,29 +1,38 @@
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:clothes_inventory/core/widgets/app_inline_loading_indicator.dart';
+import 'package:clothes_inventory/features/invoices/domain/invoice_suggestion.dart';
+import 'package:clothes_inventory/features/invoices/presentation/widgets/invoice_return_raw_autocomplete.dart';
 
 class SalesReturnSaleIdSection extends StatelessWidget {
   const SalesReturnSaleIdSection({
     super.key,
     required this.canUseInvoicePicker,
-    required this.saleId,
+    this.activeInvoiceNumber,
+    required this.resolvedSaleId,
     required this.saleIdController,
     required this.loadingInvoiceItems,
-    required this.onSaleIdChanged,
+    required this.searchSuggestions,
+    required this.onInvoiceQueryActivity,
+    required this.onSuggestionChosen,
     required this.onLoadSaleItems,
   });
 
   final bool canUseInvoicePicker;
-  final int? saleId;
+  /// Label for the invoice when the picker is locked to [activeInvoiceId].
+  final String? activeInvoiceNumber;
+  final int? resolvedSaleId;
   final TextEditingController saleIdController;
   final bool loadingInvoiceItems;
-  final ValueChanged<String> onSaleIdChanged;
+  final Future<List<InvoiceSuggestion>> Function(String prefix) searchSuggestions;
+  final VoidCallback onInvoiceQueryActivity;
+  final ValueChanged<InvoiceSuggestion> onSuggestionChosen;
   final VoidCallback onLoadSaleItems;
 
   @override
   Widget build(BuildContext context) {
     if (canUseInvoicePicker) {
+      final id = resolvedSaleId;
       return Container(
         width: double.infinity,
         margin: const EdgeInsets.only(bottom: 8),
@@ -32,9 +41,15 @@ class SalesReturnSaleIdSection extends StatelessWidget {
           color: Theme.of(context).colorScheme.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(8),
         ),
-        child: Text(
-          '${'Sale ID'.tr()}: $saleId',
-          style: Theme.of(context).textTheme.bodyMedium,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '${'invoice_return.active_invoice_hint'.tr()}: '
+              '${activeInvoiceNumber ?? '—'} (#$id)',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+          ],
         ),
       );
     }
@@ -42,26 +57,19 @@ class SalesReturnSaleIdSection extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        TextField(
+        InvoiceReturnRawAutocomplete(
           controller: saleIdController,
-          keyboardType: TextInputType.number,
-          inputFormatters: [
-            FilteringTextInputFormatter.allow(RegExp(r'[0-9٠-٩]')),
-          ],
-          decoration: InputDecoration(labelText: 'Sale ID'.tr()),
-          onTap: () {
-            saleIdController.selection = TextSelection(
-              baseOffset: 0,
-              extentOffset: saleIdController.text.length,
-            );
-          },
-          onChanged: onSaleIdChanged,
+          searchSuggestions: searchSuggestions,
+          onSuggestionSelected: onSuggestionChosen,
+          onTextEdited: onInvoiceQueryActivity,
+          labelText: 'invoice_return.search_invoice_label_sale'.tr(),
+          hintText: 'invoice_return.search_invoice_hint_prefix'.tr(),
         ),
         const SizedBox(height: 8),
         Align(
           alignment: Alignment.centerRight,
           child: OutlinedButton.icon(
-            onPressed: saleId == null || loadingInvoiceItems
+            onPressed: resolvedSaleId == null || loadingInvoiceItems
                 ? null
                 : onLoadSaleItems,
             icon: loadingInvoiceItems

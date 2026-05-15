@@ -3,14 +3,18 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:clothes_inventory/features/accounts/data/accounts_repository.dart';
+import 'package:clothes_inventory/features/auth/domain/auth_user.dart';
 import 'package:clothes_inventory/features/products/data/product_repository.dart';
 import 'package:clothes_inventory/features/products/domain/product.dart';
 import 'package:clothes_inventory/features/purchases/data/purchases_repository.dart';
 import 'package:clothes_inventory/features/purchases/domain/purchase_models.dart';
 import 'package:clothes_inventory/features/sales/data/sales_repository.dart';
 import 'package:clothes_inventory/features/sales/domain/sale_models.dart';
+import 'package:clothes_inventory/services/auth/session_service.dart';
 import 'package:clothes_inventory/services/database/app_database.dart';
 import 'package:clothes_inventory/services/di/service_locator.dart';
+
+import '../../support/test_app_isolation.dart';
 
 Future<void> _clearTestData() async {
   final db = await getIt<AppDatabase>().database;
@@ -46,15 +50,32 @@ void main() {
           }
           return null;
         });
-    await setupServiceLocator();
+    await TestAppIsolation.bootstrap();
     accountsRepository = getIt<AccountsRepository>();
     productRepository = getIt<ProductRepository>();
     salesRepository = getIt<SalesRepository>();
     purchasesRepository = getIt<PurchasesRepository>();
   });
 
+  tearDownAll(() async {
+    await TestAppIsolation.shutdown();
+  });
+
   setUp(() async {
     await _clearTestData();
+    getIt<SessionService>().login(
+      const AuthUser(
+        id: 1,
+        username: 'owner',
+        fullName: 'Owner',
+        role: UserRole.owner,
+        isActive: true,
+      ),
+    );
+  });
+
+  tearDown(() {
+    getIt<SessionService>().logout();
   });
 
   test('cancelSale is rejected when sale has returns', () async {
@@ -108,7 +129,6 @@ void main() {
             unitPrice: product.salePrice,
           ),
         ],
-        taxPercentage: 0,
         paidAmount: 500,
         paymentMethod: PaymentMethod.cash,
       ),

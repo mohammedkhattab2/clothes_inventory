@@ -11,6 +11,7 @@ import 'package:clothes_inventory/features/accounts/presentation/statement_page.
 import 'package:clothes_inventory/features/dashboard/presentation/dashboard_page.dart';
 import 'package:clothes_inventory/features/dashboard/presentation/dashboard_drilldown_page.dart';
 import 'package:clothes_inventory/features/expenses/presentation/expenses_page.dart';
+import 'package:clothes_inventory/features/invoices/presentation/invoices_hub_page.dart';
 import 'package:clothes_inventory/features/inventory/presentation/inventory_page.dart';
 import 'package:clothes_inventory/features/products/presentation/products_page.dart';
 import 'package:clothes_inventory/features/purchases/presentation/purchases_page.dart';
@@ -154,6 +155,51 @@ final GoRouter appRouter = GoRouter(
                 categoryId: categoryId,
                 initialInvoicePage: page,
                 invoicePageSize: pageSize,
+                navSource: navSource,
+              ),
+            );
+          },
+        ),
+        GoRoute(
+          path: '/invoices',
+          pageBuilder: (context, state) {
+            final selectedInvoiceId = int.tryParse(
+              state.uri.queryParameters['selectedInvoiceId'] ?? '',
+            );
+            final fromDate = DateTime.tryParse(
+              state.uri.queryParameters['from'] ?? '',
+            );
+            final toDate = DateTime.tryParse(
+              state.uri.queryParameters['to'] ?? '',
+            );
+            final accountId = int.tryParse(
+              state.uri.queryParameters['accountId'] ?? '',
+            );
+            final categoryId = int.tryParse(
+              state.uri.queryParameters['categoryId'] ?? '',
+            );
+            final page =
+                int.tryParse(state.uri.queryParameters['page'] ?? '') ?? 0;
+            final pageSize =
+                int.tryParse(state.uri.queryParameters['pageSize'] ?? '') ?? 50;
+            final navSource = state.uri.queryParameters['navSource'];
+            final tabParam = (state.uri.queryParameters['tab'] ?? 'sales')
+                .trim()
+                .toLowerCase();
+            final initialTab = tabParam == 'purchases'
+                ? InvoicesHubTab.purchases
+                : InvoicesHubTab.sales;
+
+            return NoTransitionPage(
+              child: InvoicesHubPage(
+                initialTab: initialTab,
+                selectedInvoiceId: selectedInvoiceId,
+                fromDate: fromDate,
+                toDate: toDate,
+                accountId: accountId,
+                categoryId: categoryId,
+                initialPage: page,
+                pageSize: pageSize,
                 navSource: navSource,
               ),
             );

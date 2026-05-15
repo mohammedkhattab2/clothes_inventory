@@ -60,6 +60,24 @@ class A4InvoiceRtlWidget extends StatelessWidget {
                   ),
                 ),
               ),
+              if (data.invoiceFooterNote.trim().isNotEmpty) ...[
+                const SizedBox(height: 16),
+                Text(
+                  data.invoiceFooterNote,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 11, height: 1.35),
+                ),
+              ],
+              if (data.invoiceFooterImageBytes != null) ...[
+                const SizedBox(height: 12),
+                Center(
+                  child: Image.memory(
+                    data.invoiceFooterImageBytes!,
+                    height: 72,
+                    fit: BoxFit.contain,
+                  ),
+                ),
+              ],
             ],
           ),
         ),

@@ -109,6 +109,7 @@ class DashboardFilters extends StatelessWidget {
                 ),
               ),
               child: DropdownButtonFormField<String>(
+                isExpanded: true,
                 initialValue: state.granularity,
                 decoration: InputDecoration(
                   labelText: 'Trend'.tr(),
@@ -123,9 +124,18 @@ class DashboardFilters extends StatelessWidget {
                   contentPadding: inputDecorationTheme.contentPadding,
                 ),
                 items: [
-                  DropdownMenuItem(value: 'day', child: Text('Day'.tr())),
-                  DropdownMenuItem(value: 'week', child: Text('Week'.tr())),
-                  DropdownMenuItem(value: 'month', child: Text('Month'.tr())),
+                  DropdownMenuItem(
+                    value: 'day',
+                    child: Text('Day'.tr(), overflow: TextOverflow.ellipsis),
+                  ),
+                  DropdownMenuItem(
+                    value: 'week',
+                    child: Text('Week'.tr(), overflow: TextOverflow.ellipsis),
+                  ),
+                  DropdownMenuItem(
+                    value: 'month',
+                    child: Text('Month'.tr(), overflow: TextOverflow.ellipsis),
+                  ),
                 ],
                 onChanged: (value) {
                   if (value != null) {
@@ -147,6 +157,7 @@ class DashboardFilters extends StatelessWidget {
                 ),
               ),
               child: DropdownButtonFormField<int?>(
+                isExpanded: true,
                 initialValue: state.categoryId,
                 decoration: InputDecoration(
                   labelText: 'Category'.tr(),
@@ -161,11 +172,42 @@ class DashboardFilters extends StatelessWidget {
                   contentPadding: inputDecorationTheme.contentPadding,
                 ),
                 items: [
-                  DropdownMenuItem<int?>(value: null, child: Text('All'.tr())),
+                  DropdownMenuItem<int?>(
+                    value: null,
+                    child: Text(
+                      'All'.tr(),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                    ),
+                  ),
                   ...state.categories.map(
                     (c) => DropdownMenuItem<int?>(
                       value: c.id,
-                      child: Text(c.name),
+                      child: Text(
+                        c.name,
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
+                      ),
+                    ),
+                  ),
+                ],
+                selectedItemBuilder: (context) => [
+                  DropdownMenuItem<int?>(
+                    value: null,
+                    child: Text(
+                      'All'.tr(),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                    ),
+                  ),
+                  ...state.categories.map(
+                    (c) => DropdownMenuItem<int?>(
+                      value: c.id,
+                      child: Text(
+                        c.name,
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
+                      ),
                     ),
                   ),
                 ],
@@ -186,6 +228,7 @@ class DashboardFilters extends StatelessWidget {
                 ),
               ),
               child: DropdownButtonFormField<int?>(
+                isExpanded: true,
                 initialValue: state.accountId,
                 decoration: InputDecoration(
                   labelText: 'Account'.tr(),
@@ -200,11 +243,42 @@ class DashboardFilters extends StatelessWidget {
                   contentPadding: inputDecorationTheme.contentPadding,
                 ),
                 items: [
-                  DropdownMenuItem<int?>(value: null, child: Text('All'.tr())),
+                  DropdownMenuItem<int?>(
+                    value: null,
+                    child: Text(
+                      'All'.tr(),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                    ),
+                  ),
                   ...state.accounts.map(
                     (a) => DropdownMenuItem<int?>(
                       value: a.id,
-                      child: Text(a.name),
+                      child: Text(
+                        a.name,
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
+                      ),
+                    ),
+                  ),
+                ],
+                selectedItemBuilder: (context) => [
+                  DropdownMenuItem<int?>(
+                    value: null,
+                    child: Text(
+                      'All'.tr(),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                    ),
+                  ),
+                  ...state.accounts.map(
+                    (a) => DropdownMenuItem<int?>(
+                      value: a.id,
+                      child: Text(
+                        a.name,
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
+                      ),
                     ),
                   ),
                 ],

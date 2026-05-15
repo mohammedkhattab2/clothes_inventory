@@ -9,9 +9,11 @@ class SalesProductsPane extends StatelessWidget {
     required this.veryDense,
     required this.nameSearchController,
     required this.barcodeController,
+    required this.barcodeFocusNode,
     required this.searchResults,
     required this.onNameChanged,
     required this.onBarcodeChanged,
+    required this.onBarcodeSubmitted,
     required this.onAddProduct,
     this.bottomChild,
   });
@@ -20,9 +22,11 @@ class SalesProductsPane extends StatelessWidget {
   final bool veryDense;
   final TextEditingController nameSearchController;
   final TextEditingController barcodeController;
+  final FocusNode barcodeFocusNode;
   final List<Product> searchResults;
   final ValueChanged<String> onNameChanged;
   final ValueChanged<String> onBarcodeChanged;
+  final ValueChanged<String> onBarcodeSubmitted;
   final ValueChanged<Product> onAddProduct;
   final Widget? bottomChild;
 
@@ -63,8 +67,23 @@ class SalesProductsPane extends StatelessWidget {
             SizedBox(height: veryDense ? 6 : 8),
             TextField(
               controller: barcodeController,
-              decoration: InputDecoration(labelText: 'Barcode (instant)'.tr()),
+              focusNode: barcodeFocusNode,
+              decoration: InputDecoration(
+                labelText: 'Barcode (instant)'.tr(),
+                suffixIcon: IconButton(
+                  icon: const Icon(Icons.qr_code_scanner_rounded),
+                  tooltip: 'Tap to focus barcode scanner'.tr(),
+                  onPressed: () {
+                    barcodeFocusNode.requestFocus();
+                  },
+                ),
+              ),
+              keyboardType: TextInputType.visiblePassword,
+              textInputAction: TextInputAction.done,
+              autocorrect: false,
+              enableSuggestions: false,
               onChanged: onBarcodeChanged,
+              onSubmitted: onBarcodeSubmitted,
             ),
             SizedBox(height: veryDense ? 8 : 12),
             Expanded(
@@ -77,7 +96,7 @@ class SalesProductsPane extends StatelessWidget {
                     dense: true,
                     title: Text(item.name),
                     subtitle: Text(
-                      '${item.unitType.name} | ${'Retail'.tr()}: ${item.salePrice.toStringAsFixed(2)} | ${'Half Wholesale'.tr()}: ${item.salePriceHalfWholesale.toStringAsFixed(2)} | ${'Wholesale'.tr()}: ${item.salePriceWholesale.toStringAsFixed(2)} | ${'Available'.tr()}: ${item.currentStock.toStringAsFixed(0)}',
+                      '${item.unitType.name} • ${'Retail'.tr()}: ${item.salePrice.toStringAsFixed(2)} • ${'Available'.tr()}: ${item.currentStock.toStringAsFixed(0)}',
                     ),
                     trailing: IconButton(
                       icon: const Icon(Icons.add_circle_outline),

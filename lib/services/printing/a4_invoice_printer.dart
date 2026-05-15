@@ -39,6 +39,8 @@ class A4InvoicePrinter implements InvoicePrinter {
           .toList(growable: false),
       total: invoice.total.toStringAsFixed(2),
       currency: invoice.currency,
+      invoiceFooterNote: _fmt(invoice.invoiceFooterNote),
+      invoiceFooterImageBytes: invoice.invoiceFooterImageBytes,
     );
 
     final baseFont = await PdfGoogleFonts.notoNaskhArabicRegular();

@@ -153,8 +153,10 @@ class _PurchasesInvoiceDetailsDialogState
         '${'Items Count'.tr()}: ${_sortedLines.length}';
   }
 
-  InvoicePrintModel _buildInvoicePrintModel(double totalAmount) {
-    final company = getIt<CompanySettingsService>().settings;
+  Future<InvoicePrintModel> _buildInvoicePrintModel(double totalAmount) async {
+    final companySettings = getIt<CompanySettingsService>();
+    final company = companySettings.settings;
+    final footerBytes = await companySettings.loadFooterImageBytes();
     final invoiceNo = widget.purchaseInvoiceLabel(
       id: widget.invoiceId,
       rawInvoiceNumber: widget.activeInvoiceNumber,
@@ -177,6 +179,8 @@ class _PurchasesInvoiceDetailsDialogState
           .toList(growable: false),
       total: totalAmount,
       title: 'Purchase Invoice'.tr(),
+      invoiceFooterNote: company.invoiceFooterNote,
+      invoiceFooterImageBytes: footerBytes,
     );
   }
 
@@ -603,7 +607,8 @@ class _PurchasesInvoiceDetailsDialogState
                     OutlinedButton.icon(
                       onPressed: () async {
                         try {
-                          final invoice = _buildInvoicePrintModel(totalAmount);
+                          final invoice =
+                              await _buildInvoicePrintModel(totalAmount);
                           if (!context.mounted) return;
                           Navigator.of(context).pop();
                           await widget.onPrintInvoice(invoice);

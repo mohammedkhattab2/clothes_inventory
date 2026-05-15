@@ -71,6 +71,11 @@ class _AppShellState extends State<AppShell> {
         selectedIcon: Icons.local_shipping,
       ),
       _NavDestination(
+        label: 'Invoices'.tr(),
+        icon: Icons.receipt_long_outlined,
+        selectedIcon: Icons.receipt_long,
+      ),
+      _NavDestination(
         label: 'Inventory'.tr(),
         icon: Icons.warehouse_outlined,
         selectedIcon: Icons.warehouse,
@@ -567,12 +572,13 @@ class _AppShellState extends State<AppShell> {
     if (location.startsWith('/products')) return 1;
     if (location.startsWith('/sales')) return 2;
     if (location.startsWith('/purchases')) return 3;
-    if (location.startsWith('/inventory')) return 4;
-    if (location.startsWith('/accounts')) return 5;
-    if (location.startsWith('/expenses')) return 6;
-    if (location.startsWith('/statement')) return 7;
-    if (location.startsWith('/settings')) return 8;
-    if (location.startsWith('/users')) return 9;
+    if (location.startsWith('/invoices')) return 4;
+    if (location.startsWith('/inventory')) return 5;
+    if (location.startsWith('/accounts')) return 6;
+    if (location.startsWith('/expenses')) return 7;
+    if (location.startsWith('/statement')) return 8;
+    if (location.startsWith('/settings')) return 9;
+    if (location.startsWith('/users')) return 10;
     return 0;
   }
 
@@ -612,21 +618,36 @@ class _AppShellState extends State<AppShell> {
         context.go('/purchases');
         return;
       case 4:
-        context.go('/inventory');
+        final path = GoRouterState.of(context).uri.path;
+        if (path.startsWith('/invoices')) {
+          return;
+        }
+        if (path.startsWith('/purchases')) {
+          context.go('/invoices?tab=purchases');
+          return;
+        }
+        if (path.startsWith('/sales')) {
+          context.go('/invoices?tab=sales');
+          return;
+        }
+        context.go('/invoices');
         return;
       case 5:
-        context.go('/accounts');
+        context.go('/inventory');
         return;
       case 6:
-        context.go('/expenses');
+        context.go('/accounts');
         return;
       case 7:
-        context.go('/statement');
+        context.go('/expenses');
         return;
       case 8:
-        context.go('/settings');
+        context.go('/statement');
         return;
       case 9:
+        context.go('/settings');
+        return;
+      case 10:
         context.go('/users');
         return;
     }

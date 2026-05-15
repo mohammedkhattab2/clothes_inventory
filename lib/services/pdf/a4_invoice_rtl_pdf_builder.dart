@@ -8,6 +8,9 @@ void buildA4RtlInvoicePage({
   required A4InvoiceViewData data,
   pw.MemoryImage? logo,
 }) {
+  final footerImg = data.invoiceFooterImageBytes != null
+      ? pw.MemoryImage(data.invoiceFooterImageBytes!)
+      : null;
   final dateText = DateFormat('yyyy-MM-dd').format(data.issuedAt);
   final timeText = DateFormat('HH:mm').format(data.issuedAt);
 
@@ -181,6 +184,33 @@ void buildA4RtlInvoicePage({
                   ),
                 ],
               ),
+              pw.SizedBox(height: 16),
+              pw.Center(
+                child: pw.Text(
+                  'شكراً لتعاملكم معنا!',
+                  textAlign: pw.TextAlign.center,
+                  style: pw.TextStyle(
+                    fontSize: 12,
+                    fontStyle: pw.FontStyle.italic,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                ),
+              ),
+              if (data.invoiceFooterNote.trim().isNotEmpty) ...[
+                pw.SizedBox(height: 12),
+                pw.Text(
+                  data.invoiceFooterNote.trim(),
+                  textAlign: pw.TextAlign.center,
+                  style: const pw.TextStyle(fontSize: 9, lineSpacing: 1.2),
+                ),
+              ],
+              if (footerImg != null) ...[
+                pw.SizedBox(height: 10),
+                pw.Center(
+                  child:
+                      pw.Image(footerImg, width: 100, fit: pw.BoxFit.contain),
+                ),
+              ],
             ],
           ),
         ),

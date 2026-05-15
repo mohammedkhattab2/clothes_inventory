@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 enum PrinterType { a4, thermal58, thermal80 }
 
 class InvoiceItem {
@@ -26,6 +28,8 @@ class InvoicePrintModel {
     required this.total,
     this.currency = 'EGP',
     this.title = 'فاتورة',
+    this.invoiceFooterNote = '',
+    this.invoiceFooterImageBytes,
   });
 
   final String companyName;
@@ -38,4 +42,7 @@ class InvoicePrintModel {
   final double total;
   final String currency;
   final String title;
+  /// Shown at bottom of printed invoice (from company settings).
+  final String invoiceFooterNote;
+  final Uint8List? invoiceFooterImageBytes;
 }

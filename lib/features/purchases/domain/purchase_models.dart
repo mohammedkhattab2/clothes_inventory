@@ -1,5 +1,8 @@
 import 'package:clothes_inventory/features/sales/domain/sale_models.dart';
 
+export 'package:clothes_inventory/features/sales/domain/sale_models.dart'
+    show InvoiceHeaderDiscountKind, PaymentMethod;
+
 class PurchaseDraftItem {
   const PurchaseDraftItem({
     required this.productId,
@@ -42,7 +45,8 @@ class PurchaseCreateRequest {
   const PurchaseCreateRequest({
     required this.supplierId,
     required this.items,
-    this.taxPercentage = 0,
+    this.headerDiscountKind = InvoiceHeaderDiscountKind.percent,
+    this.headerDiscountValue = 0,
     required this.paidAmount,
     required this.paymentMethod,
     this.notes,
@@ -51,7 +55,8 @@ class PurchaseCreateRequest {
 
   final int supplierId;
   final List<PurchaseDraftItem> items;
-  final double taxPercentage;
+  final InvoiceHeaderDiscountKind headerDiscountKind;
+  final double headerDiscountValue;
   final double paidAmount;
   final PaymentMethod paymentMethod;
   final String? notes;

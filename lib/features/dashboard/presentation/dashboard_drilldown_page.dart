@@ -13,6 +13,7 @@ import 'package:clothes_inventory/core/widgets/app_loading_indicator.dart';
 import 'package:clothes_inventory/features/dashboard/data/dashboard_drilldown_export_service.dart';
 import 'package:clothes_inventory/features/dashboard/data/dashboard_repository.dart';
 import 'package:clothes_inventory/features/dashboard/presentation/dashboard_cubit.dart';
+import 'package:clothes_inventory/features/dashboard/presentation/widgets/dashboard_drilldown_stretch_table.dart';
 import 'package:clothes_inventory/services/di/service_locator.dart';
 import 'package:clothes_inventory/services/platform/folder_opener_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -543,88 +544,146 @@ class _DashboardDrillDownPageState extends State<DashboardDrillDownPage> {
   }
 
   Widget _buildInvoiceTable() {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: DataTable(
-        headingRowColor: WidgetStatePropertyAll(
-          Theme.of(context).colorScheme.surfaceContainerHighest,
-        ),
-        headingTextStyle: Theme.of(
-          context,
-        ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
-        dataTextStyle: Theme.of(context).textTheme.bodyMedium,
-        columnSpacing: 22,
-        columns: [
-          DataColumn(label: Text('Date'.tr())),
-          DataColumn(label: Text('Invoice'.tr())),
-          DataColumn(label: Text('Account'.tr())),
-          DataColumn(label: Text('Status'.tr())),
-          DataColumn(label: Text('Total'.tr())),
-          DataColumn(label: Text('Paid'.tr())),
-          DataColumn(label: Text('Outstanding'.tr())),
-        ],
-        rows: _invoiceRows
-            .map(
-              (row) => DataRow(
-                onSelectChanged: (_) =>
-                    _navigateToInvoice(row.type, row.id, row.invoiceNumber),
-                cells: [
-                  DataCell(
-                    Text(DateFormat('yyyy-MM-dd HH:mm').format(row.createdAt)),
-                  ),
-                  DataCell(Text(row.invoiceNumber)),
-                  DataCell(Text(row.accountName)),
-                  DataCell(Text(row.status)),
-                  DataCell(Text(_currency.format(row.totalAmount))),
-                  DataCell(Text(_currency.format(row.paidAmount))),
-                  DataCell(Text(_currency.format(row.outstandingAmount))),
-                ],
-              ),
-            )
-            .toList(),
+    final columns = [
+      StretchDrilldownColumn(label: 'Date'.tr(), flex: 11),
+      StretchDrilldownColumn(label: 'Invoice'.tr(), flex: 10),
+      StretchDrilldownColumn(label: 'Account'.tr(), flex: 22),
+      StretchDrilldownColumn(label: 'Status'.tr(), flex: 9),
+      StretchDrilldownColumn(
+        label: 'Total'.tr(),
+        flex: 10,
+        align: TextAlign.end,
+        headerAlign: TextAlign.end,
       ),
+      StretchDrilldownColumn(
+        label: 'Paid'.tr(),
+        flex: 10,
+        align: TextAlign.end,
+        headerAlign: TextAlign.end,
+      ),
+      StretchDrilldownColumn(
+        label: 'Outstanding'.tr(),
+        flex: 10,
+        align: TextAlign.end,
+        headerAlign: TextAlign.end,
+      ),
+    ];
+    return DashboardDrilldownStretchTable(
+      columns: columns,
+      rowCount: _invoiceRows.length,
+      cellBuilder: (context, rowIndex, colIndex) {
+        final row = _invoiceRows[rowIndex];
+        switch (colIndex) {
+          case 0:
+            return Text(DateFormat('yyyy-MM-dd HH:mm').format(row.createdAt));
+          case 1:
+            return Text(
+              row.invoiceNumber,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            );
+          case 2:
+            return Text(
+              row.accountName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            );
+          case 3:
+            return Text(
+              row.status,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            );
+          case 4:
+            return Text(
+              _currency.format(row.totalAmount),
+              textAlign: TextAlign.end,
+            );
+          case 5:
+            return Text(
+              _currency.format(row.paidAmount),
+              textAlign: TextAlign.end,
+            );
+          case 6:
+            return Text(
+              _currency.format(row.outstandingAmount),
+              textAlign: TextAlign.end,
+            );
+          default:
+            return const SizedBox.shrink();
+        }
+      },
+      onRowTap: (rowIndex) {
+        final row = _invoiceRows[rowIndex];
+        _navigateToInvoice(row.type, row.id, row.invoiceNumber);
+      },
     );
   }
 
   Widget _buildProfitTable() {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: DataTable(
-        headingRowColor: WidgetStatePropertyAll(
-          Theme.of(context).colorScheme.surfaceContainerHighest,
-        ),
-        headingTextStyle: Theme.of(
-          context,
-        ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
-        dataTextStyle: Theme.of(context).textTheme.bodyMedium,
-        columnSpacing: 22,
-        columns: [
-          DataColumn(label: Text('Date'.tr())),
-          DataColumn(label: Text('Invoice'.tr())),
-          DataColumn(label: Text('Customer'.tr())),
-          DataColumn(label: Text('Revenue'.tr())),
-          DataColumn(label: Text('COGS'.tr())),
-          DataColumn(label: Text('Gross Profit'.tr())),
-        ],
-        rows: _profitRows
-            .map(
-              (row) => DataRow(
-                onSelectChanged: (_) =>
-                    _navigateToInvoice('sale', row.saleId, row.invoiceNumber),
-                cells: [
-                  DataCell(
-                    Text(DateFormat('yyyy-MM-dd HH:mm').format(row.createdAt)),
-                  ),
-                  DataCell(Text(row.invoiceNumber)),
-                  DataCell(Text(row.accountName)),
-                  DataCell(Text(_currency.format(row.revenue))),
-                  DataCell(Text(_currency.format(row.cogs))),
-                  DataCell(Text(_currency.format(row.grossProfit))),
-                ],
-              ),
-            )
-            .toList(),
+    final columns = [
+      StretchDrilldownColumn(label: 'Date'.tr(), flex: 11),
+      StretchDrilldownColumn(label: 'Invoice'.tr(), flex: 10),
+      StretchDrilldownColumn(label: 'Customer'.tr(), flex: 20),
+      StretchDrilldownColumn(
+        label: 'Revenue'.tr(),
+        flex: 11,
+        align: TextAlign.end,
+        headerAlign: TextAlign.end,
       ),
+      StretchDrilldownColumn(
+        label: 'COGS'.tr(),
+        flex: 11,
+        align: TextAlign.end,
+        headerAlign: TextAlign.end,
+      ),
+      StretchDrilldownColumn(
+        label: 'Gross Profit'.tr(),
+        flex: 12,
+        align: TextAlign.end,
+        headerAlign: TextAlign.end,
+      ),
+    ];
+    return DashboardDrilldownStretchTable(
+      columns: columns,
+      rowCount: _profitRows.length,
+      cellBuilder: (context, rowIndex, colIndex) {
+        final row = _profitRows[rowIndex];
+        switch (colIndex) {
+          case 0:
+            return Text(DateFormat('yyyy-MM-dd HH:mm').format(row.createdAt));
+          case 1:
+            return Text(
+              row.invoiceNumber,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            );
+          case 2:
+            return Text(
+              row.accountName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            );
+          case 3:
+            return Text(
+              _currency.format(row.revenue),
+              textAlign: TextAlign.end,
+            );
+          case 4:
+            return Text(_currency.format(row.cogs), textAlign: TextAlign.end);
+          case 5:
+            return Text(
+              _currency.format(row.grossProfit),
+              textAlign: TextAlign.end,
+            );
+          default:
+            return const SizedBox.shrink();
+        }
+      },
+      onRowTap: (rowIndex) {
+        final row = _profitRows[rowIndex];
+        _navigateToInvoice('sale', row.saleId, row.invoiceNumber);
+      },
     );
   }
 

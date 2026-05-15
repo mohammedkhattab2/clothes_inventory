@@ -1,15 +1,18 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:clothes_inventory/features/invoices/domain/invoice_print_model.dart';
 import 'package:clothes_inventory/core/widgets/app_inline_loading_indicator.dart';
 import 'package:clothes_inventory/core/config/company_settings_service.dart';
-import 'package:clothes_inventory/features/invoices/domain/invoice_print_model.dart';
+import 'package:clothes_inventory/features/invoices/domain/a4_invoice_view_data.dart';
 import 'package:clothes_inventory/features/invoices/presentation/invoice_print_model_mapper.dart';
 import 'package:clothes_inventory/features/invoices/presentation/widgets/a4_invoice_rtl_widget.dart';
+import 'package:clothes_inventory/services/pdf/thermal_invoice_pdf_document.dart';
 import 'package:clothes_inventory/services/printing/invoice_print_manager.dart';
 import 'package:clothes_inventory/services/printing/invoice_print_preferences.dart';
 import 'package:clothes_inventory/services/printing/invoice_printer.dart';
 import 'package:clothes_inventory/services/di/service_locator.dart';
+import 'package:printing/printing.dart';
 
 class InvoicePrintPreviewPage extends StatefulWidget {
   const InvoicePrintPreviewPage({
@@ -108,7 +111,9 @@ class _InvoicePrintPreviewPageState extends State<InvoicePrintPreviewPage> {
               alignment: Alignment.topCenter,
               padding: const EdgeInsets.all(20),
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 840),
+                constraints: BoxConstraints(
+                  maxWidth: _printerType == PrinterType.a4 ? 840 : 420,
+                ),
                 child: DecoratedBox(
                   decoration: BoxDecoration(
                     color: Colors.white,
@@ -126,12 +131,7 @@ class _InvoicePrintPreviewPageState extends State<InvoicePrintPreviewPage> {
                   ),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(14),
-                    child: SingleChildScrollView(
-                      child: A4InvoiceRtlWidget(
-                        data: data,
-                        logoBytes: _logoBytes,
-                      ),
-                    ),
+                    child: _buildPreviewBody(data),
                   ),
                 ),
               ),
@@ -198,6 +198,29 @@ class _InvoicePrintPreviewPageState extends State<InvoicePrintPreviewPage> {
         printerSupportsArabic: _supportsArabic,
         useImageFallback: _useImageFallback,
       ),
+    );
+  }
+
+  Widget _buildPreviewBody(A4InvoiceViewData data) {
+    if (_printerType == PrinterType.a4) {
+      return SingleChildScrollView(
+        child: A4InvoiceRtlWidget(
+          data: data,
+          logoBytes: _logoBytes,
+        ),
+      );
+    }
+    final mm = _printerType == PrinterType.thermal58 ? 58.0 : 80.0;
+    return PdfPreview(
+      build: (_) => buildThermalInvoicePdfDocument(
+        invoice: widget.invoice,
+        paperWidthMm: mm,
+      ),
+      maxPageWidth: mm * 4,
+      allowPrinting: false,
+      canChangeOrientation: false,
+      canChangePageFormat: false,
+      canDebug: false,
     );
   }
 }

@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -14,7 +16,7 @@ enum _InvoiceStatusFilter { all, completed, partial }
 
 enum _QuickRange { today, thisWeek, thisMonth }
 
-enum _CashFlowView { all, operational, financing }
+enum _CashFlowView { operational, financing }
 
 enum _FinancingTypeFilter { all, capitalInjection, ownerWithdrawal, adjustment }
 
@@ -40,8 +42,9 @@ class _StatementPageState extends State<StatementPage> {
   DateTime? _toDate;
   _InvoiceStatusFilter _salesStatusFilter = _InvoiceStatusFilter.all;
   _InvoiceStatusFilter _purchasesStatusFilter = _InvoiceStatusFilter.all;
-  _CashFlowView _cashFlowView = _CashFlowView.all;
+  _CashFlowView _cashFlowView = _CashFlowView.operational;
   _FinancingTypeFilter _financingTypeFilter = _FinancingTypeFilter.all;
+  bool _showAdvancedFilters = false;
 
   List<SalesInvoiceSummary> _salesRows = const <SalesInvoiceSummary>[];
   List<PurchaseInvoiceSummary> _purchaseRows = const <PurchaseInvoiceSummary>[];
@@ -351,7 +354,10 @@ class _StatementPageState extends State<StatementPage> {
               ),
               title: Text('Set Opening Balance'.tr()),
               content: SizedBox(
-                width: 420,
+                width: math.min(
+                  420,
+                  MediaQuery.sizeOf(dialogContext).width * 0.9,
+                ),
                 child: TextField(
                   controller: amountController,
                   keyboardType: const TextInputType.numberWithOptions(
@@ -434,7 +440,10 @@ class _StatementPageState extends State<StatementPage> {
                     : 'Record Owner Withdrawal'.tr(),
               ),
               content: SizedBox(
-                width: 460,
+                width: math.min(
+                  460,
+                  MediaQuery.sizeOf(dialogContext).width * 0.9,
+                ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -531,6 +540,94 @@ class _StatementPageState extends State<StatementPage> {
       amountController.dispose();
       notesController.dispose();
     }
+  }
+
+  Widget _buildMoreActionsButton(BuildContext context) {
+    return PopupMenuButton<String>(
+      enabled: !_loading,
+      tooltip: 'More actions'.tr(),
+      onSelected: (value) {
+        switch (value) {
+          case 'set-opening':
+            _setOpeningBalance();
+            return;
+          case 'capital-injection':
+            _postOwnerMovement(isInflow: true);
+            return;
+          case 'owner-withdrawal':
+            _postOwnerMovement(isInflow: false);
+            return;
+          case 'reset-opening':
+            _resetOpeningBalance();
+            return;
+        }
+      },
+      itemBuilder: (context) => [
+        PopupMenuItem<String>(
+          value: 'set-opening',
+          child: Row(
+            children: [
+              const Icon(Icons.edit_note_outlined, size: 18),
+              const SizedBox(width: 8),
+              Text('Set Opening Balance'.tr()),
+            ],
+          ),
+        ),
+        PopupMenuItem<String>(
+          value: 'capital-injection',
+          child: Row(
+            children: [
+              const Icon(Icons.add_card_outlined, size: 18),
+              const SizedBox(width: 8),
+              Text('Capital Injection'.tr()),
+            ],
+          ),
+        ),
+        PopupMenuItem<String>(
+          value: 'owner-withdrawal',
+          child: Row(
+            children: [
+              const Icon(Icons.money_off_csred_outlined, size: 18),
+              const SizedBox(width: 8),
+              Text('Owner Withdrawal'.tr()),
+            ],
+          ),
+        ),
+        PopupMenuItem<String>(
+          value: 'reset-opening',
+          child: Row(
+            children: [
+              const Icon(Icons.restart_alt, size: 18),
+              const SizedBox(width: 8),
+              Text('Reset Opening Balance'.tr()),
+            ],
+          ),
+        ),
+      ],
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: Theme.of(context).colorScheme.outlineVariant,
+          ),
+          color: Theme.of(context).colorScheme.surface,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.more_horiz),
+            const SizedBox(width: 6),
+            Text(
+              'More actions'.tr(),
+              style: Theme.of(context).textTheme.labelLarge,
+            ),
+            const SizedBox(width: 4),
+            const Icon(Icons.arrow_drop_down, size: 18),
+          ],
+        ),
+      ),
+    );
   }
 
   List<SalesInvoiceSummary> _filteredSales() {
@@ -650,6 +747,7 @@ class _StatementPageState extends State<StatementPage> {
   }
 
   Widget _buildStandaloneMovementsSection(BuildContext context) {
+    final veryDense = MediaQuery.sizeOf(context).height < 720;
     final ownerFinancingRows = _standaloneRows
         .where((row) => _movementType(row) != _FinancingTypeFilter.adjustment)
         .toList(growable: false);
@@ -779,7 +877,11 @@ class _StatementPageState extends State<StatementPage> {
                           ? 'Cash'.tr()
                           : 'Vodafone Cash'.tr();
                       return ListTile(
-                        isThreeLine: true,
+                        dense: veryDense,
+                        visualDensity: veryDense
+                            ? VisualDensity.compact
+                            : VisualDensity.standard,
+                        isThreeLine: !veryDense,
                         leading: Icon(
                           isInflow
                               ? Icons.call_received_outlined
@@ -794,7 +896,9 @@ class _StatementPageState extends State<StatementPage> {
                           ],
                         ),
                         subtitle: Text(
-                          '$paymentMethodLabel | ${DateFormat('yyyy-MM-dd HH:mm').format(row.createdAt)}${(row.notes == null || row.notes!.isEmpty) ? '' : ' | ${row.notes}'}\n${'Not included in profit'.tr()}',
+                          veryDense
+                              ? '$paymentMethodLabel | ${DateFormat('yyyy-MM-dd HH:mm').format(row.createdAt)}'
+                              : '$paymentMethodLabel | ${DateFormat('yyyy-MM-dd HH:mm').format(row.createdAt)}${(row.notes == null || row.notes!.isEmpty) ? '' : ' | ${row.notes}'}\n${'Not included in profit'.tr()}',
                         ),
                         trailing: Text(
                           _formatMoney(context, row.absoluteAmount),
@@ -815,6 +919,7 @@ class _StatementPageState extends State<StatementPage> {
   @override
   Widget build(BuildContext context) {
     final isCompact = MediaQuery.sizeOf(context).width < 1100;
+    final veryDense = MediaQuery.sizeOf(context).height < 720;
     final sales = _filteredSales();
     final purchases = _filteredPurchases();
     final expenses = _filteredExpenses();
@@ -839,11 +944,11 @@ class _StatementPageState extends State<StatementPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Text(
+                if (isCompact)
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
                         'Statement'.tr(),
                         style: Theme.of(context).textTheme.headlineSmall
                             ?.copyWith(
@@ -851,52 +956,69 @@ class _StatementPageState extends State<StatementPage> {
                               color: Theme.of(context).colorScheme.onSurface,
                             ),
                       ),
-                    ),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      alignment: WrapAlignment.end,
-                      children: [
-                        OutlinedButton.icon(
-                          onPressed: _loading ? null : _setOpeningBalance,
-                          icon: const Icon(Icons.edit_note_outlined),
-                          label: Text('Set Opening Balance'.tr()),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Cash Box Statement'.tr(),
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
-                        FilledButton.icon(
-                          onPressed: _loading
-                              ? null
-                              : () => _postOwnerMovement(isInflow: true),
-                          icon: const Icon(Icons.add_card_outlined),
-                          label: Text('Capital Injection'.tr()),
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          FilledButton.icon(
+                            onPressed: _loading ? null : _loadData,
+                            icon: const Icon(Icons.refresh),
+                            label: Text('Refresh'.tr()),
+                          ),
+                          _buildMoreActionsButton(context),
+                        ],
+                      ),
+                    ],
+                  )
+                else
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Statement'.tr(),
+                              style: Theme.of(context).textTheme.headlineSmall
+                                  ?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurface,
+                                  ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Cash Box Statement'.tr(),
+                              style: Theme.of(context).textTheme.bodyMedium
+                                  ?.copyWith(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant,
+                                  ),
+                            ),
+                          ],
                         ),
-                        OutlinedButton.icon(
-                          onPressed: _loading
-                              ? null
-                              : () => _postOwnerMovement(isInflow: false),
-                          icon: const Icon(Icons.money_off_csred_outlined),
-                          label: Text('Owner Withdrawal'.tr()),
-                        ),
-                        FilledButton.icon(
-                          onPressed: _loading ? null : _resetOpeningBalance,
-                          icon: const Icon(Icons.restart_alt),
-                          label: Text('Reset Opening Balance'.tr()),
-                        ),
-                        const SizedBox(width: 8),
-                        FilledButton.icon(
-                          onPressed: _loading ? null : _loadData,
-                          icon: const Icon(Icons.refresh),
-                          label: Text('Refresh'.tr()),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-                Text(
-                  'Cash Box Statement'.tr(),
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                      const SizedBox(width: 12),
+                      FilledButton.icon(
+                        onPressed: _loading ? null : _loadData,
+                        icon: const Icon(Icons.refresh),
+                        label: Text('Refresh'.tr()),
+                      ),
+                      const SizedBox(width: 8),
+                      _buildMoreActionsButton(context),
+                    ],
                   ),
-                ),
               ],
             ),
           ),
@@ -938,130 +1060,91 @@ class _StatementPageState extends State<StatementPage> {
           ],
           const SizedBox(height: 10),
           AppSectionPanel(
-            child: Wrap(
-              spacing: 12, // Increased spacing between filter elements
-              runSpacing: 12, // Increased spacing for wrapping
-              crossAxisAlignment: WrapCrossAlignment.center,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                OutlinedButton.icon(
-                  onPressed: _pickFromDate,
-                  icon: const Icon(Icons.date_range_outlined),
-                  label: Text(
-                    _fromDate == null
-                        ? '${'From'.tr()}: ${'Any date'.tr()}'
-                        : '${'From'.tr()}: ${DateFormat('yyyy-MM-dd').format(_fromDate!)}',
-                  ),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Theme.of(context).colorScheme.onSurface,
-                    side: BorderSide(
-                      color: Theme.of(context).colorScheme.outline,
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed: _pickFromDate,
+                      icon: const Icon(Icons.date_range_outlined),
+                      label: Text(
+                        _fromDate == null
+                            ? '${'From'.tr()}: ${'Any date'.tr()}'
+                            : '${'From'.tr()}: ${DateFormat('yyyy-MM-dd').format(_fromDate!)}',
+                      ),
                     ),
-                  ),
-                ),
-                OutlinedButton.icon(
-                  onPressed: _pickToDate,
-                  icon: const Icon(Icons.event_outlined),
-                  label: Text(
-                    _toDate == null
-                        ? '${'To'.tr()}: ${'Any date'.tr()}'
-                        : '${'To'.tr()}: ${DateFormat('yyyy-MM-dd').format(_toDate!)}',
-                  ),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Theme.of(context).colorScheme.onSurface,
-                    side: BorderSide(
-                      color: Theme.of(context).colorScheme.outline,
+                    OutlinedButton.icon(
+                      onPressed: _pickToDate,
+                      icon: const Icon(Icons.event_outlined),
+                      label: Text(
+                        _toDate == null
+                            ? '${'To'.tr()}: ${'Any date'.tr()}'
+                            : '${'To'.tr()}: ${DateFormat('yyyy-MM-dd').format(_toDate!)}',
+                      ),
                     ),
-                  ),
-                ),
-                TextButton(
-                  onPressed: () {
-                    setState(() {
-                      _fromDate = null;
-                      _toDate = null;
-                    });
-                    _loadData();
-                  },
-                  child: Text(
-                    'Clear Filters'.tr(),
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.error,
+                    TextButton(
+                      onPressed: () {
+                        setState(() {
+                          _fromDate = null;
+                          _toDate = null;
+                        });
+                        _loadData();
+                      },
+                      child: Text(
+                        'Clear Filters'.tr(),
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.error,
+                        ),
+                      ),
                     ),
-                  ),
+                    OutlinedButton.icon(
+                      onPressed: () {
+                        setState(() {
+                          _showAdvancedFilters = !_showAdvancedFilters;
+                        });
+                      },
+                      icon: Icon(
+                        _showAdvancedFilters ? Icons.tune : Icons.tune_outlined,
+                      ),
+                      label: Text('Advanced options'.tr()),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 4),
-                ActionChip(
-                  avatar: const Icon(Icons.today, size: 18),
-                  label: Text('Today'.tr()),
-                  onPressed: () => _applyQuickRange(_QuickRange.today),
-                  backgroundColor: Theme.of(
-                    context,
-                  ).colorScheme.surfaceContainerHighest,
-                  labelStyle: TextStyle(
-                    color: Theme.of(context).colorScheme.onSurface,
+                if (_showAdvancedFilters) ...[
+                  SizedBox(height: veryDense ? 6 : 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      ActionChip(
+                        avatar: const Icon(Icons.today, size: 18),
+                        label: Text('Today'.tr()),
+                        onPressed: () => _applyQuickRange(_QuickRange.today),
+                      ),
+                      ActionChip(
+                        avatar: const Icon(Icons.date_range, size: 18),
+                        label: Text('This Week'.tr()),
+                        onPressed: () => _applyQuickRange(_QuickRange.thisWeek),
+                      ),
+                      ActionChip(
+                        avatar: const Icon(Icons.calendar_view_month, size: 18),
+                        label: Text('This Month'.tr()),
+                        onPressed: () =>
+                            _applyQuickRange(_QuickRange.thisMonth),
+                      ),
+                    ],
                   ),
-                ),
-                ActionChip(
-                  avatar: const Icon(Icons.date_range, size: 18),
-                  label: Text('This Week'.tr()),
-                  onPressed: () => _applyQuickRange(_QuickRange.thisWeek),
-                  backgroundColor: Theme.of(
-                    context,
-                  ).colorScheme.surfaceContainerHighest,
-                  labelStyle: TextStyle(
-                    color: Theme.of(context).colorScheme.onSurface,
-                  ),
-                ),
-                ActionChip(
-                  avatar: const Icon(Icons.calendar_view_month, size: 18),
-                  label: Text('This Month'.tr()),
-                  onPressed: () => _applyQuickRange(_QuickRange.thisMonth),
-                  backgroundColor: Theme.of(
-                    context,
-                  ).colorScheme.surfaceContainerHighest,
-                  labelStyle: TextStyle(
-                    color: Theme.of(context).colorScheme.onSurface,
-                  ),
-                ),
+                ],
               ],
             ),
           ),
           const SizedBox(height: 10),
-          AppSectionPanel(
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                Text(
-                  'Cash Flow View'.tr(),
-                  style: Theme.of(
-                    context,
-                  ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
-                ),
-                ChoiceChip(
-                  selected: _cashFlowView == _CashFlowView.all,
-                  label: Text('All'.tr()),
-                  onSelected: (_) {
-                    setState(() => _cashFlowView = _CashFlowView.all);
-                  },
-                ),
-                ChoiceChip(
-                  selected: _cashFlowView == _CashFlowView.operational,
-                  label: Text('Operational'.tr()),
-                  onSelected: (_) {
-                    setState(() => _cashFlowView = _CashFlowView.operational);
-                  },
-                ),
-                ChoiceChip(
-                  selected: _cashFlowView == _CashFlowView.financing,
-                  label: Text('Financing'.tr()),
-                  onSelected: (_) {
-                    setState(() => _cashFlowView = _CashFlowView.financing);
-                  },
-                ),
-              ],
-            ),
-          ),
+          AppSectionPanel(child: _buildCashFlowTabs(context)),
           const SizedBox(height: 10),
           if (_error != null)
             Padding(
@@ -1081,9 +1164,14 @@ class _StatementPageState extends State<StatementPage> {
                 ? ListView(
                     children: [
                       if (_cashFlowView != _CashFlowView.financing) ...[
-                        _buildSalesColumn(context, sales),
+                        _buildSalesColumn(context, sales, veryDense: veryDense),
                         const SizedBox(height: 10),
-                        _buildPurchasesColumn(context, purchases, expenses),
+                        _buildPurchasesColumn(
+                          context,
+                          purchases,
+                          expenses,
+                          veryDense: veryDense,
+                        ),
                       ],
                       if (_cashFlowView != _CashFlowView.operational) ...[
                         if (_cashFlowView != _CashFlowView.financing)
@@ -1095,18 +1183,23 @@ class _StatementPageState extends State<StatementPage> {
                 : Row(
                     children: [
                       if (_cashFlowView != _CashFlowView.financing) ...[
-                        Expanded(child: _buildSalesColumn(context, sales)),
+                        Expanded(
+                          child: _buildSalesColumn(
+                            context,
+                            sales,
+                            veryDense: veryDense,
+                          ),
+                        ),
                         const SizedBox(width: 10),
                         Expanded(
                           child: _buildPurchasesColumn(
                             context,
                             purchases,
                             expenses,
+                            veryDense: veryDense,
                           ),
                         ),
                       ],
-                      if (_cashFlowView == _CashFlowView.all)
-                        const SizedBox(width: 10),
                       if (_cashFlowView != _CashFlowView.operational)
                         Expanded(
                           child: _buildStandaloneMovementsSection(context),
@@ -1119,10 +1212,52 @@ class _StatementPageState extends State<StatementPage> {
     );
   }
 
+  Widget _buildCashFlowTabs(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Cash Flow View'.tr(),
+          style: Theme.of(
+            context,
+          ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 8),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: SegmentedButton<_CashFlowView>(
+            showSelectedIcon: false,
+            segments: [
+              ButtonSegment<_CashFlowView>(
+                value: _CashFlowView.operational,
+                icon: const Icon(Icons.storefront_outlined, size: 18),
+                label: Text('Operational'.tr()),
+              ),
+              ButtonSegment<_CashFlowView>(
+                value: _CashFlowView.financing,
+                icon: const Icon(
+                  Icons.account_balance_wallet_outlined,
+                  size: 18,
+                ),
+                label: Text('Financing'.tr()),
+              ),
+            ],
+            selected: <_CashFlowView>{_cashFlowView},
+            onSelectionChanged: (selection) {
+              if (selection.isEmpty) return;
+              setState(() => _cashFlowView = selection.first);
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildSalesColumn(
     BuildContext context,
-    List<SalesInvoiceSummary> rows,
-  ) {
+    List<SalesInvoiceSummary> rows, {
+    required bool veryDense,
+  }) {
     final total = rows.fold<double>(0, (sum, item) => sum + item.paidAmount);
 
     return AppSectionPanel(
@@ -1181,20 +1316,10 @@ class _StatementPageState extends State<StatementPage> {
                     separatorBuilder: (_, _) => const Divider(height: 1),
                     itemBuilder: (context, index) {
                       final row = rows[index];
-                      return ListTile(
-                        title: Text(row.productsSummary),
-                        subtitle: Text(
-                          '${'Customer'.tr()}: ${row.accountName} | ${DateFormat('yyyy-MM-dd HH:mm').format(row.createdAt)}',
-                        ),
-                        trailing: Text(
-                          _formatMoney(context, row.paidAmount),
-                          style: TextStyle(
-                            color: Colors.green.shade700,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        onTap: () =>
-                            context.go('/sales?selectedInvoiceId=${row.id}'),
+                      return _buildSalesInvoiceTile(
+                        context,
+                        row,
+                        veryDense: veryDense,
                       );
                     },
                   ),
@@ -1207,8 +1332,9 @@ class _StatementPageState extends State<StatementPage> {
   Widget _buildPurchasesColumn(
     BuildContext context,
     List<PurchaseInvoiceSummary> rows,
-    List<ExpenseRecord> expenseRows,
-  ) {
+    List<ExpenseRecord> expenseRows, {
+    required bool veryDense,
+  }) {
     final purchasesTotal = rows.fold<double>(
       0,
       (sum, item) => sum + item.paidAmount,
@@ -1289,50 +1415,119 @@ class _StatementPageState extends State<StatementPage> {
                     itemBuilder: (context, index) {
                       if (index < rows.length) {
                         final row = rows[index];
-                        return ListTile(
-                          title: Text(row.productsSummary),
-                          subtitle: Text(
-                            '${'Supplier'.tr()}: ${row.accountName} | ${DateFormat('yyyy-MM-dd HH:mm').format(row.createdAt)}',
-                          ),
-                          trailing: Text(
-                            _formatMoney(context, row.paidAmount),
-                            style: TextStyle(
-                              color: Colors.red.shade700,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          onTap: () => context.go(
-                            '/purchases?selectedInvoiceId=${row.id}',
-                          ),
+                        return _buildPurchaseInvoiceTile(
+                          context,
+                          row,
+                          veryDense: veryDense,
                         );
                       }
 
                       final expense = expenseRows[index - rows.length];
-                      final paymentMethodLabel = expense.paymentMethod == 'cash'
-                          ? 'Cash'.tr()
-                          : 'Vodafone Cash'.tr();
-                      return ListTile(
-                        leading: const Icon(Icons.receipt_long_outlined),
-                        title: Text(
-                          '${'Expense'.tr()}: ${expense.accountName}',
-                        ),
-                        subtitle: Text(
-                          '$paymentMethodLabel | ${DateFormat('yyyy-MM-dd HH:mm').format(expense.createdAt)}${(expense.notes == null || expense.notes!.isEmpty) ? '' : ' | $expense.notes'}',
-                        ),
-                        trailing: Text(
-                          _formatMoney(context, expense.amount),
-                          style: TextStyle(
-                            color: Colors.red.shade700,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        onTap: () => context.go('/expenses'),
+                      return _buildExpenseTile(
+                        context,
+                        expense,
+                        veryDense: veryDense,
                       );
                     },
                   ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildSalesInvoiceTile(
+    BuildContext context,
+    SalesInvoiceSummary row, {
+    required bool veryDense,
+  }) {
+    final subtitle = veryDense
+        ? '${'Customer'.tr()}: ${row.accountName}'
+        : '${'Customer'.tr()}: ${row.accountName} | ${DateFormat('yyyy-MM-dd HH:mm').format(row.createdAt)}';
+
+    return ListTile(
+      dense: veryDense,
+      visualDensity: veryDense ? VisualDensity.compact : VisualDensity.standard,
+      title: Text(
+        row.productsSummary,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      subtitle: Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis),
+      trailing: Text(
+        _formatMoney(context, row.paidAmount),
+        style: TextStyle(
+          color: Colors.green.shade700,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+      onTap: () => context.go(
+        '/invoices?tab=sales&selectedInvoiceId=${row.id}&navSource=statement',
+      ),
+    );
+  }
+
+  Widget _buildPurchaseInvoiceTile(
+    BuildContext context,
+    PurchaseInvoiceSummary row, {
+    required bool veryDense,
+  }) {
+    final subtitle = veryDense
+        ? '${'Supplier'.tr()}: ${row.accountName}'
+        : '${'Supplier'.tr()}: ${row.accountName} | ${DateFormat('yyyy-MM-dd HH:mm').format(row.createdAt)}';
+
+    return ListTile(
+      dense: veryDense,
+      visualDensity: veryDense ? VisualDensity.compact : VisualDensity.standard,
+      title: Text(
+        row.productsSummary,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      subtitle: Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis),
+      trailing: Text(
+        _formatMoney(context, row.paidAmount),
+        style: TextStyle(
+          color: Colors.red.shade700,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+      onTap: () => context.go(
+        '/invoices?tab=purchases&selectedInvoiceId=${row.id}&navSource=statement',
+      ),
+    );
+  }
+
+  Widget _buildExpenseTile(
+    BuildContext context,
+    ExpenseRecord expense, {
+    required bool veryDense,
+  }) {
+    final paymentMethodLabel = expense.paymentMethod == 'cash'
+        ? 'Cash'.tr()
+        : 'Vodafone Cash'.tr();
+    final subtitle = veryDense
+        ? '$paymentMethodLabel | ${DateFormat('yyyy-MM-dd HH:mm').format(expense.createdAt)}'
+        : '$paymentMethodLabel | ${DateFormat('yyyy-MM-dd HH:mm').format(expense.createdAt)}${(expense.notes == null || expense.notes!.isEmpty) ? '' : ' | ${expense.notes}'}';
+
+    return ListTile(
+      dense: veryDense,
+      visualDensity: veryDense ? VisualDensity.compact : VisualDensity.standard,
+      leading: const Icon(Icons.receipt_long_outlined),
+      title: Text(
+        '${'Expense'.tr()}: ${expense.accountName}',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      subtitle: Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis),
+      trailing: Text(
+        _formatMoney(context, expense.amount),
+        style: TextStyle(
+          color: Colors.red.shade700,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+      onTap: () => context.go('/expenses'),
     );
   }
 
@@ -1375,7 +1570,9 @@ class _StatementPageState extends State<StatementPage> {
         ? Theme.of(context).colorScheme.primary
         : Theme.of(context).colorScheme.error;
 
-    final children = [
+    final netFlow = cashInTotal - cashOutTotal;
+
+    final primaryChildren = [
       _summaryTile(
         title: 'Opening Balance'.tr(),
         value: openingBalance,
@@ -1384,6 +1581,43 @@ class _StatementPageState extends State<StatementPage> {
             ? Theme.of(context).colorScheme.primary
             : Theme.of(context).colorScheme.error,
       ),
+      _summaryTile(
+        title: 'Net movement'.tr(),
+        value: netFlow,
+        icon: netFlow >= 0 ? Icons.trending_up : Icons.trending_down,
+        valueColor: netFlow >= 0 ? Colors.green.shade700 : Colors.red.shade700,
+      ),
+      _summaryTile(
+        title: 'Cash in Box'.tr(),
+        value: cashInBox,
+        icon: Icons.account_balance_wallet,
+        valueColor: balanceColor,
+      ),
+    ];
+
+    Widget primary;
+    if (isCompact) {
+      primary = Column(
+        children: [
+          for (var i = 0; i < primaryChildren.length; i++) ...[
+            primaryChildren[i],
+            if (i != primaryChildren.length - 1) const SizedBox(height: 8),
+          ],
+        ],
+      );
+    } else {
+      primary = Row(
+        children: [
+          Expanded(child: primaryChildren[0]),
+          const SizedBox(width: 8),
+          Expanded(child: primaryChildren[1]),
+          const SizedBox(width: 8),
+          Expanded(child: primaryChildren[2]),
+        ],
+      );
+    }
+
+    final secondaryChildren = [
       _summaryTile(
         title: 'Cash In'.tr(),
         value: cashInTotal,
@@ -1408,38 +1642,50 @@ class _StatementPageState extends State<StatementPage> {
         icon: Icons.call_made_outlined,
         valueColor: Colors.red.shade600,
       ),
-      _summaryTile(
-        title: 'Cash in Box'.tr(),
-        value: cashInBox,
-        icon: Icons.account_balance_wallet,
-        valueColor: balanceColor,
-      ),
     ];
 
-    if (isCompact) {
-      return Column(
-        children: [
-          for (var i = 0; i < children.length; i++) ...[
-            children[i],
-            if (i != children.length - 1) const SizedBox(height: 8),
-          ],
-        ],
-      );
-    }
-
-    return Row(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Expanded(child: children[0]),
-        const SizedBox(width: 8),
-        Expanded(child: children[1]),
-        const SizedBox(width: 8),
-        Expanded(child: children[2]),
-        const SizedBox(width: 8),
-        Expanded(child: children[3]),
-        const SizedBox(width: 8),
-        Expanded(child: children[4]),
-        const SizedBox(width: 8),
-        Expanded(child: children[5]),
+        primary,
+        const SizedBox(height: 8),
+        Theme(
+          data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+          child: ExpansionTile(
+            tilePadding: EdgeInsets.zero,
+            childrenPadding: EdgeInsets.zero,
+            title: Text(
+              'Advanced options'.tr(),
+              style: Theme.of(
+                context,
+              ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+            ),
+            children: [
+              if (isCompact)
+                Column(
+                  children: [
+                    for (var i = 0; i < secondaryChildren.length; i++) ...[
+                      secondaryChildren[i],
+                      if (i != secondaryChildren.length - 1)
+                        const SizedBox(height: 8),
+                    ],
+                  ],
+                )
+              else
+                Row(
+                  children: [
+                    Expanded(child: secondaryChildren[0]),
+                    const SizedBox(width: 8),
+                    Expanded(child: secondaryChildren[1]),
+                    const SizedBox(width: 8),
+                    Expanded(child: secondaryChildren[2]),
+                    const SizedBox(width: 8),
+                    Expanded(child: secondaryChildren[3]),
+                  ],
+                ),
+            ],
+          ),
+        ),
       ],
     );
   }

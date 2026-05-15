@@ -32,6 +32,7 @@ Future<void> _clearTestData() async {
 }
 
 void main() {
+  late AppDatabase appDatabase;
   late AccountsRepository accountsRepository;
   late ProductRepository productRepository;
   late SalesRepository salesRepository;
@@ -44,7 +45,7 @@ void main() {
         .setMockMethodCallHandler(channel, (methodCall) async {
           if (methodCall.method == 'getApplicationSupportDirectory') {
             final dir = await Directory.systemTemp.createTemp(
-              'inventory_test_',
+              'sale_amend_test_',
             );
             return dir.path;
           }
@@ -52,6 +53,7 @@ void main() {
         });
 
     await TestAppIsolation.bootstrap();
+    appDatabase = getIt<AppDatabase>();
     accountsRepository = getIt<AccountsRepository>();
     productRepository = getIt<ProductRepository>();
     salesRepository = getIt<SalesRepository>();
@@ -79,116 +81,133 @@ void main() {
     getIt<SessionService>().logout();
   });
 
-  test(
-    'listInvoiceLines reflects returns while preserving sold quantity',
-    () async {
-      final customerId = await accountsRepository.createAccount(
-        name: 'Sale Invoice Lines Customer',
-        accountType: 'customer',
-      );
-      final supplierId = await accountsRepository.createAccount(
-        name: 'Sale Invoice Lines Supplier',
-        accountType: 'supplier',
-      );
-
-      final product = await productRepository.createProduct(
-        const Product(
-          id: null,
-          name: 'Sale Invoice Lines Product',
-          unitType: UnitType.piece,
-          salePrice: 80,
-          purchasePrice: 50,
-          lowStockThreshold: 0,
-        ),
-      );
-
-      await purchasesRepository.createPurchase(
-        PurchaseCreateRequest(
-          supplierId: supplierId,
-          items: [
-            PurchaseDraftItem(
-              productId: product.id!,
-              productName: product.name,
-              unitType: product.unitType.name,
-              quantity: 10,
-              unitPrice: product.purchasePrice,
-            ),
-          ],
-          paidAmount: 500,
-          paymentMethod: PaymentMethod.cash,
-        ),
-      );
-
-      final saleId = await salesRepository.createSale(
-        SaleCreateRequest(
-          customerId: customerId,
-          items: [
-            SaleDraftItem(
-              productId: product.id!,
-              productName: product.name,
-              unitType: product.unitType.name,
-              availableStock: 999999,
-              minUnitPrice: product.purchasePrice,
-              quantity: 7,
-              unitPrice: product.salePrice,
-            ),
-          ],
-          paidAmount: 560,
-          paymentMethod: PaymentMethod.cash,
-        ),
-      );
-
-      final beforeReturn = await salesRepository.listInvoiceLines(saleId);
-      expect(beforeReturn, hasLength(1));
-      expect(beforeReturn.first.quantity, 7);
-      expect(beforeReturn.first.returnedQuantity, 0);
-      expect(beforeReturn.first.remainingQuantity, 7);
-
-      await salesRepository.returnSaleItem(
-        saleId: saleId,
-        saleItemId: beforeReturn.first.id,
-        quantity: 2,
-        paymentMethod: PaymentMethod.cash,
-      );
-
-      final afterFirstReturn = await salesRepository.listInvoiceLines(saleId);
-      expect(afterFirstReturn, hasLength(1));
-      expect(afterFirstReturn.first.quantity, 7);
-      expect(afterFirstReturn.first.returnedQuantity, 2);
-      expect(afterFirstReturn.first.remainingQuantity, 5);
-
-      await salesRepository.returnSaleItem(
-        saleId: saleId,
-        saleItemId: afterFirstReturn.first.id,
-        quantity: 1,
-        paymentMethod: PaymentMethod.cash,
-      );
-
-      final afterSecondReturn = await salesRepository.listInvoiceLines(saleId);
-      expect(afterSecondReturn, hasLength(1));
-      expect(afterSecondReturn.first.quantity, 7);
-      expect(afterSecondReturn.first.returnedQuantity, 3);
-      expect(afterSecondReturn.first.remainingQuantity, 4);
-    },
-  );
-
-  test('listInvoiceLines remaining quantity never drops below zero', () async {
+  test('amendSale replaces lines, stock, totals, and ledger debit', () async {
     final customerId = await accountsRepository.createAccount(
-      name: 'No Negative Sale Remaining Customer',
+      name: 'Amend Customer',
       accountType: 'customer',
     );
     final supplierId = await accountsRepository.createAccount(
-      name: 'No Negative Sale Remaining Supplier',
+      name: 'Amend Supplier',
       accountType: 'supplier',
     );
-
     final product = await productRepository.createProduct(
       const Product(
         id: null,
-        name: 'No Negative Sale Remaining Product',
+        name: 'Amend Product',
         unitType: UnitType.piece,
-        salePrice: 40,
-        purchasePrice: 25,
+        salePrice: 100,
+        purchasePrice: 40,
+        lowStockThreshold: 0,
+      ),
+    );
+
+    await purchasesRepository.createPurchase(
+      PurchaseCreateRequest(
+        supplierId: supplierId,
+        items: [
+          PurchaseDraftItem(
+            productId: product.id!,
+            productName: product.name,
+            unitType: product.unitType.name,
+            quantity: 10,
+            unitPrice: product.purchasePrice,
+          ),
+        ],
+        paidAmount: 400,
+        paymentMethod: PaymentMethod.cash,
+      ),
+    );
+
+    final saleId = await salesRepository.createSale(
+      SaleCreateRequest(
+        customerId: customerId,
+        items: [
+          SaleDraftItem(
+            productId: product.id!,
+            productName: product.name,
+            unitType: product.unitType.name,
+            availableStock: 999999,
+            minUnitPrice: product.purchasePrice,
+            quantity: 5,
+            unitPrice: product.salePrice,
+          ),
+        ],
+        paidAmount: 500,
+        paymentMethod: PaymentMethod.cash,
+      ),
+    );
+
+    final draft = await salesRepository.loadSaleDraftForAmendment(saleId);
+    expect(draft.amendmentPayments, isNotNull);
+    expect(draft.items, hasLength(1));
+    expect(draft.items.single.quantity, 5);
+
+    await salesRepository.amendSale(
+      SaleAmendRequest(
+        saleId: saleId,
+        items: [
+          draft.items.single.copyWith(quantity: 4),
+        ],
+        headerDiscountKind: draft.headerDiscountKind,
+        headerDiscountValue: draft.headerDiscountValue,
+      ),
+    );
+
+    final db = await appDatabase.database;
+    final itemRows = await db.query(
+      'sale_items',
+      where: 'sale_id = ?',
+      whereArgs: [saleId],
+    );
+    expect(itemRows, hasLength(1));
+    expect((itemRows.single['quantity'] as num).toInt(), 4);
+
+    final outs = await db.query(
+      'stock_movements',
+      where: 'invoice_type = ? AND invoice_id = ? AND movement_type = ?',
+      whereArgs: ['sale', saleId, 'out'],
+    );
+    expect(outs, hasLength(1));
+    expect((outs.single['quantity'] as num).toInt(), 4);
+
+    expect(await productRepository.getCurrentStock(product.id!), 6);
+
+    final saleRows = await db.query(
+      'sales',
+      columns: ['total_amount', 'status'],
+      where: 'id = ?',
+      whereArgs: [saleId],
+    );
+    expect((saleRows.single['total_amount'] as num).toDouble(), 400);
+    expect(saleRows.single['status'], 'completed');
+
+    final ledgerRows = await db.query(
+      'ledger_transactions',
+      columns: ['amount'],
+      where:
+          'source_type = ? AND source_id = ? AND entry_kind = ?',
+      whereArgs: ['sale', saleId, 'debit'],
+    );
+    expect(ledgerRows, hasLength(1));
+    expect((ledgerRows.single['amount'] as num).toDouble(), 400);
+  });
+
+  test('load and amend blocked when sale has returns', () async {
+    final customerId = await accountsRepository.createAccount(
+      name: 'Return Amend Customer',
+      accountType: 'customer',
+    );
+    final supplierId = await accountsRepository.createAccount(
+      name: 'Return Amend Supplier',
+      accountType: 'supplier',
+    );
+    final product = await productRepository.createProduct(
+      const Product(
+        id: null,
+        name: 'Return Amend Product',
+        unitType: UnitType.piece,
+        salePrice: 50,
+        purchasePrice: 20,
         lowStockThreshold: 0,
       ),
     );
@@ -205,7 +224,7 @@ void main() {
             unitPrice: product.purchasePrice,
           ),
         ],
-        paidAmount: 125,
+        paidAmount: 100,
         paymentMethod: PaymentMethod.cash,
       ),
     );
@@ -220,43 +239,46 @@ void main() {
             unitType: product.unitType.name,
             availableStock: 999999,
             minUnitPrice: product.purchasePrice,
-            quantity: 3,
+            quantity: 4,
             unitPrice: product.salePrice,
           ),
         ],
-        paidAmount: 120,
+        paidAmount: 200,
         paymentMethod: PaymentMethod.cash,
       ),
     );
 
-    final lines = await salesRepository.listInvoiceLines(saleId);
-    final itemId = lines.first.id;
-
+    final linesBefore = await salesRepository.listInvoiceLines(saleId);
     await salesRepository.returnSaleItem(
       saleId: saleId,
-      saleItemId: itemId,
-      quantity: 3,
+      saleItemId: linesBefore.single.id,
+      quantity: 1,
       paymentMethod: PaymentMethod.cash,
     );
 
-    final afterFullReturn = await salesRepository.listInvoiceLines(saleId);
-    expect(afterFullReturn.first.remainingQuantity, 0);
-
     await expectLater(
-      salesRepository.returnSaleItem(
-        saleId: saleId,
-        saleItemId: itemId,
-        quantity: 1,
-        paymentMethod: PaymentMethod.cash,
-      ),
+      salesRepository.loadSaleDraftForAmendment(saleId),
       throwsA(isA<StateError>()),
     );
 
-    final afterRejectedExtraReturn = await salesRepository.listInvoiceLines(
-      saleId,
+    await expectLater(
+      salesRepository.amendSale(
+        SaleAmendRequest(
+          saleId: saleId,
+          items: [
+            SaleDraftItem(
+              productId: product.id!,
+              productName: product.name,
+              unitType: product.unitType.name,
+              availableStock: 999,
+              minUnitPrice: product.purchasePrice,
+              quantity: 3,
+              unitPrice: product.salePrice,
+            ),
+          ],
+        ),
+      ),
+      throwsA(isA<StateError>()),
     );
-    expect(afterRejectedExtraReturn.first.quantity, 3);
-    expect(afterRejectedExtraReturn.first.returnedQuantity, 3);
-    expect(afterRejectedExtraReturn.first.remainingQuantity, 0);
   });
 }

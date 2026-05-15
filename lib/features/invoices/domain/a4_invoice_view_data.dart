@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 class A4InvoiceLine {
   const A4InvoiceLine({
     required this.productName,
@@ -24,6 +26,8 @@ class A4InvoiceViewData {
     required this.lines,
     required this.total,
     this.currency = '',
+    this.invoiceFooterNote = '',
+    this.invoiceFooterImageBytes,
   });
 
   final String companyName;
@@ -38,4 +42,6 @@ class A4InvoiceViewData {
   final List<A4InvoiceLine> lines;
   final String total;
   final String currency;
+  final String invoiceFooterNote;
+  final Uint8List? invoiceFooterImageBytes;
 }

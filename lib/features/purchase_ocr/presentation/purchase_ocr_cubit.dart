@@ -14,7 +14,6 @@ import 'package:clothes_inventory/features/purchase_ocr/domain/purchase_ocr_prod
 import 'package:clothes_inventory/features/purchase_ocr/domain/purchase_ocr_temporal_intelligence.dart';
 import 'package:clothes_inventory/features/purchases/data/purchases_repository.dart';
 import 'package:clothes_inventory/features/purchases/domain/purchase_models.dart';
-import 'package:clothes_inventory/features/sales/domain/sale_models.dart';
 
 enum PurchaseOcrStatus { idle, processing, ready, saving, success, failure }
 
@@ -478,7 +477,6 @@ class PurchaseOcrCubit extends Cubit<PurchaseOcrState> {
         PurchaseCreateRequest(
           supplierId: supplierId,
           items: purchaseItems,
-          taxPercentage: 0,
           paidAmount: roundCurrency(total),
           paymentMethod: PaymentMethod.cash,
           notes: 'Created from offline OCR invoice scan.',

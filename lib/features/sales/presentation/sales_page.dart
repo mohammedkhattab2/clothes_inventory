@@ -24,7 +24,8 @@ import 'package:clothes_inventory/features/license/domain/license_service.dart';
 import 'package:clothes_inventory/services/di/service_locator.dart';
 import 'package:clothes_inventory/services/printing/a4_invoice_printer.dart';
 import 'package:clothes_inventory/services/printing/invoice_print_manager.dart';
-import 'package:clothes_inventory/services/printing/unsupported_invoice_printer.dart';
+import 'package:clothes_inventory/services/printing/thermal_pdf_invoice_printer.dart';
+import 'package:clothes_inventory/services/printing/thermal_printer_preferences.dart';
 import 'package:clothes_inventory/services/pdf/sales_invoice_pdf_service.dart';
 
 part 'sales_page_state.part.dart';

@@ -17,23 +17,30 @@ class _PurchasesPageState extends State<PurchasesPage> {
 
   final _searchController = TextEditingController();
   final _paidController = TextEditingController();
-  final _taxPercentController = TextEditingController();
+  final _headerDiscountValueController = TextEditingController();
   final _paidAmountFocusNode = FocusNode();
   final _invoiceScrollController = ScrollController();
   final _dateFormat = DateFormat('yyyy-MM-dd HH:mm');
   final _invoicePrintManager = InvoicePrintManager(
     a4Printer: const A4InvoicePrinter(),
-    thermal58Printer: const UnsupportedInvoicePrinter(
-      'Thermal printer adapter is not configured yet.',
+    thermal58Printer: ThermalPdfInvoicePrinter(
+      paperWidthMm: 58,
+      printerPrefs: const ThermalPrinterPreferences(),
     ),
-    thermal80Printer: const UnsupportedInvoicePrinter(
-      'Thermal printer adapter is not configured yet.',
+    thermal80Printer: ThermalPdfInvoicePrinter(
+      paperWidthMm: 80,
+      printerPrefs: const ThermalPrinterPreferences(),
     ),
+  );
+  final _barcodeLabelPrinter = const ProductBarcodeLabelPrinter(
+    paperWidthMm: 58,
+    printerPrefs: ThermalPrinterPreferences(),
   );
 
   List<Product> _searchResults = const [];
   List<AccountLookup> _suppliers = const [];
   List<PurchaseInvoiceSummary> _invoiceRows = const [];
+  // ignore: unused_field
   bool _loadingInvoices = false;
   int _invoicePage = 0;
   int _invoicePageSize = 50;
@@ -749,6 +756,8 @@ class _PurchasesPageState extends State<PurchasesPage> {
       initialQuantity: 1,
       initialPurchasePrice: row.purchasePrice,
       parseFlexibleNumber: parseFlexibleNumber,
+      onGenerateBarcode: _generateBarcodeFromPrefix,
+      onPrintBarcode: _printProductBarcodeLabel,
       onCreateProduct: (payload) async {
         editedPayload = payload;
         return payload;
@@ -1097,6 +1106,30 @@ class _PurchasesPageState extends State<PurchasesPage> {
     await _loadSuppliers();
   }
 
+  Future<String> _generateBarcodeFromPrefix(String prefix) {
+    return _productRepo.generateNextBarcodeFromPrefix(prefix: prefix);
+  }
+
+  Future<void> _printProductBarcodeLabel({
+    required String productName,
+    required String barcode,
+    required int quantity,
+  }) async {
+    final copies = quantity < 1 ? 1 : quantity;
+    try {
+      await _barcodeLabelPrinter.printLabel(
+        productName: productName,
+        barcodeValue: barcode,
+        copies: copies,
+      );
+      if (!mounted) return;
+      _showLatestSnackBar(context, 'Barcode label sent to printer'.tr());
+    } catch (e) {
+      if (!mounted) return;
+      _showLatestSnackBar(context, '${'Failed to print barcode'.tr()}: $e');
+    }
+  }
+
   Future<void> _createProductDialog(
     BuildContext blocContext, [
     Product? existingProduct,
@@ -1109,6 +1142,8 @@ class _PurchasesPageState extends State<PurchasesPage> {
       blocContext,
       existingProduct: existingProduct,
       parseFlexibleNumber: parseFlexibleNumber,
+      onGenerateBarcode: _generateBarcodeFromPrefix,
+      onPrintBarcode: _printProductBarcodeLabel,
       onCreateProduct: _productRepo.createProduct,
       onUpdateProduct: _productRepo.updateProduct,
       onRefreshSearch: () => _searchProducts(_searchController.text),
@@ -1189,7 +1224,7 @@ class _PurchasesPageState extends State<PurchasesPage> {
     );
     _searchController.dispose();
     _paidController.dispose();
-    _taxPercentController.dispose();
+    _headerDiscountValueController.dispose();
     _paidAmountFocusNode.dispose();
     _invoiceScrollController.dispose();
     for (final controller in _inlineQtyControllers.values) {
@@ -1323,7 +1358,7 @@ class _PurchasesPageState extends State<PurchasesPage> {
             );
             _paymentStatus = _PurchasePaymentStatus.full;
             _paidController.clear();
-            _taxPercentController.clear();
+            _headerDiscountValueController.clear();
             _loadInvoices();
           }
           if (state.error != null) {
@@ -1406,132 +1441,126 @@ class _PurchasesPageState extends State<PurchasesPage> {
                     builder: (context, constraints) {
                       final compact =
                           constraints.maxWidth < _compactLayoutBreakpoint;
-                      final productsPaneFlex = 1;
-                      final cartPaneFlex = 1;
+                      final productsPaneFlex = compact ? 4 : 4;
+                      final cartPaneFlex = compact ? 6 : 6;
+                      final productsPane = Expanded(
+                        flex: productsPaneFlex,
+                        child: PurchasesProductsPane(
+                          compact: compact,
+                          searchController: _searchController,
+                          searchResults: _searchResults,
+                          onSearchChanged: _searchProducts,
+                          onAddProduct: () => _createProductDialog(context),
+                          onImportItems: () => _importItemsFromFile(context),
+                          onDownloadTemplate: () =>
+                              _downloadImportTemplate(context),
+                          onEditProduct: (product) =>
+                              _createProductDialog(context, product),
+                          onDeleteProduct: (product) =>
+                              _deleteProductFromEntryList(context, product),
+                          onAddToCart: cubit.addProduct,
+                          importing: _importingItems,
+                          savingTemplate: _savingImportTemplate,
+                        ),
+                      );
+                      final cartPane = Expanded(
+                        flex: cartPaneFlex,
+                        child: PurchasesCartPane(
+                          total: state.total,
+                          loading: state.loading,
+                          paymentStatusIndex: _paymentStatus.index,
+                          paymentStatusItems: [
+                            DropdownMenuItem(
+                              value: _PurchasePaymentStatus.full.index,
+                              child: Text('Full Payment'.tr()),
+                            ),
+                            DropdownMenuItem(
+                              value: _PurchasePaymentStatus.partial.index,
+                              child: Text('Partial Payment'.tr()),
+                            ),
+                            DropdownMenuItem(
+                              value: _PurchasePaymentStatus.deferred.index,
+                              child: Text('Deferred Payment'.tr()),
+                            ),
+                          ],
+                          cartContent: _buildCartTableContent(
+                            context,
+                            state,
+                            cubit,
+                          ),
+                          suppliers: _suppliers,
+                          supplierId: state.supplierId,
+                          headerDiscountKind: state.headerDiscountKind,
+                          headerDiscountValueController:
+                              _headerDiscountValueController,
+                          paidController: _paidController,
+                          paidAmountFocusNode: _paidAmountFocusNode,
+                          headerDiscountAmount: state.headerDiscountAmount,
+                          outstandingAmount: (state.total - state.paidAmount)
+                              .clamp(0, state.total)
+                              .toDouble(),
+                          paymentMethod: state.paymentMethod,
+                          paidFieldEnabled:
+                              _paymentStatus == _PurchasePaymentStatus.partial,
+                          onAddSupplier: () => _createSupplierDialog(context),
+                          onSupplierChanged: cubit.setSupplier,
+                          onPaymentStatusChanged: (value) {
+                            if (value == null) return;
+                            final selectedStatus =
+                                _PurchasePaymentStatus.values[value];
+                            setState(() => _paymentStatus = selectedStatus);
+                            if (selectedStatus == _PurchasePaymentStatus.full) {
+                              cubit.setPaidAmount(state.total);
+                            } else if (selectedStatus ==
+                                _PurchasePaymentStatus.deferred) {
+                              cubit.setPaidAmount(0);
+                            }
+                          },
+                          onHeaderDiscountKindChanged: (kind) => context
+                              .read<PurchasesCubit>()
+                              .setHeaderDiscountKind(kind),
+                          onHeaderDiscountValueChanged: (v) => context
+                              .read<PurchasesCubit>()
+                              .setHeaderDiscountValue(
+                                parseFlexibleNumber(v) ?? 0,
+                              ),
+                          onPaidChanged:
+                              _paymentStatus == _PurchasePaymentStatus.partial
+                              ? (value) {
+                                  final parsed = parseFlexibleNumber(value);
+                                  if (parsed != null) {
+                                    cubit.setPaidAmount(parsed);
+                                  } else if (value.trim().isEmpty) {
+                                    cubit.setPaidAmount(0);
+                                  }
+                                }
+                              : null,
+                          onPaymentMethodChanged: cubit.setPaymentMethod,
+                          onCompletePurchase: () =>
+                              _attemptCheckout(cubit, state),
+                          onReturnFromInvoice: () => _showReturnDialog(context),
+                          onCancelInvoice: () => _showCancelDialog(context),
+                          readOnlyMode: _readOnlyMode,
+                          readOnlyMessage: _readOnlyMessage,
+                        ),
+                      );
                       return Flex(
                         direction: compact ? Axis.vertical : Axis.horizontal,
-                        children: [
-                          Expanded(
-                            flex: productsPaneFlex,
-                            child: PurchasesProductsPane(
-                              compact: compact,
-                              searchController: _searchController,
-                              searchResults: _searchResults,
-                              onSearchChanged: _searchProducts,
-                              onAddProduct: () => _createProductDialog(context),
-                              onImportItems: () =>
-                                  _importItemsFromFile(context),
-                              onDownloadTemplate: () =>
-                                  _downloadImportTemplate(context),
-                              onEditProduct: (product) =>
-                                  _createProductDialog(context, product),
-                              onDeleteProduct: (product) =>
-                                  _deleteProductFromEntryList(context, product),
-                              onAddToCart: cubit.addProduct,
-                              importing: _importingItems,
-                              savingTemplate: _savingImportTemplate,
-                              bottomChild: _buildInvoicesExplorer(context),
-                            ),
-                          ),
-                          SizedBox(
-                            width: compact ? 0 : sectionGap,
-                            height: compact ? sectionGap : 0,
-                          ),
-                          Expanded(
-                            flex: cartPaneFlex,
-                            child: PurchasesCartPane(
-                              total: state.total,
-                              loading: state.loading,
-                              paymentStatusIndex: _paymentStatus.index,
-                              paymentStatusItems: [
-                                DropdownMenuItem(
-                                  value: _PurchasePaymentStatus.full.index,
-                                  child: Text('Full Payment'.tr()),
-                                ),
-                                DropdownMenuItem(
-                                  value: _PurchasePaymentStatus.partial.index,
-                                  child: Text('Partial Payment'.tr()),
-                                ),
-                                DropdownMenuItem(
-                                  value: _PurchasePaymentStatus.deferred.index,
-                                  child: Text('Deferred Payment'.tr()),
-                                ),
+                        children: compact
+                            ? <Widget>[
+                                cartPane,
+                                SizedBox(height: sectionGap),
+                                productsPane,
+                              ]
+                            : <Widget>[
+                                productsPane,
+                                SizedBox(width: sectionGap),
+                                cartPane,
                               ],
-                              cartContent: _buildCartTableContent(
-                                context,
-                                state,
-                                cubit,
-                              ),
-                              suppliers: _suppliers,
-                              supplierId: state.supplierId,
-                              taxPercentController: _taxPercentController,
-                              paidController: _paidController,
-                              paidAmountFocusNode: _paidAmountFocusNode,
-                              taxAmount: state.taxAmount,
-                              outstandingAmount:
-                                  (state.total - state.paidAmount)
-                                      .clamp(0, state.total)
-                                      .toDouble(),
-                              paymentMethod: state.paymentMethod,
-                              paidFieldEnabled:
-                                  _paymentStatus ==
-                                  _PurchasePaymentStatus.partial,
-                              onAddSupplier: () =>
-                                  _createSupplierDialog(context),
-                              onSupplierChanged: cubit.setSupplier,
-                              onPaymentStatusChanged: (value) {
-                                if (value == null) return;
-                                final selectedStatus =
-                                    _PurchasePaymentStatus.values[value];
-                                setState(() => _paymentStatus = selectedStatus);
-                                if (selectedStatus ==
-                                    _PurchasePaymentStatus.full) {
-                                  cubit.setPaidAmount(state.total);
-                                } else if (selectedStatus ==
-                                    _PurchasePaymentStatus.deferred) {
-                                  cubit.setPaidAmount(0);
-                                }
-                              },
-                              onTaxChanged: (v) => context
-                                  .read<PurchasesCubit>()
-                                  .setTaxPercentage(
-                                    parseFlexibleNumber(v) ?? 0,
-                                  ),
-                              onPaidChanged:
-                                  _paymentStatus ==
-                                      _PurchasePaymentStatus.partial
-                                  ? (value) {
-                                      final parsed = parseFlexibleNumber(value);
-                                      if (parsed != null) {
-                                        cubit.setPaidAmount(parsed);
-                                      } else if (value.trim().isEmpty) {
-                                        cubit.setPaidAmount(0);
-                                      }
-                                    }
-                                  : null,
-                              onPaymentMethodChanged: cubit.setPaymentMethod,
-                              onCompletePurchase: () =>
-                                  _attemptCheckout(cubit, state),
-                              onReturnFromInvoice: () =>
-                                  _showReturnDialog(context),
-                              onCancelInvoice: () => _showCancelDialog(context),
-                              readOnlyMode: _readOnlyMode,
-                              readOnlyMessage: _readOnlyMessage,
-                            ),
-                          ),
-                        ],
                       );
                     },
                   ),
                 ),
-                if (MediaQuery.sizeOf(context).width <
-                    _compactLayoutBreakpoint) ...[
-                  SizedBox(height: sectionGap),
-                  SizedBox(
-                    height: MediaQuery.sizeOf(context).height * 0.5,
-                    child: _buildInvoicesExplorer(context),
-                  ),
-                ],
               ],
             ),
           );
@@ -1572,11 +1601,17 @@ class _PurchasesPageState extends State<PurchasesPage> {
       initialPurchaseItemId: initialPurchaseItemId,
       initialQuantity: initialQuantity,
       activeInvoiceId: _activeInvoiceId,
+      activeInvoiceDisplayNumber: _activeInvoiceNumber,
       activeInvoiceLines: _activeInvoiceLines,
       parseFlexibleInt: parseFlexibleInt,
       parseFlexibleNumber: parseFlexibleNumber,
       formatInvoiceQuantity: formatInvoiceQuantityValue,
       animateDialogEntrance: _animateDialogEntrance,
+      lookupPurchaseInvoiceSuggestion: (id) =>
+          getIt<PurchasesRepository>()
+              .lookupPurchaseInvoiceSuggestionForReturn(id),
+      searchPurchaseInvoicesForReturn: (prefix) =>
+          getIt<PurchasesRepository>().suggestPurchaseInvoicesForReturn(prefix),
       loadInvoiceLines: (purchaseId) =>
           getIt<PurchasesRepository>().listInvoiceLines(purchaseId),
       onReturnPurchaseItem:
@@ -1652,41 +1687,7 @@ class _PurchasesPageState extends State<PurchasesPage> {
     );
   }
 
-  Widget _buildInvoicesExplorer(BuildContext blocContext) {
-    return PurchasesInvoicesExplorer(
-      fromDate: widget.fromDate,
-      toDate: widget.toDate,
-      accountId: widget.accountId,
-      categoryId: widget.categoryId,
-      loadingInvoices: _loadingInvoices,
-      invoiceRows: _invoiceRows,
-      invoiceScrollController: _invoiceScrollController,
-      activeInvoiceId: _activeInvoiceId,
-      activeInvoiceNumber: _activeInvoiceNumber,
-      activePurchaseItemId: _activePurchaseItemId,
-      invoicePage: _invoicePage,
-      invoicePageSize: _invoicePageSize,
-      invoiceLabelBuilder: buildPurchaseInvoiceLabel,
-      onSelectInvoice: _selectInvoice,
-      onReturnSelected: () => _showReturnDialog(
-        blocContext,
-        initialPurchaseId: _activeInvoiceId,
-        initialPurchaseItemId: _activePurchaseItemId,
-      ),
-      onShowDetails: () => _showInvoiceDetailsDialog(blocContext),
-      onCancelSelected: () =>
-          _showCancelDialog(blocContext, initialPurchaseId: _activeInvoiceId),
-      onPreviousPage: () {
-        setState(() => _invoicePage -= 1);
-        _loadInvoices();
-      },
-      onNextPage: () {
-        setState(() => _invoicePage += 1);
-        _loadInvoices();
-      },
-    );
-  }
-
+  // ignore: unused_element
   Future<void> _selectInvoice(PurchaseInvoiceSummary row) async {
     final lines = await getIt<PurchasesRepository>().listInvoiceLines(row.id);
     PurchaseInvoiceLine? selectedLine;
@@ -1712,6 +1713,7 @@ class _PurchasesPageState extends State<PurchasesPage> {
     );
   }
 
+  // ignore: unused_element
   Future<void> _showInvoiceDetailsDialog(BuildContext context) async {
     final pageContext = context;
     final invoiceId = _activeInvoiceId;

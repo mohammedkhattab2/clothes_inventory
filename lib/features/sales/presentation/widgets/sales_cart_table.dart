@@ -47,36 +47,97 @@ class SalesCartTable extends StatelessWidget {
       );
     }
 
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          minWidth: MediaQuery.sizeOf(context).width < 1200 ? 760 : 820,
-        ),
-        child: SingleChildScrollView(
-          child: DataTable(
-            headingRowHeight: MediaQuery.sizeOf(context).height < 760 ? 40 : 46,
-            dataRowMinHeight: MediaQuery.sizeOf(context).height < 760 ? 40 : 46,
-            dataRowMaxHeight: MediaQuery.sizeOf(context).height < 760 ? 40 : 46,
-            horizontalMargin: 10,
-            columnSpacing: MediaQuery.sizeOf(context).height < 760 ? 16 : 20,
-            columns: [
-              DataColumn(label: Text('Product'.tr())),
-              DataColumn(label: Text('Unit'.tr())),
-              DataColumn(numeric: true, label: Text('Quantity'.tr())),
-              DataColumn(numeric: true, label: Text('Available'.tr())),
-              DataColumn(numeric: true, label: Text('Unit Price'.tr())),
-              DataColumn(numeric: true, label: Text('Line Total'.tr())),
-              DataColumn(label: Text('Actions'.tr())),
-            ],
-            rows: cart
-                .map(
-                  (item) => DataRow(
-                    cells: [
-                      DataCell(Text(item.productName)),
-                      DataCell(Text(item.unitType)),
-                      DataCell(
-                        Builder(
+    final colorScheme = Theme.of(context).colorScheme;
+    final dense = MediaQuery.sizeOf(context).height < 760;
+    final borderSide = BorderSide(
+      color: colorScheme.outlineVariant.withValues(alpha: 0.65),
+    );
+    final tableBorder = TableBorder(
+      top: borderSide,
+      bottom: borderSide,
+      horizontalInside: borderSide,
+    );
+
+    TextStyle? headerStyle(BuildContext c) =>
+        Theme.of(c).textTheme.labelLarge?.copyWith(
+          fontWeight: FontWeight.w700,
+          color: colorScheme.onSurface,
+        );
+
+    Widget headerCell(String text, {TextAlign align = TextAlign.start}) {
+      return Padding(
+        padding: EdgeInsets.symmetric(horizontal: 8, vertical: dense ? 8 : 10),
+        child: Text(text, textAlign: align, style: headerStyle(context)),
+      );
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final tableWidth = constraints.hasBoundedWidth &&
+                constraints.maxWidth.isFinite &&
+                constraints.maxWidth > 0
+            ? constraints.maxWidth
+            : MediaQuery.sizeOf(context).width;
+
+        return SingleChildScrollView(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minWidth: tableWidth),
+            child: Table(
+              columnWidths: const {
+                0: FlexColumnWidth(2.0),
+                1: FlexColumnWidth(0.6),
+                2: FlexColumnWidth(0.95),
+                3: FlexColumnWidth(0.75),
+                4: FlexColumnWidth(0.95),
+                5: FlexColumnWidth(0.95),
+                6: FlexColumnWidth(1.5),
+              },
+              border: tableBorder,
+              defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+              children: [
+                TableRow(
+                  decoration: BoxDecoration(
+                    color: colorScheme.surfaceContainerHighest.withValues(
+                      alpha: 0.35,
+                    ),
+                  ),
+                  children: [
+                    headerCell('Product'.tr()),
+                    headerCell('Unit'.tr()),
+                    headerCell('Quantity'.tr(), align: TextAlign.end),
+                    headerCell('Available'.tr(), align: TextAlign.end),
+                    headerCell('Unit Price'.tr(), align: TextAlign.end),
+                    headerCell('Line Total'.tr(), align: TextAlign.end),
+                    headerCell('Actions'.tr()),
+                  ],
+                ),
+                ...cart.map((item) {
+                  return TableRow(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        child: Text(
+                          item.productName,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        child: Text(item.unitType),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 4,
+                          vertical: 2,
+                        ),
+                        child: Builder(
                           builder: (context) {
                             final controller = qtyControllerFor(item);
                             final focusNode = qtyFocusNodeFor(item, controller);
@@ -101,71 +162,78 @@ class SalesCartTable extends StatelessWidget {
                               );
                             }
 
-                            return SizedBox(
-                              width: 90,
-                              child: TextField(
-                                controller: controller,
-                                focusNode: focusNode,
-                                keyboardType:
-                                    const TextInputType.numberWithOptions(
-                                      decimal: true,
+                            return Align(
+                              alignment: Alignment.centerRight,
+                              child: SizedBox(
+                                width: double.infinity,
+                                child: TextField(
+                                  controller: controller,
+                                  focusNode: focusNode,
+                                  textAlign: TextAlign.end,
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                        decimal: true,
+                                      ),
+                                  inputFormatters: [
+                                    FilteringTextInputFormatter.allow(
+                                      RegExp(r'[0-9٠-٩.,٫٬]'),
                                     ),
-                                inputFormatters: [
-                                  FilteringTextInputFormatter.allow(
-                                    RegExp(r'[0-9٠-٩.,٫٬]'),
-                                  ),
-                                ],
-                                textInputAction: TextInputAction.done,
-                                style: isOverStockDraft
-                                    ? TextStyle(
-                                        color: Theme.of(
-                                          context,
-                                        ).colorScheme.error,
-                                        fontWeight: FontWeight.w700,
-                                      )
-                                    : null,
-                                onChanged: (value) {
-                                  onDraftChanged(item, value);
-                                  final parsed = parseFlexibleNumber(value);
-                                  if (parsed == null) return;
+                                  ],
+                                  textInputAction: TextInputAction.done,
+                                  style: isOverStockDraft
+                                      ? TextStyle(
+                                          color: colorScheme.error,
+                                          fontWeight: FontWeight.w700,
+                                        )
+                                      : null,
+                                  onChanged: (value) {
+                                    onDraftChanged(item, value);
+                                    final parsed = parseFlexibleNumber(value);
+                                    if (parsed == null) return;
 
-                                  if (parsed <= 0) {
-                                    onRemoveItem(item.productId);
+                                    if (parsed <= 0) {
+                                      onRemoveItem(item.productId);
+                                      onDraftCleared(item.productId);
+                                      return;
+                                    }
+
+                                    if (item.unitType == pieceUnitTypeName &&
+                                        parsed != parsed.roundToDouble()) {
+                                      return;
+                                    }
+
+                                    if (parsed >
+                                        item.availableStock + 0.000001) {
+                                      return;
+                                    }
+
+                                    onUpdateItemQuantity(item.productId, parsed);
+                                  },
+                                  onSubmitted: (value) {
+                                    onApplyInlineQuantity(item, value);
                                     onDraftCleared(item.productId);
-                                    return;
-                                  }
-
-                                  if (item.unitType == pieceUnitTypeName &&
-                                      parsed != parsed.roundToDouble()) {
-                                    return;
-                                  }
-
-                                  if (parsed > item.availableStock + 0.000001) {
-                                    return;
-                                  }
-
-                                  onUpdateItemQuantity(item.productId, parsed);
-                                },
-                                onSubmitted: (value) {
-                                  onApplyInlineQuantity(item, value);
-                                  onDraftCleared(item.productId);
-                                },
-                                onTapOutside: (_) {
-                                  final draft =
-                                      inlineQuantityDrafts[item.productId];
-                                  if (draft == null || draft.trim().isEmpty) {
-                                    return;
-                                  }
-                                  onApplyInlineQuantity(item, draft);
-                                  onDraftCleared(item.productId);
-                                },
+                                  },
+                                  onTapOutside: (_) {
+                                    final draft =
+                                        inlineQuantityDrafts[item.productId];
+                                    if (draft == null || draft.trim().isEmpty) {
+                                      return;
+                                    }
+                                    onApplyInlineQuantity(item, draft);
+                                    onDraftCleared(item.productId);
+                                  },
+                                ),
                               ),
                             );
                           },
                         ),
                       ),
-                      DataCell(
-                        Builder(
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        child: Builder(
                           builder: (context) {
                             final rawDraft =
                                 inlineQuantityDrafts[item.productId];
@@ -179,14 +247,13 @@ class SalesCartTable extends StatelessWidget {
 
                             return Text(
                               item.availableStock.toStringAsFixed(0),
+                              textAlign: TextAlign.end,
                               style:
                                   (draftOverStock ||
                                       (item.quantity >
                                           item.availableStock + 0.000001))
                                   ? TextStyle(
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.error,
+                                      color: colorScheme.error,
                                       fontWeight: FontWeight.w700,
                                     )
                                   : null,
@@ -194,11 +261,31 @@ class SalesCartTable extends StatelessWidget {
                           },
                         ),
                       ),
-                      DataCell(Text(item.unitPrice.toStringAsFixed(2))),
-                      DataCell(Text(item.lineTotal.toStringAsFixed(2))),
-                      DataCell(
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        child: Text(
+                          item.unitPrice.toStringAsFixed(2),
+                          textAlign: TextAlign.end,
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        child: Text(
+                          item.lineTotal.toStringAsFixed(2),
+                          textAlign: TextAlign.end,
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2),
+                        child: Wrap(
+                          alignment: WrapAlignment.end,
+                          spacing: 0,
                           children: [
                             IconButton(
                               visualDensity: VisualDensity.compact,
@@ -271,12 +358,13 @@ class SalesCartTable extends StatelessWidget {
                         ),
                       ),
                     ],
-                  ),
-                )
-                .toList(),
+                  );
+                }),
+              ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }

@@ -16,6 +16,8 @@ import 'package:clothes_inventory/features/products/presentation/widgets/product
 import 'package:clothes_inventory/features/products/presentation/widgets/products_page_layout.dart';
 import 'package:clothes_inventory/features/products/presentation/widgets/products_table_section.dart';
 import 'package:clothes_inventory/services/di/service_locator.dart';
+import 'package:clothes_inventory/services/printing/product_barcode_label_printer.dart';
+import 'package:clothes_inventory/services/printing/thermal_printer_preferences.dart';
 import 'package:clothes_inventory/services/platform/folder_opener_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -39,6 +41,8 @@ class _ProductsPageState extends State<ProductsPage> {
 
   Timer? _debounce;
   late final ProductsCubit _productsCubit;
+  late final ProductRepository _productRepository;
+  late final ProductBarcodeLabelPrinter _barcodeLabelPrinter;
   final _nameController = TextEditingController();
   final _barcodeController = TextEditingController();
   final _leftColumnSearchController = TextEditingController();
@@ -64,6 +68,11 @@ class _ProductsPageState extends State<ProductsPage> {
   void initState() {
     super.initState();
     _productsCubit = getIt<ProductsCubit>();
+    _productRepository = getIt<ProductRepository>();
+    _barcodeLabelPrinter = const ProductBarcodeLabelPrinter(
+      paperWidthMm: 58,
+      printerPrefs: ThermalPrinterPreferences(),
+    );
     _restoreProductsPageState();
   }
 
@@ -720,6 +729,8 @@ class _ProductsPageState extends State<ProductsPage> {
       context: context,
       builder: (_) => ProductFormDialog(
         product: product,
+        onGenerateBarcode: _generateBarcodeFromPrefix,
+        onPrintBarcode: _printProductBarcodeLabel,
         onSave: (payload) {
           if (product == null) {
             return context.read<ProductsCubit>().create(payload);
@@ -728,6 +739,31 @@ class _ProductsPageState extends State<ProductsPage> {
         },
       ),
     );
+  }
+
+  Future<String> _generateBarcodeFromPrefix(String prefix) {
+    return _productRepository.generateNextBarcodeFromPrefix(prefix: prefix);
+  }
+
+  Future<void> _printProductBarcodeLabel({
+    required String productName,
+    required String barcode,
+  }) async {
+    try {
+      await _barcodeLabelPrinter.printLabel(
+        productName: productName,
+        barcodeValue: barcode,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Barcode label sent to printer'.tr())),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${'Failed to print barcode'.tr()}: $e')),
+      );
+    }
   }
 
   Future<void> _deleteSelectedProducts(BuildContext context) async {

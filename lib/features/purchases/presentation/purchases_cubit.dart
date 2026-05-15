@@ -10,7 +10,8 @@ class PurchasesState extends Equatable {
   const PurchasesState({
     this.supplierId,
     this.cart = const <PurchaseDraftItem>[],
-    this.taxPercentage = 0,
+    this.headerDiscountKind = InvoiceHeaderDiscountKind.percent,
+    this.headerDiscountValue = 0,
     this.paidAmount = 0,
     this.paymentMethod = PaymentMethod.cash,
     this.loading = false,
@@ -20,7 +21,8 @@ class PurchasesState extends Equatable {
 
   final int? supplierId;
   final List<PurchaseDraftItem> cart;
-  final double taxPercentage;
+  final InvoiceHeaderDiscountKind headerDiscountKind;
+  final double headerDiscountValue;
   final double paidAmount;
   final PaymentMethod paymentMethod;
   final bool loading;
@@ -30,14 +32,19 @@ class PurchasesState extends Equatable {
   double get subtotal =>
       roundCurrency(cart.fold<double>(0, (sum, item) => sum + item.lineTotal));
 
-  double get taxAmount => roundCurrency(subtotal * (taxPercentage / 100));
+  double get headerDiscountAmount => computeInvoiceHeaderDiscountAmount(
+        subtotal: subtotal,
+        kind: headerDiscountKind,
+        value: headerDiscountValue,
+      );
 
-  double get total => roundCurrency(subtotal + taxAmount);
+  double get total => roundCurrency(subtotal - headerDiscountAmount);
 
   PurchasesState copyWith({
     int? supplierId,
     List<PurchaseDraftItem>? cart,
-    double? taxPercentage,
+    InvoiceHeaderDiscountKind? headerDiscountKind,
+    double? headerDiscountValue,
     double? paidAmount,
     PaymentMethod? paymentMethod,
     bool? loading,
@@ -48,7 +55,8 @@ class PurchasesState extends Equatable {
     return PurchasesState(
       supplierId: supplierId ?? this.supplierId,
       cart: cart ?? this.cart,
-      taxPercentage: taxPercentage ?? this.taxPercentage,
+      headerDiscountKind: headerDiscountKind ?? this.headerDiscountKind,
+      headerDiscountValue: headerDiscountValue ?? this.headerDiscountValue,
       paidAmount: paidAmount ?? this.paidAmount,
       paymentMethod: paymentMethod ?? this.paymentMethod,
       loading: loading ?? this.loading,
@@ -61,7 +69,8 @@ class PurchasesState extends Equatable {
   List<Object?> get props => [
     supplierId,
     cart,
-    taxPercentage,
+    headerDiscountKind,
+    headerDiscountValue,
     paidAmount,
     paymentMethod,
     loading,
@@ -94,9 +103,15 @@ class PurchasesCubit extends Cubit<PurchasesState> {
     emit(state.copyWith(paidAmount: roundCurrency(value)));
   }
 
-  void setTaxPercentage(double value) {
-    final normalized = value.clamp(0, 100).toDouble();
-    emit(state.copyWith(taxPercentage: roundCurrency(normalized)));
+  void setHeaderDiscountKind(InvoiceHeaderDiscountKind kind) {
+    emit(state.copyWith(headerDiscountKind: kind));
+  }
+
+  void setHeaderDiscountValue(double value) {
+    final normalized = state.headerDiscountKind == InvoiceHeaderDiscountKind.percent
+        ? roundCurrency(value.clamp(0, 100))
+        : roundCurrency(value.clamp(0, double.infinity));
+    emit(state.copyWith(headerDiscountValue: normalized));
   }
 
   void setPaymentMethod(PaymentMethod method) {
@@ -182,7 +197,8 @@ class PurchasesCubit extends Cubit<PurchasesState> {
         PurchaseCreateRequest(
           supplierId: state.supplierId!,
           items: state.cart,
-          taxPercentage: state.taxPercentage,
+          headerDiscountKind: state.headerDiscountKind,
+          headerDiscountValue: state.headerDiscountValue,
           paidAmount: state.paidAmount,
           paymentMethod: state.paymentMethod,
           notes: notes,

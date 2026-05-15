@@ -19,6 +19,8 @@ import 'package:clothes_inventory/features/products/data/products_import_service
 import 'package:clothes_inventory/features/products/data/product_repository.dart';
 import 'package:clothes_inventory/features/products/domain/product.dart';
 import 'package:clothes_inventory/services/di/service_locator.dart';
+import 'package:clothes_inventory/services/printing/product_barcode_label_printer.dart';
+import 'package:clothes_inventory/services/printing/thermal_printer_preferences.dart';
 
 class InventoryPage extends StatelessWidget {
   const InventoryPage({super.key});
@@ -41,6 +43,10 @@ class _InventoryViewState extends State<_InventoryView> {
 
   late Future<List<InventoryStockRow>> _rowsFuture;
   final _productRepository = getIt<ProductRepository>();
+  final _barcodeLabelPrinter = const ProductBarcodeLabelPrinter(
+    paperWidthMm: 58,
+    printerPrefs: ThermalPrinterPreferences(),
+  );
   final _inventoryImportService = InventoryProductsImportService();
   final _inventoryTemplateService = InventoryImportTemplateService();
   final _searchController = TextEditingController();
@@ -511,10 +517,7 @@ class _InventoryViewState extends State<_InventoryView> {
     });
   }
 
-  double? _parseFlexibleNumber(String raw) {
-    final trimmed = raw.trim();
-    if (trimmed.isEmpty) return null;
-
+  String _normalizeDigits(String raw) {
     const arabicIndicDigits = {
       '٠': '0',
       '١': '1',
@@ -528,10 +531,18 @@ class _InventoryViewState extends State<_InventoryView> {
       '٩': '9',
     };
 
-    var normalized = trimmed;
+    var normalized = raw;
     arabicIndicDigits.forEach((key, value) {
       normalized = normalized.replaceAll(key, value);
     });
+    return normalized;
+  }
+
+  double? _parseFlexibleNumber(String raw) {
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) return null;
+
+    var normalized = _normalizeDigits(trimmed);
 
     normalized = normalized
         .replaceAll('٬', '')
@@ -539,6 +550,30 @@ class _InventoryViewState extends State<_InventoryView> {
         .replaceAll(',', '.');
 
     return double.tryParse(normalized);
+  }
+
+  Future<String> _generateBarcodeFromPrefix(String prefix) {
+    return _productRepository.generateNextBarcodeFromPrefix(prefix: prefix);
+  }
+
+  Future<void> _printProductBarcodeLabel({
+    required String productName,
+    required String barcode,
+    required int quantity,
+  }) async {
+    final copies = quantity < 1 ? 1 : quantity;
+    try {
+      await _barcodeLabelPrinter.printLabel(
+        productName: productName,
+        barcodeValue: barcode,
+        copies: copies,
+      );
+      if (!mounted) return;
+      _showLatestSnackBar('Barcode label sent to printer'.tr());
+    } catch (e) {
+      if (!mounted) return;
+      _showLatestSnackBar('${'Failed to print barcode'.tr()}: $e');
+    }
   }
 
   Future<void> _showAddProductDialog() async {
@@ -551,7 +586,30 @@ class _InventoryViewState extends State<_InventoryView> {
     final purchasePrice = TextEditingController();
     final lowStock = TextEditingController();
     final openingQty = TextEditingController();
+    final barcodeFocus = FocusNode();
     var unit = UnitType.piece;
+    var generatingBarcode = false;
+
+    Future<void> tryAutoGenerateBarcode(StateSetter setDialogState) async {
+      final prefix = _normalizeDigits(barcode.text).trim();
+      if (!RegExp(r'^\d{4}$').hasMatch(prefix) || generatingBarcode) {
+        return;
+      }
+
+      setDialogState(() => generatingBarcode = true);
+      try {
+        final generated = await _generateBarcodeFromPrefix(prefix);
+        barcode.text = generated;
+        barcode.selection = TextSelection.collapsed(offset: generated.length);
+      } catch (e) {
+        if (!mounted) return;
+        _showLatestSnackBar('${'Failed to generate barcode'.tr()}: $e');
+      } finally {
+        if (mounted) {
+          setDialogState(() => generatingBarcode = false);
+        }
+      }
+    }
 
     try {
       final saved = await showDialog<bool>(
@@ -615,10 +673,48 @@ class _InventoryViewState extends State<_InventoryView> {
                                       : null,
                                 ),
                                 const SizedBox(height: 10),
-                                TextFormField(
-                                  controller: barcode,
-                                  decoration: InputDecoration(
-                                    labelText: 'Barcode (optional)'.tr(),
+                                Focus(
+                                  onKeyEvent: (node, event) {
+                                    if (event is KeyDownEvent &&
+                                        event.logicalKey ==
+                                            LogicalKeyboardKey.tab) {
+                                      tryAutoGenerateBarcode(setDialogState);
+                                    }
+                                    return KeyEventResult.ignored;
+                                  },
+                                  child: TextFormField(
+                                    controller: barcode,
+                                    focusNode: barcodeFocus,
+                                    textInputAction: TextInputAction.next,
+                                    inputFormatters: [
+                                      FilteringTextInputFormatter.allow(
+                                        RegExp(r'[0-9٠-٩]'),
+                                      ),
+                                    ],
+                                    onEditingComplete: () {
+                                      tryAutoGenerateBarcode(setDialogState);
+                                      FocusScope.of(dialogContext).nextFocus();
+                                    },
+                                    decoration: InputDecoration(
+                                      labelText: 'Barcode (optional)'.tr(),
+                                      helperText:
+                                          'Enter 4 digits then press Tab'.tr(),
+                                      suffixIcon: generatingBarcode
+                                          ? const Padding(
+                                              padding: EdgeInsets.all(10),
+                                              child: SizedBox(
+                                                width: 16,
+                                                height: 16,
+                                                child:
+                                                    CircularProgressIndicator(
+                                                      strokeWidth: 2,
+                                                    ),
+                                              ),
+                                            )
+                                          : const Icon(
+                                              Icons.qr_code_2_outlined,
+                                            ),
+                                    ),
                                   ),
                                 ),
                                 const SizedBox(height: 10),
@@ -773,6 +869,40 @@ class _InventoryViewState extends State<_InventoryView> {
                           spacing: 8,
                           runSpacing: 8,
                           children: [
+                            OutlinedButton.icon(
+                              onPressed: submitting || generatingBarcode
+                                  ? null
+                                  : () async {
+                                      final productName = name.text.trim();
+                                      final productBarcode = _normalizeDigits(
+                                        barcode.text,
+                                      ).trim();
+                                      if (productName.isEmpty ||
+                                          productBarcode.isEmpty) {
+                                        _showLatestSnackBar(
+                                          'Enter product name and barcode first'
+                                              .tr(),
+                                        );
+                                        return;
+                                      }
+
+                                      final parsedQty =
+                                          _parseFlexibleNumber(
+                                            openingQty.text,
+                                          ) ??
+                                          1;
+                                      final quantity = parsedQty < 1
+                                          ? 1
+                                          : parsedQty.round();
+                                      await _printProductBarcodeLabel(
+                                        productName: productName,
+                                        barcode: productBarcode,
+                                        quantity: quantity,
+                                      );
+                                    },
+                              icon: const Icon(Icons.print_outlined),
+                              label: Text('Print Barcode'.tr()),
+                            ),
                             TextButton(
                               onPressed: submitting
                                   ? null
@@ -812,9 +942,14 @@ class _InventoryViewState extends State<_InventoryView> {
                                       final product = Product(
                                         id: null,
                                         name: name.text.trim(),
-                                        barcode: barcode.text.trim().isEmpty
+                                        barcode:
+                                            _normalizeDigits(
+                                              barcode.text,
+                                            ).trim().isEmpty
                                             ? null
-                                            : barcode.text.trim(),
+                                            : _normalizeDigits(
+                                                barcode.text,
+                                              ).trim(),
                                         categoryId: null,
                                         unitType: unit,
                                         salePrice: sale ?? 0,

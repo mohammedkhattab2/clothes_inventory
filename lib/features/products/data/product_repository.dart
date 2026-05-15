@@ -325,6 +325,62 @@ class ProductRepository {
     }, conflictAlgorithm: ConflictAlgorithm.abort);
   }
 
+  Future<String> generateNextBarcodeFromPrefix({
+    required String prefix,
+    int targetLength = 13,
+  }) async {
+    final normalized = prefix.trim();
+    if (!RegExp(r'^\d{4}$').hasMatch(normalized)) {
+      throw ArgumentError('Prefix must be exactly 4 digits.');
+    }
+
+    if (targetLength <= normalized.length) {
+      throw ArgumentError('Target length must be greater than prefix length.');
+    }
+
+    final suffixLength = targetLength - normalized.length;
+    final maxSuffix = (pow10(suffixLength) - 1);
+
+    final db = await _appDatabase.database;
+    final rows = await db.query(
+      'products',
+      columns: const ['barcode'],
+      where: 'barcode LIKE ?',
+      whereArgs: ['$normalized%'],
+      orderBy: 'barcode DESC',
+    );
+
+    var highest = -1;
+    for (final row in rows) {
+      final raw = (row['barcode'] as String?)?.trim();
+      if (raw == null || raw.length != targetLength) {
+        continue;
+      }
+      if (!raw.startsWith(normalized) || !RegExp(r'^\d+$').hasMatch(raw)) {
+        continue;
+      }
+      final suffix = int.tryParse(raw.substring(normalized.length));
+      if (suffix != null && suffix > highest) {
+        highest = suffix;
+      }
+    }
+
+    final next = highest + 1;
+    if (next > maxSuffix) {
+      throw StateError('Barcode range exhausted for prefix $normalized.');
+    }
+
+    return '$normalized${next.toString().padLeft(suffixLength, '0')}';
+  }
+
+  int pow10(int exponent) {
+    var value = 1;
+    for (var i = 0; i < exponent; i++) {
+      value *= 10;
+    }
+    return value;
+  }
+
   Future<void> updateProduct(Product product) async {
     _ensureWriteAllowed();
     final id = product.id;

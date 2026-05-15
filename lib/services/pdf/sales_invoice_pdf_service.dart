@@ -79,11 +79,17 @@ class SalesInvoicePdfService {
           )
           .toList(growable: false),
       total: (sale['total_amount'] as num).toStringAsFixed(2),
+      invoiceFooterNote: company.invoiceFooterNote,
+      invoiceFooterImageBytes: await _companySettingsService.loadFooterImageBytes(),
     );
     final doc = await _createDocumentWithSafeFonts();
     final companyLogo = await _loadCompanyLogo();
 
-    buildA4RtlInvoicePage(document: doc, data: invoiceData, logo: companyLogo);
+    buildA4RtlInvoicePage(
+      document: doc,
+      data: invoiceData,
+      logo: companyLogo,
+    );
 
     return doc.save();
   }

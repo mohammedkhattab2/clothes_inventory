@@ -20,14 +20,23 @@ class AppEmptyState extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final iconSize = compact ? 24.0 : 30.0;
-    final horizontalPadding = compact ? 14.0 : 18.0;
-    final verticalPadding = compact ? 14.0 : 20.0;
+    final maxWidth = compact ? 380.0 : 460.0;
 
-    return Center(
-      child: ConstrainedBox(
-        constraints: BoxConstraints(maxWidth: compact ? 380 : 460),
-        child: Container(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxH = constraints.maxHeight;
+        final tightHeight = maxH.isFinite && maxH > 0 && maxH < 140;
+        final iconSize =
+            compact ? (tightHeight ? 20.0 : 24.0) : (tightHeight ? 24.0 : 30.0);
+        final horizontalPadding = compact ? 14.0 : 18.0;
+        final verticalPadding = tightHeight
+            ? 8.0
+            : (compact ? 14.0 : 20.0);
+        final gapAfterIcon = tightHeight
+            ? 4.0
+            : (compact ? 8.0 : 10.0);
+
+        final card = Container(
           width: double.infinity,
           padding: EdgeInsets.symmetric(
             horizontal: horizontalPadding,
@@ -46,10 +55,12 @@ class AppEmptyState extends StatelessWidget {
                 size: iconSize,
                 color: colorScheme.onSurfaceVariant,
               ),
-              SizedBox(height: compact ? 8 : 10),
+              SizedBox(height: gapAfterIcon),
               Text(
                 title,
                 textAlign: TextAlign.center,
+                maxLines: tightHeight ? 2 : null,
+                overflow: tightHeight ? TextOverflow.ellipsis : null,
                 style:
                     (compact
                             ? theme.textTheme.labelLarge
@@ -64,6 +75,8 @@ class AppEmptyState extends StatelessWidget {
                 Text(
                   subtitle!,
                   textAlign: TextAlign.center,
+                  maxLines: tightHeight ? 2 : null,
+                  overflow: tightHeight ? TextOverflow.ellipsis : null,
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: colorScheme.onSurfaceVariant,
                   ),
@@ -75,8 +88,29 @@ class AppEmptyState extends StatelessWidget {
               ],
             ],
           ),
-        ),
-      ),
+        );
+
+        if (maxH.isFinite && maxH > 0) {
+          return Center(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: maxWidth, maxHeight: maxH),
+              child: SingleChildScrollView(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(maxWidth: maxWidth),
+                  child: card,
+                ),
+              ),
+            ),
+          );
+        }
+
+        return Center(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: maxWidth),
+            child: card,
+          ),
+        );
+      },
     );
   }
 }

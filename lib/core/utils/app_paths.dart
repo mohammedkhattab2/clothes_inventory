@@ -6,6 +6,25 @@ import 'package:path/path.dart' as p;
 class AppPaths {
   AppPaths._();
 
+  /// Forces all app-side paths (`app.db`, logs, backups) under [rootPath].
+  /// Only for unit/widget tests — must be cleared before the real app runs in
+  /// the same isolate.
+  static String? _testApplicationDataRootOverride;
+
+  @visibleForTesting
+  static void bindTestApplicationDataRoot(String rootPath) {
+    final trimmed = rootPath.trim();
+    if (trimmed.isEmpty) {
+      throw ArgumentError.value(rootPath, 'rootPath');
+    }
+    _testApplicationDataRootOverride = p.normalize(trimmed);
+  }
+
+  @visibleForTesting
+  static void clearTestApplicationDataRoot() {
+    _testApplicationDataRootOverride = null;
+  }
+
   static const String _appFolderName = 'ClothesInventoryApp';
   static const String _dbFileName = 'app.db';
   static const String _logsFileName = 'logs.txt';
@@ -119,6 +138,11 @@ class AppPaths {
   }
 
   static String _resolveBaseAppDataPath() {
+    final testRoot = _testApplicationDataRootOverride;
+    if (testRoot != null && testRoot.isNotEmpty) {
+      return testRoot;
+    }
+
     if (Platform.isWindows) {
       final localAppData = Platform.environment['LOCALAPPDATA'];
       if (localAppData == null || localAppData.trim().isEmpty) {

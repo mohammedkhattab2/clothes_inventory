@@ -4,11 +4,22 @@ import 'package:flutter/services.dart';
 import 'package:clothes_inventory/features/products/domain/product.dart';
 
 class ProductFormDialog extends StatefulWidget {
-  const ProductFormDialog({super.key, required this.onSave, this.product});
+  const ProductFormDialog({
+    super.key,
+    required this.onSave,
+    this.product,
+    this.onGenerateBarcode,
+    this.onPrintBarcode,
+  });
 
   final Product? product;
   final Future<void> Function(Product payload) onSave;
-
+  final Future<String> Function(String prefix)? onGenerateBarcode;
+  final Future<void> Function({
+    required String productName,
+    required String barcode,
+  })?
+  onPrintBarcode;
   @override
   State<ProductFormDialog> createState() => _ProductFormDialogState();
 }
@@ -22,7 +33,9 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
   late final TextEditingController _salePriceWholesale;
   late final TextEditingController _purchasePrice;
   late final TextEditingController _lowStock;
+  late final FocusNode _barcodeFocus;
   late UnitType _unit;
+  bool _generatingBarcode = false;
 
   @override
   void initState() {
@@ -49,7 +62,13 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     _lowStock = TextEditingController(
       text: product == null ? '' : product.lowStockThreshold.toStringAsFixed(0),
     );
+    _barcodeFocus = FocusNode();
     _unit = product?.unitType ?? UnitType.piece;
+    _barcodeFocus.addListener(() {
+      if (!_barcodeFocus.hasFocus) {
+        _tryAutoGenerateBarcode();
+      }
+    });
   }
 
   @override
@@ -59,9 +78,77 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     _salePriceRetail.dispose();
     _salePriceHalfWholesale.dispose();
     _salePriceWholesale.dispose();
-    _purchasePrice.dispose();
     _lowStock.dispose();
+    _barcodeFocus.dispose();
     super.dispose();
+  }
+
+  String _normalizeDigits(String raw) {
+    const arabicIndicDigits = {
+      '٠': '0',
+      '١': '1',
+      '٢': '2',
+      '٣': '3',
+      '٤': '4',
+      '٥': '5',
+      '٦': '6',
+      '٧': '7',
+      '٨': '8',
+      '٩': '9',
+    };
+
+    var normalized = raw;
+    arabicIndicDigits.forEach((key, value) {
+      normalized = normalized.replaceAll(key, value);
+    });
+    return normalized;
+  }
+
+  Future<void> _tryAutoGenerateBarcode() async {
+    if (widget.product != null || widget.onGenerateBarcode == null) {
+      return;
+    }
+
+    final prefix = _normalizeDigits(_barcode.text).trim();
+    if (!RegExp(r'^\d{4}$').hasMatch(prefix)) {
+      return;
+    }
+
+    if (_generatingBarcode) return;
+
+    setState(() => _generatingBarcode = true);
+    try {
+      final generated = await widget.onGenerateBarcode!(prefix);
+      if (!mounted) return;
+      setState(() {
+        _barcode.text = generated;
+        _barcode.selection = TextSelection.collapsed(offset: generated.length);
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${'Failed to generate barcode'.tr()}: $e')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _generatingBarcode = false);
+      }
+    }
+  }
+
+  Future<void> _printBarcode() async {
+    if (widget.onPrintBarcode == null) return;
+
+    final name = _name.text.trim();
+    final code = _normalizeDigits(_barcode.text).trim();
+    if (name.isEmpty || code.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Enter product name and barcode first'.tr())),
+      );
+      return;
+    }
+
+    await widget.onPrintBarcode!(productName: name, barcode: code);
   }
 
   double? _parseFlexibleNumber(String raw) {
@@ -155,10 +242,43 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                           : null,
                     ),
                     SizedBox(height: fieldGap),
-                    TextFormField(
-                      controller: _barcode,
-                      decoration: InputDecoration(
-                        labelText: 'Barcode (optional)'.tr(),
+                    Focus(
+                      onKeyEvent: (node, event) {
+                        if (event is KeyDownEvent &&
+                            event.logicalKey == LogicalKeyboardKey.tab) {
+                          _tryAutoGenerateBarcode();
+                        }
+                        return KeyEventResult.ignored;
+                      },
+                      child: TextFormField(
+                        controller: _barcode,
+                        focusNode: _barcodeFocus,
+                        textInputAction: TextInputAction.next,
+                        inputFormatters: [
+                          FilteringTextInputFormatter.allow(
+                            RegExp(r'[0-9٠-٩]'),
+                          ),
+                        ],
+                        onEditingComplete: () {
+                          _tryAutoGenerateBarcode();
+                          FocusScope.of(context).nextFocus();
+                        },
+                        decoration: InputDecoration(
+                          labelText: 'Barcode (optional)'.tr(),
+                          helperText: 'Enter 4 digits then press Tab'.tr(),
+                          suffixIcon: _generatingBarcode
+                              ? const Padding(
+                                  padding: EdgeInsets.all(10),
+                                  child: SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  ),
+                                )
+                              : const Icon(Icons.qr_code_2_outlined),
+                        ),
                       ),
                     ),
                     SizedBox(height: fieldGap),
@@ -374,6 +494,12 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
         },
       ),
       actions: [
+        if (widget.onPrintBarcode != null)
+          OutlinedButton.icon(
+            onPressed: _generatingBarcode ? null : _printBarcode,
+            icon: const Icon(Icons.print_outlined),
+            label: Text('Print Barcode'.tr()),
+          ),
         TextButton.icon(
           onPressed: () => Navigator.of(context).pop(),
           icon: const Icon(Icons.close_outlined),
@@ -419,9 +545,10 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                           final payload = Product(
                             id: widget.product?.id,
                             name: _name.text.trim(),
-                            barcode: _barcode.text.trim().isEmpty
+                            barcode:
+                                _normalizeDigits(_barcode.text).trim().isEmpty
                                 ? null
-                                : _barcode.text.trim(),
+                                : _normalizeDigits(_barcode.text).trim(),
                             categoryId: widget.product?.categoryId,
                             unitType: _unit,
                             salePrice: parsedSalePrice ?? 0,

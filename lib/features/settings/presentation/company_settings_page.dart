@@ -28,9 +28,12 @@ import 'package:clothes_inventory/features/settings/presentation/widgets/setting
 import 'package:clothes_inventory/services/database/maintenance_coordinator.dart';
 import 'package:clothes_inventory/services/printing/a4_invoice_printer.dart';
 import 'package:clothes_inventory/services/printing/invoice_print_manager.dart';
-import 'package:clothes_inventory/services/printing/unsupported_invoice_printer.dart';
+import 'package:clothes_inventory/services/printing/thermal_pdf_invoice_printer.dart';
+import 'package:clothes_inventory/services/printing/thermal_printer_preferences.dart';
+import 'package:printing/printing.dart';
 import 'package:clothes_inventory/services/di/service_locator.dart';
 import 'package:clothes_inventory/services/platform/folder_opener_service.dart';
+import 'package:clothes_inventory/services/pdf/thermal_invoice_pdf_document.dart';
 
 enum _SettingsTab { overview, company, license, diagnostics }
 
@@ -46,24 +49,35 @@ class _CompanySettingsPageState extends State<CompanySettingsPage> {
   final _nameController = TextEditingController();
   final _addressController = TextEditingController();
   final _phonesController = TextEditingController();
+  final _invoiceFooterNoteController = TextEditingController();
   static const _invoiceMapper = InvoicePrintModelMapper();
   final _invoicePrintManager = InvoicePrintManager(
     a4Printer: const A4InvoicePrinter(),
-    thermal58Printer: const UnsupportedInvoicePrinter(
-      'Thermal printer adapter is not configured yet.',
+    thermal58Printer: ThermalPdfInvoicePrinter(
+      paperWidthMm: 58,
+      printerPrefs: const ThermalPrinterPreferences(),
     ),
-    thermal80Printer: const UnsupportedInvoicePrinter(
-      'Thermal printer adapter is not configured yet.',
+    thermal80Printer: ThermalPdfInvoicePrinter(
+      paperWidthMm: 80,
+      printerPrefs: const ThermalPrinterPreferences(),
     ),
   );
+
+  static const _thermalPrefs = ThermalPrinterPreferences();
 
   bool _initialized = false;
   bool _saving = false;
   bool _resettingAppData = false;
   bool _loadingLogo = false;
+  bool _loadingFooterImage = false;
+  bool _selectingPrinter = false;
+  String? _currentThermalPrinterName;
   Uint8List? _previewLogoBytes;
+  Uint8List? _previewFooterImageBytes;
   String? _pendingLogoPath;
+  String? _pendingFooterImagePath;
   bool _removeLogo = false;
+  bool _removeFooterImage = false;
   late Future<LicenseValidationResult> _licenseStatusFuture;
   late Future<String> _machineCodeFuture;
   late Future<String> _machineHashFuture;
@@ -92,6 +106,42 @@ class _CompanySettingsPageState extends State<CompanySettingsPage> {
     _nameController.addListener(_onPreviewChanged);
     _addressController.addListener(_onPreviewChanged);
     _phonesController.addListener(_onPreviewChanged);
+    _invoiceFooterNoteController.addListener(_onPreviewChanged);
+    _loadThermalPrinterName();
+  }
+
+  Future<void> _loadThermalPrinterName() async {
+    final name = await _thermalPrefs.loadPrinterName();
+    if (mounted) setState(() => _currentThermalPrinterName = name);
+  }
+
+  Future<void> _selectThermalPrinter() async {
+    if (_selectingPrinter) return;
+    setState(() => _selectingPrinter = true);
+    try {
+      final printer = await Printing.pickPrinter(context: context);
+      if (printer == null || !mounted) return;
+      await _thermalPrefs.savePrinterName(printer.name);
+      if (!mounted) return;
+      setState(() => _currentThermalPrinterName = printer.name);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('تم حفظ الطابعة: ${printer.name}'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _selectingPrinter = false);
+    }
+  }
+
+  Future<void> _clearThermalPrinter() async {
+    await _thermalPrefs.clearPrinterName();
+    if (!mounted) return;
+    setState(() => _currentThermalPrinterName = null);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('تم إلغاء تحديد الطابعة الحرارية')),
+    );
   }
 
   @override
@@ -103,7 +153,9 @@ class _CompanySettingsPageState extends State<CompanySettingsPage> {
     _nameController.text = settings.name;
     _addressController.text = settings.address;
     _phonesController.text = settings.phoneNumbers.join('\n');
+    _invoiceFooterNoteController.text = settings.invoiceFooterNote;
     _loadLogoPreview();
+    _loadFooterPreview();
   }
 
   @override
@@ -111,6 +163,7 @@ class _CompanySettingsPageState extends State<CompanySettingsPage> {
     _nameController.dispose();
     _addressController.dispose();
     _phonesController.dispose();
+    _invoiceFooterNoteController.dispose();
     super.dispose();
   }
 
@@ -166,14 +219,23 @@ class _CompanySettingsPageState extends State<CompanySettingsPage> {
                       nameController: _nameController,
                       addressController: _addressController,
                       phonesController: _phonesController,
+                      invoiceFooterNoteController: _invoiceFooterNoteController,
                       saving: _saving,
                       loadingLogo: _loadingLogo,
+                      loadingFooterImage: _loadingFooterImage,
                       logoPreview: _buildLogoPreview(context),
                       onPickLogo: _pickLogo,
                       onRemoveLogo: _removeLogoPreview,
+                      footerImagePreview: _buildFooterImagePreview(context),
+                      onPickFooterImage: _pickFooterImage,
+                      onRemoveFooterImage: _removeFooterImagePreview,
                       onValidatePhones: _splitPhones,
                       onSave: _save,
                       onReset: _resetFromCurrent,
+                      currentThermalPrinterName: _currentThermalPrinterName,
+                      selectingPrinter: _selectingPrinter,
+                      onSelectThermalPrinter: _selectThermalPrinter,
+                      onClearThermalPrinter: _clearThermalPrinter,
                     ),
                   ),
                   SettingsLicenseTab(
@@ -473,6 +535,33 @@ class _CompanySettingsPageState extends State<CompanySettingsPage> {
                     borderRadius: BorderRadius.circular(15),
                     child: Image.memory(bytes, fit: BoxFit.contain),
                   )),
+    );
+  }
+
+  Widget _buildFooterImagePreview(BuildContext context) {
+    final size = 84.0;
+    final borderColor = Theme.of(context).colorScheme.outlineVariant;
+    final bytes = _previewFooterImageBytes;
+
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: borderColor),
+        color: Theme.of(context).colorScheme.surfaceContainerLow,
+      ),
+      child: _loadingFooterImage
+          ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
+          : (bytes == null
+                ? Icon(
+                    Icons.qr_code_2_outlined,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  )
+                : ClipRRect(
+                    borderRadius: BorderRadius.circular(15),
+                    child: Image.memory(bytes, fit: BoxFit.contain                  ),
+                )),
     );
   }
 
@@ -876,12 +965,13 @@ class _CompanySettingsPageState extends State<CompanySettingsPage> {
   }
 
   Widget _buildInvoicePreview(BuildContext context) {
-    final data = _buildPreviewInvoiceData();
     return AppSectionPanel(
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: SingleChildScrollView(
-          child: A4InvoiceRtlWidget(data: data, logoBytes: _previewLogoBytes),
+      child: Padding(
+        padding: const EdgeInsets.all(8),
+        child: _CompanyInvoiceFormatPreview(
+          a4Data: _buildPreviewInvoiceData(),
+          logoBytes: _previewLogoBytes,
+          invoiceModel: _buildPreviewInvoiceModel(),
         ),
       ),
     );
@@ -937,6 +1027,56 @@ class _CompanySettingsPageState extends State<CompanySettingsPage> {
     });
   }
 
+  Future<void> _loadFooterPreview() async {
+    setState(() => _loadingFooterImage = true);
+    try {
+      final bytes = await _service.loadFooterImageBytes();
+      if (!mounted) return;
+      setState(() {
+        _previewFooterImageBytes = bytes;
+      });
+    } finally {
+      if (mounted) {
+        setState(() => _loadingFooterImage = false);
+      }
+    }
+  }
+
+  Future<void> _pickFooterImage() async {
+    setState(() => _loadingFooterImage = true);
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.image,
+        withData: true,
+      );
+      final file = result?.files.single;
+      if (file == null) return;
+
+      final bytes =
+          file.bytes ??
+          (file.path == null ? null : await File(file.path!).readAsBytes());
+      if (bytes == null) return;
+
+      setState(() {
+        _previewFooterImageBytes = bytes;
+        _pendingFooterImagePath = file.path;
+        _removeFooterImage = false;
+      });
+    } finally {
+      if (mounted) {
+        setState(() => _loadingFooterImage = false);
+      }
+    }
+  }
+
+  void _removeFooterImagePreview() {
+    setState(() {
+      _previewFooterImageBytes = null;
+      _pendingFooterImagePath = null;
+      _removeFooterImage = true;
+    });
+  }
+
   Future<void> _save() async {
     if (!(_formKey.currentState?.validate() ?? false)) {
       return;
@@ -948,6 +1088,7 @@ class _CompanySettingsPageState extends State<CompanySettingsPage> {
         name: _nameController.text,
         address: _addressController.text,
         phoneNumbers: _splitPhones(_phonesController.text),
+        invoiceFooterNote: _invoiceFooterNoteController.text,
       );
 
       if (_removeLogo) {
@@ -957,9 +1098,19 @@ class _CompanySettingsPageState extends State<CompanySettingsPage> {
         await _service.setLogoFromPath(_pendingLogoPath!);
       }
 
+      if (_removeFooterImage) {
+        await _service.clearFooterImage();
+      } else if (_pendingFooterImagePath != null &&
+          _pendingFooterImagePath!.trim().isNotEmpty) {
+        await _service.setFooterImageFromPath(_pendingFooterImagePath!);
+      }
+
       _removeLogo = false;
       _pendingLogoPath = null;
+      _removeFooterImage = false;
+      _pendingFooterImagePath = null;
       await _loadLogoPreview();
+      await _loadFooterPreview();
       _licenseStatusFuture = _licenseService.validateCurrentLicense();
 
       if (!mounted) return;
@@ -984,9 +1135,13 @@ class _CompanySettingsPageState extends State<CompanySettingsPage> {
     _nameController.text = settings.name;
     _addressController.text = settings.address;
     _phonesController.text = settings.phoneNumbers.join('\n');
+    _invoiceFooterNoteController.text = settings.invoiceFooterNote;
     _removeLogo = false;
     _pendingLogoPath = null;
+    _removeFooterImage = false;
+    _pendingFooterImagePath = null;
     _loadLogoPreview();
+    _loadFooterPreview();
     _refreshOverview();
   }
 
@@ -1020,6 +1175,10 @@ class _CompanySettingsPageState extends State<CompanySettingsPage> {
           ? _service.settings.phoneNumbers
           : _splitPhones(_phonesController.text),
       logoPath: _service.settings.logoPath,
+      invoiceFooterNote: _invoiceFooterNoteController.text,
+      invoiceFooterImagePath: _removeFooterImage
+          ? null
+          : (_pendingFooterImagePath ?? _service.settings.invoiceFooterImagePath),
     );
   }
 
@@ -1029,6 +1188,9 @@ class _CompanySettingsPageState extends State<CompanySettingsPage> {
 
   InvoicePrintModel _buildPreviewInvoiceModel() {
     final company = _buildPreviewCompany();
+    final footerBytes = _removeFooterImage
+        ? null
+        : _previewFooterImageBytes;
     return InvoicePrintModel(
       companyName: company.name,
       address: company.address,
@@ -1042,6 +1204,86 @@ class _CompanySettingsPageState extends State<CompanySettingsPage> {
       ],
       total: 150,
       title: 'فاتورة مبيعات',
+      invoiceFooterNote: company.invoiceFooterNote,
+      invoiceFooterImageBytes: footerBytes,
+    );
+  }
+}
+
+class _CompanyInvoiceFormatPreview extends StatefulWidget {
+  const _CompanyInvoiceFormatPreview({
+    required this.a4Data,
+    required this.logoBytes,
+    required this.invoiceModel,
+  });
+
+  final A4InvoiceViewData a4Data;
+  final Uint8List? logoBytes;
+  final InvoicePrintModel invoiceModel;
+
+  @override
+  State<_CompanyInvoiceFormatPreview> createState() =>
+      _CompanyInvoiceFormatPreviewState();
+}
+
+class _CompanyInvoiceFormatPreviewState
+    extends State<_CompanyInvoiceFormatPreview> {
+  /// 0 = A4, 1 = thermal 58mm, 2 = thermal 80mm
+  int _formatIndex = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SegmentedButton<int>(
+          segments: const [
+            ButtonSegment(value: 0, label: Text('A4'), icon: Icon(Icons.description_outlined)),
+            ButtonSegment(
+              value: 1,
+              label: Text('58mm'),
+              icon: Icon(Icons.receipt_long_outlined),
+            ),
+            ButtonSegment(
+              value: 2,
+              label: Text('80mm'),
+              icon: Icon(Icons.receipt_long_outlined),
+            ),
+          ],
+          selected: {_formatIndex},
+          onSelectionChanged: (s) {
+            setState(() => _formatIndex = s.first);
+          },
+        ),
+        const SizedBox(height: 10),
+        SizedBox(
+          height: 420,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: ColoredBox(
+              color: Colors.white,
+              child: _formatIndex == 0
+                  ? SingleChildScrollView(
+                      child: A4InvoiceRtlWidget(
+                        data: widget.a4Data,
+                        logoBytes: widget.logoBytes,
+                      ),
+                    )
+                  : PdfPreview(
+                      build: (_) => buildThermalInvoicePdfDocument(
+                        invoice: widget.invoiceModel,
+                        paperWidthMm: _formatIndex == 1 ? 58 : 80,
+                      ),
+                      maxPageWidth: _formatIndex == 1 ? 220 : 280,
+                      allowPrinting: false,
+                      canChangeOrientation: false,
+                      canChangePageFormat: false,
+                      canDebug: false,
+                    ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

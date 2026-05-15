@@ -6,12 +6,16 @@ import 'package:clothes_inventory/features/products/domain/product.dart';
 class PurchasesProductDialog {
   const PurchasesProductDialog._();
 
-  static void _disposeControllersSafely(
-    List<TextEditingController> controllers,
-  ) {
-    // Defer disposal to avoid using disposed controllers during route pop frames.
+  static void _disposeDialogResources({
+    required List<TextEditingController> controllers,
+    List<FocusNode> focusNodes = const [],
+  }) {
+    // Defer disposal until after the dialog route finishes popping.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
+        for (final node in focusNodes) {
+          node.dispose();
+        }
         for (final controller in controllers) {
           controller.dispose();
         }
@@ -26,6 +30,13 @@ class PurchasesProductDialog {
     double? initialQuantity,
     double? initialPurchasePrice,
     required double? Function(String value) parseFlexibleNumber,
+    Future<String> Function(String prefix)? onGenerateBarcode,
+    Future<void> Function({
+      required String productName,
+      required String barcode,
+      required int quantity,
+    })?
+    onPrintBarcode,
     required Future<Product> Function(Product payload) onCreateProduct,
     required Future<void> Function(Product payload) onUpdateProduct,
     required Future<void> Function() onRefreshSearch,
@@ -40,6 +51,7 @@ class PurchasesProductDialog {
     final barcodeController = TextEditingController(
       text: existingProduct?.barcode ?? '',
     );
+    final barcodeFocusNode = FocusNode();
     final salePriceRetailController = TextEditingController(
       text: existingProduct == null
           ? ''
@@ -77,7 +89,60 @@ class PurchasesProductDialog {
           ? ''
           : existingProduct.lowStockThreshold.toStringAsFixed(0),
     );
+    var generatingBarcode = false;
     var unit = existingProduct?.unitType ?? UnitType.piece;
+    String normalizeDigits(String raw) {
+      const arabicIndicDigits = {
+        '٠': '0',
+        '١': '1',
+        '٢': '2',
+        '٣': '3',
+        '٤': '4',
+        '٥': '5',
+        '٦': '6',
+        '٧': '7',
+        '٨': '8',
+        '٩': '9',
+      };
+
+      var normalized = raw;
+      arabicIndicDigits.forEach((key, value) {
+        normalized = normalized.replaceAll(key, value);
+      });
+      return normalized;
+    }
+
+    Future<void> tryAutoGenerateBarcode(
+      BuildContext dialogContext,
+      StateSetter setDialogState,
+    ) async {
+      if (existingProduct != null || onGenerateBarcode == null) {
+        return;
+      }
+
+      final prefix = normalizeDigits(barcodeController.text).trim();
+      if (!RegExp(r'^\d{4}$').hasMatch(prefix) || generatingBarcode) {
+        return;
+      }
+
+      setDialogState(() => generatingBarcode = true);
+      try {
+        final generated = await onGenerateBarcode(prefix);
+        barcodeController.text = generated;
+        barcodeController.selection = TextSelection.collapsed(
+          offset: generated.length,
+        );
+      } catch (e) {
+        if (!dialogContext.mounted) return;
+        ScaffoldMessenger.of(dialogContext).showSnackBar(
+          SnackBar(content: Text('${'Failed to generate barcode'.tr()}: $e')),
+        );
+      } finally {
+        if (dialogContext.mounted) {
+          setDialogState(() => generatingBarcode = false);
+        }
+      }
+    }
 
     try {
       await showDialog<void>(
@@ -146,10 +211,50 @@ class PurchasesProductDialog {
                             },
                           ),
                           SizedBox(height: veryDense ? 6 : 8),
-                          TextFormField(
-                            controller: barcodeController,
-                            decoration: InputDecoration(
-                              labelText: 'Barcode (optional)'.tr(),
+                          Focus(
+                            onKeyEvent: (node, event) {
+                              if (event is KeyDownEvent &&
+                                  event.logicalKey == LogicalKeyboardKey.tab) {
+                                tryAutoGenerateBarcode(
+                                  dialogContext,
+                                  setDialogState,
+                                );
+                              }
+                              return KeyEventResult.ignored;
+                            },
+                            child: TextFormField(
+                              controller: barcodeController,
+                              focusNode: barcodeFocusNode,
+                              textInputAction: TextInputAction.next,
+                              inputFormatters: [
+                                FilteringTextInputFormatter.allow(
+                                  RegExp(r'[0-9٠-٩]'),
+                                ),
+                              ],
+                              onEditingComplete: () {
+                                tryAutoGenerateBarcode(
+                                  dialogContext,
+                                  setDialogState,
+                                );
+                                FocusScope.of(dialogContext).nextFocus();
+                              },
+                              decoration: InputDecoration(
+                                labelText: 'Barcode (optional)'.tr(),
+                                helperText: 'Enter 4 digits then press Tab'
+                                    .tr(),
+                                suffixIcon: generatingBarcode
+                                    ? const Padding(
+                                        padding: EdgeInsets.all(10),
+                                        child: SizedBox(
+                                          width: 16,
+                                          height: 16,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                          ),
+                                        ),
+                                      )
+                                    : const Icon(Icons.qr_code_2_outlined),
+                              ),
                             ),
                           ),
                           SizedBox(height: veryDense ? 6 : 8),
@@ -374,6 +479,44 @@ class PurchasesProductDialog {
               },
             ),
             actions: [
+              if (onPrintBarcode != null)
+                OutlinedButton.icon(
+                  onPressed: generatingBarcode
+                      ? null
+                      : () async {
+                          final productName = nameController.text.trim();
+                          final productBarcode = normalizeDigits(
+                            barcodeController.text,
+                          ).trim();
+                          if (productName.isEmpty || productBarcode.isEmpty) {
+                            ScaffoldMessenger.of(dialogContext).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  'Enter product name and barcode first'.tr(),
+                                ),
+                              ),
+                            );
+                            return;
+                          }
+
+                          final rawQuantity = existingProduct == null
+                              ? (parseFlexibleNumber(
+                                      quantityController.text.trim(),
+                                    ) ??
+                                    1)
+                              : 1;
+                          final printQuantity = rawQuantity < 1
+                              ? 1
+                              : rawQuantity.round();
+                          await onPrintBarcode(
+                            productName: productName,
+                            barcode: productBarcode,
+                            quantity: printQuantity,
+                          );
+                        },
+                  icon: const Icon(Icons.print_outlined),
+                  label: Text('Print Barcode'.tr()),
+                ),
               TextButton.icon(
                 onPressed: () => Navigator.of(dialogContext).pop(),
                 icon: const Icon(Icons.close_outlined),
@@ -462,9 +605,10 @@ class PurchasesProductDialog {
                     final payload = Product(
                       id: existingProduct?.id,
                       name: nameController.text.trim(),
-                      barcode: barcodeController.text.trim().isEmpty
+                      barcode:
+                          normalizeDigits(barcodeController.text).trim().isEmpty
                           ? null
-                          : barcodeController.text.trim(),
+                          : normalizeDigits(barcodeController.text).trim(),
                       categoryId: existingProduct?.categoryId,
                       unitType: unit,
                       salePrice: resolvedSalePrice,
@@ -513,16 +657,19 @@ class PurchasesProductDialog {
         },
       );
     } finally {
-      _disposeControllersSafely(<TextEditingController>[
-        nameController,
-        barcodeController,
-        salePriceRetailController,
-        salePriceHalfWholesaleController,
-        salePriceWholesaleController,
-        purchasePriceController,
-        quantityController,
-        lowStockController,
-      ]);
+      _disposeDialogResources(
+        focusNodes: [barcodeFocusNode],
+        controllers: [
+          nameController,
+          barcodeController,
+          salePriceRetailController,
+          salePriceHalfWholesaleController,
+          salePriceWholesaleController,
+          purchasePriceController,
+          quantityController,
+          lowStockController,
+        ],
+      );
     }
   }
 }

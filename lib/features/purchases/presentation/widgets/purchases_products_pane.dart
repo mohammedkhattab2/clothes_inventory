@@ -210,7 +210,7 @@ class PurchasesProductsPane extends StatelessWidget {
                     dense: true,
                     title: Text(product.name),
                     subtitle: Text(
-                      '${product.unitType.name} | ${'Purchase Price'.tr()}: ${product.purchasePrice.toStringAsFixed(2)} | ${'Sale Price'.tr()}: ${product.salePrice.toStringAsFixed(2)}',
+                      '${product.unitType.name} • ${'Purchase Price'.tr()}: ${product.purchasePrice.toStringAsFixed(2)} • ${'Sale Price'.tr()}: ${product.salePrice.toStringAsFixed(2)}',
                     ),
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,

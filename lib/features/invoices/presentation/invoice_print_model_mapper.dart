@@ -32,6 +32,8 @@ class InvoicePrintModelMapper {
           .toList(growable: false),
       total: model.total.toStringAsFixed(2),
       currency: model.currency,
+      invoiceFooterNote: formatter.format(model.invoiceFooterNote),
+      invoiceFooterImageBytes: model.invoiceFooterImageBytes,
     );
   }
 }

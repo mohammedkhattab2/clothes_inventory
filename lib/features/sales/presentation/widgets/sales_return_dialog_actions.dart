@@ -8,12 +8,18 @@ class SalesReturnDialogActions extends StatelessWidget {
     required this.submittingReturns,
     required this.onCancel,
     required this.onApply,
+    this.showAmendInCart = false,
+    this.canAmendInCart = false,
+    this.onAmendInCart,
   });
 
   final bool canSubmit;
   final bool submittingReturns;
   final VoidCallback onCancel;
   final VoidCallback onApply;
+  final bool showAmendInCart;
+  final bool canAmendInCart;
+  final VoidCallback? onAmendInCart;
 
   @override
   Widget build(BuildContext context) {
@@ -27,6 +33,16 @@ class SalesReturnDialogActions extends StatelessWidget {
           icon: const Icon(Icons.close_outlined),
           label: Text('Cancel'.tr()),
         ),
+        if (showAmendInCart)
+          OutlinedButton.icon(
+            onPressed:
+                (!submittingReturns && canAmendInCart) ? onAmendInCart : null,
+            icon: const Icon(Icons.edit_outlined, size: 18),
+            label: Text('sale.edit_invoice_in_cart'.tr()),
+            style: OutlinedButton.styleFrom(
+              visualDensity: VisualDensity.compact,
+            ),
+          ),
         FilledButton.icon(
           onPressed: canSubmit ? onApply : null,
           icon: const Icon(Icons.assignment_return_outlined),

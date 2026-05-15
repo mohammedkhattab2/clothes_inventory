@@ -10,32 +10,40 @@ class _SalesPageState extends State<SalesPage> {
   final _dateFormat = DateFormat('yyyy-MM-dd HH:mm');
   final _invoicePrintManager = InvoicePrintManager(
     a4Printer: const A4InvoicePrinter(),
-    thermal58Printer: const UnsupportedInvoicePrinter(
-      'Thermal printer adapter is not configured yet.',
+    thermal58Printer: ThermalPdfInvoicePrinter(
+      paperWidthMm: 58,
+      printerPrefs: const ThermalPrinterPreferences(),
     ),
-    thermal80Printer: const UnsupportedInvoicePrinter(
-      'Thermal printer adapter is not configured yet.',
+    thermal80Printer: ThermalPdfInvoicePrinter(
+      paperWidthMm: 80,
+      printerPrefs: const ThermalPrinterPreferences(),
     ),
   );
 
   final _nameSearchController = TextEditingController();
   final _barcodeController = TextEditingController();
+  final _barcodeFocusNode = FocusNode();
   final _paidController = TextEditingController();
-  final _taxPercentController = TextEditingController();
+  final _paidWalletController = TextEditingController();
+  final _headerDiscountValueController = TextEditingController();
   final _newCustomerController = TextEditingController();
   final _licenseService = getIt<LicenseService>();
   Timer? _searchDebounce;
+  Timer? _barcodeDebounce;
   bool _readOnlyMode = false;
   String? _readOnlyMessage;
 
   List<Product> _searchResults = const [];
   List<AccountLookup> _customers = const [];
   List<SalesInvoiceSummary> _invoiceRows = const [];
+  // ignore: unused_field
   Map<SalesInvoiceTypeFilter, int> _invoiceTypeCounts =
       const <SalesInvoiceTypeFilter, int>{};
+  // ignore: unused_field
   bool _loadingInvoices = false;
   int _invoicePage = 0;
   int _invoicePageSize = 50;
+  // ignore: prefer_final_fields
   SalesInvoiceTypeFilter _invoiceTypeFilter = SalesInvoiceTypeFilter.all;
   int? _activeInvoiceId;
   String? _activeInvoiceNumber;
@@ -48,6 +56,13 @@ class _SalesPageState extends State<SalesPage> {
       <int, TextEditingController>{};
   final Map<int, FocusNode> _inlineQtyFocusNodes = <int, FocusNode>{};
   _SalePriceTier _selectedSalePriceTier = _SalePriceTier.retail;
+
+  void _resetCartPaymentControllers() {
+    _paidController.clear();
+    _paidWalletController.clear();
+    _headerDiscountValueController.clear();
+    _newCustomerController.clear();
+  }
 
   void _showLatestSnackBar(BuildContext targetContext, String message) {
     if (!mounted || !targetContext.mounted) return;
@@ -290,17 +305,49 @@ class _SalesPageState extends State<SalesPage> {
 
   Future<void> _searchBarcodeAndAdd(
     BuildContext context,
-    String barcode,
-  ) async {
-    if (barcode.trim().isEmpty) return;
-    final items = await _productRepo.listProducts(barcode: barcode.trim());
-    if (items.isNotEmpty && context.mounted) {
-      context.read<SalesCubit>().addProduct(
-        items.first,
-        initialUnitPrice: _resolveSalePriceByTier(items.first),
-      );
-      _barcodeController.clear();
+    String barcode, {
+    bool notifyOnNoMatch = true,
+  }) async {
+    final trimmed = barcode.trim();
+    if (trimmed.isEmpty) return;
+    final items = await _productRepo.listProducts(barcode: trimmed);
+    if (!mounted) return;
+    if (items.isEmpty) {
+      if (notifyOnNoMatch && context.mounted) {
+        _showLatestSnackBar(
+          context,
+          'No product matches this barcode.'.tr(),
+        );
+      }
+      return;
     }
+    if (!context.mounted) return;
+    context.read<SalesCubit>().addProduct(
+      items.first,
+      initialUnitPrice: _resolveSalePriceByTier(items.first),
+    );
+    _barcodeController.clear();
+  }
+
+  void _onBarcodeFieldChanged(BuildContext context, String _) {
+    _barcodeDebounce?.cancel();
+    _barcodeDebounce = Timer(const Duration(milliseconds: 280), () {
+      if (!mounted) return;
+      unawaited(
+        _searchBarcodeAndAdd(
+          context,
+          _barcodeController.text,
+          notifyOnNoMatch: false,
+        ),
+      );
+    });
+  }
+
+  void _onBarcodeFieldSubmitted(BuildContext context, String value) {
+    _barcodeDebounce?.cancel();
+    unawaited(
+      _searchBarcodeAndAdd(context, value, notifyOnNoMatch: true),
+    );
   }
 
   double _resolveSalePriceByTier(Product product) {
@@ -356,10 +403,13 @@ class _SalesPageState extends State<SalesPage> {
       _handleProductsRevisionChanged,
     );
     _searchDebounce?.cancel();
+    _barcodeDebounce?.cancel();
     _nameSearchController.dispose();
     _barcodeController.dispose();
+    _barcodeFocusNode.dispose();
     _paidController.dispose();
-    _taxPercentController.dispose();
+    _paidWalletController.dispose();
+    _headerDiscountValueController.dispose();
     _newCustomerController.dispose();
     _invoiceScrollController.dispose();
     for (final controller in _inlineQtyControllers.values) {
@@ -587,7 +637,7 @@ class _SalesPageState extends State<SalesPage> {
           if (event == 'sale_saved') {
             _applyOptimisticStockDeduction(_lastCheckoutItems);
           }
-          if (event == 'pending_completed') {
+          if (event == 'pending_completed' || event == 'sale_amended') {
             _loadedPendingSaleId = null;
           }
           _lastCheckoutItems = const <SaleDraftItem>[];
@@ -595,10 +645,19 @@ class _SalesPageState extends State<SalesPage> {
             setState(() {
               _invoicePage = 0;
               _activeInvoiceId = state.successInvoiceId;
-              _activeInvoiceNumber = null;
-              _activeSaleItemId = null;
-              _activeInvoiceLines = const [];
+              if (event == 'sale_amended') {
+                _activeSaleItemId = null;
+              } else {
+                _activeInvoiceNumber = null;
+                _activeSaleItemId = null;
+                _activeInvoiceLines = const [];
+              }
             });
+          }
+          if (event == 'sale_amended' && state.successInvoiceId != null) {
+            unawaited(
+              _refreshActiveInvoiceLines(state.successInvoiceId!),
+            );
           }
           _loadInvoices();
           _searchByName(_nameSearchController.text);
@@ -607,23 +666,30 @@ class _SalesPageState extends State<SalesPage> {
               '${'Pending invoice saved'.tr()}: #${state.successInvoiceId}',
             'pending_completed' =>
               '${'Pending invoice completed'.tr()}: #${state.successInvoiceId}',
-            _ => '${'Sale saved'.tr()}: #${state.successInvoiceId}',
+            'sale_amended' => 'sale.amended_success'.tr(
+              namedArgs: {'id': '${state.successInvoiceId}'},
+            ),
+            _ =>
+              '${'Sale saved'.tr()}: #${state.successInvoiceId}',
           };
           _showLatestSnackBar(context, successMessage);
           if (event != 'pending_completed') {
             _barcodeController.clear();
             _paidController.clear();
-            _taxPercentController.clear();
+            _paidWalletController.clear();
+            _headerDiscountValueController.clear();
             _newCustomerController.clear();
           }
           shouldClearTransient = true;
         }
         if (state.successEvent == 'pending_loaded') {
           _loadedPendingSaleId = state.pendingSaleId;
-          _taxPercentController.text = state.taxPercentage == 0
-              ? ''
-              : state.taxPercentage.toStringAsFixed(2);
+          _headerDiscountValueController.text =
+              state.headerDiscountValue == 0
+                  ? ''
+                  : state.headerDiscountValue.toStringAsFixed(2);
           _paidController.text = '0';
+          _paidWalletController.text = '';
           _newCustomerController.text = state.newCustomerName;
           if (mounted) {
             setState(() {
@@ -634,6 +700,30 @@ class _SalesPageState extends State<SalesPage> {
             });
           }
           _showLatestSnackBar(context, 'Pending invoice loaded to cart.'.tr());
+          shouldClearTransient = true;
+        }
+        if (state.successEvent == 'invoice_amendment_loaded') {
+          _loadedPendingSaleId = null;
+          _headerDiscountValueController.text =
+              state.headerDiscountValue == 0
+                  ? ''
+                  : state.headerDiscountValue.toStringAsFixed(2);
+          _paidController.text =
+              state.paidAmount == 0
+                  ? ''
+                  : state.paidAmount.toStringAsFixed(2);
+          _paidWalletController.text =
+              state.paidWalletAmount == 0
+                  ? ''
+                  : state.paidWalletAmount.toStringAsFixed(2);
+          _newCustomerController.text = state.newCustomerName;
+          if (mounted && state.editingSaleId != null) {
+            unawaited(_refreshActiveInvoiceLines(state.editingSaleId!));
+          }
+          _showLatestSnackBar(
+            context,
+            'sale.invoice_amendment_loaded_hint'.tr(),
+          );
           shouldClearTransient = true;
         }
         if (state.error != null) {
@@ -678,129 +768,154 @@ class _SalesPageState extends State<SalesPage> {
                   builder: (context, constraints) {
                     final compact =
                         constraints.maxWidth < _compactLayoutBreakpoint;
-                    final productsPaneFlex = 1;
-                    final cartPaneFlex = 1;
+                    final productsPaneFlex = compact ? 4 : 4;
+                    final cartPaneFlex = compact ? 6 : 6;
+                    final productsPane = Expanded(
+                      flex: productsPaneFlex,
+                      child: SalesProductsPane(
+                        compact: compact,
+                        veryDense: isVeryDenseViewport,
+                        nameSearchController: _nameSearchController,
+                        barcodeController: _barcodeController,
+                        barcodeFocusNode: _barcodeFocusNode,
+                        searchResults: _searchResults,
+                        onNameChanged: (value) {
+                          _searchDebounce?.cancel();
+                          _searchDebounce = Timer(
+                            const Duration(milliseconds: 300),
+                            () => _searchByName(value),
+                          );
+                        },
+                        onBarcodeChanged: (value) =>
+                            _onBarcodeFieldChanged(context, value),
+                        onBarcodeSubmitted: (value) =>
+                            _onBarcodeFieldSubmitted(context, value),
+                        onAddProduct: (item) =>
+                            context.read<SalesCubit>().addProduct(
+                              item,
+                              initialUnitPrice: _resolveSalePriceByTier(item),
+                            ),
+                      ),
+                    );
+                    final cartPane = Expanded(
+                      flex: cartPaneFlex,
+                      child: SalesCartPane(
+                        veryDense: isVeryDenseViewport,
+                        total: state.total,
+                        effectivePaidTotal: state.effectivePaidTotal,
+                        loading: state.loading,
+                        hasInvalidInlineDrafts: hasInvalidInlineDrafts,
+                        successInvoiceId: state.successInvoiceId,
+                        priceTierSelector: Wrap(
+                          spacing: 8,
+                          runSpacing: 6,
+                          children: _SalePriceTier.values
+                              .map(
+                                (tier) => ChoiceChip(
+                                  selected: _selectedSalePriceTier == tier,
+                                  label: Text(_salePriceTierLabel(tier)),
+                                  onSelected: (selected) {
+                                    if (!selected) return;
+                                    setState(() {
+                                      _selectedSalePriceTier = tier;
+                                    });
+                                    _applySelectedPriceTierToCart(
+                                      context,
+                                      state.cart,
+                                    );
+                                  },
+                                ),
+                              )
+                              .toList(growable: false),
+                        ),
+                        cartContent: _buildCartTableContent(
+                          context,
+                          state,
+                          cubit,
+                        ),
+                        customers: _customers,
+                        customerId: state.customerId,
+                        newCustomerController: _newCustomerController,
+                        headerDiscountKind: state.headerDiscountKind,
+                        headerDiscountValueController:
+                            _headerDiscountValueController,
+                        paidController: _paidController,
+                        paidWalletController: _paidWalletController,
+                        paidAmount: state.paidAmount,
+                        paidWalletAmount: state.paidWalletAmount,
+                        headerDiscountAmount: state.headerDiscountAmount,
+                        paymentMethod: state.paymentMethod,
+                        onCustomerChanged: (value) =>
+                            context.read<SalesCubit>().setCustomerId(value),
+                        onNewCustomerNameChanged: context
+                            .read<SalesCubit>()
+                            .setNewCustomerName,
+                        onHeaderDiscountKindChanged: (kind) => context
+                            .read<SalesCubit>()
+                            .setHeaderDiscountKind(kind),
+                        onHeaderDiscountValueChanged: (v) => context
+                            .read<SalesCubit>()
+                            .setHeaderDiscountValue(
+                              _parseFlexibleNumber(v) ?? 0,
+                            ),
+                        onPaidChanged: (v) => context
+                            .read<SalesCubit>()
+                            .setPaidAmount(_parseFlexibleNumber(v) ?? 0),
+                        onPaidWalletChanged: (v) => context
+                            .read<SalesCubit>()
+                            .setPaidWalletAmount(_parseFlexibleNumber(v) ?? 0),
+                        onPaymentMethodChanged: (value) {
+                          context.read<SalesCubit>().setPaymentMethod(value);
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            if (!mounted) return;
+                            final updated = context.read<SalesCubit>().state;
+                            _paidController.text =
+                                updated.paidAmount == 0
+                                ? ''
+                                : updated.paidAmount.toStringAsFixed(2);
+                            _paidWalletController.text =
+                                updated.paidWalletAmount == 0
+                                ? ''
+                                : updated.paidWalletAmount.toStringAsFixed(2);
+                          });
+                        },
+                        onCompleteSale: () => _attemptCheckout(cubit, state),
+                        onSavePendingSale: () =>
+                            _attemptSavePendingInvoice(cubit, state),
+                        onReturnFromInvoice: () => _showReturnDialog(context),
+                        onCancelInvoice: () => _showCancelSaleDialog(context),
+                        onGeneratePdf: () {
+                          final invoiceId = state.successInvoiceId;
+                          if (invoiceId == null) return;
+                          _generatePdf(context, invoiceId);
+                        },
+                        invoiceAmendmentMode: state.editingSaleId != null,
+                        onCancelInvoiceAmendment: () {
+                          cubit.clearInvoiceAmendment();
+                          if (!mounted) return;
+                          _resetCartPaymentControllers();
+                        },
+                        readOnlyMode: _readOnlyMode,
+                        readOnlyMessage: _readOnlyMessage,
+                      ),
+                    );
                     return Flex(
                       direction: compact ? Axis.vertical : Axis.horizontal,
-                      children: [
-                        Expanded(
-                          flex: productsPaneFlex,
-                          child: SalesProductsPane(
-                            compact: compact,
-                            veryDense: isVeryDenseViewport,
-                            nameSearchController: _nameSearchController,
-                            barcodeController: _barcodeController,
-                            searchResults: _searchResults,
-                            onNameChanged: (value) {
-                              _searchDebounce?.cancel();
-                              _searchDebounce = Timer(
-                                const Duration(milliseconds: 300),
-                                () => _searchByName(value),
-                              );
-                            },
-                            onBarcodeChanged: (value) =>
-                                _searchBarcodeAndAdd(context, value),
-                            onAddProduct: (item) =>
-                                context.read<SalesCubit>().addProduct(
-                                  item,
-                                  initialUnitPrice: _resolveSalePriceByTier(
-                                    item,
-                                  ),
-                                ),
-                            bottomChild: _buildInvoicesExplorer(context),
-                          ),
-                        ),
-                        SizedBox(
-                          width: compact ? 0 : sectionGap,
-                          height: compact ? sectionGap : 0,
-                        ),
-                        Expanded(
-                          flex: cartPaneFlex,
-                          child: SalesCartPane(
-                            veryDense: isVeryDenseViewport,
-                            total: state.total,
-                            loading: state.loading,
-                            hasInvalidInlineDrafts: hasInvalidInlineDrafts,
-                            successInvoiceId: state.successInvoiceId,
-                            priceTierSelector: Wrap(
-                              spacing: 8,
-                              runSpacing: 6,
-                              children: _SalePriceTier.values
-                                  .map(
-                                    (tier) => ChoiceChip(
-                                      selected: _selectedSalePriceTier == tier,
-                                      label: Text(_salePriceTierLabel(tier)),
-                                      onSelected: (selected) {
-                                        if (!selected) return;
-                                        setState(() {
-                                          _selectedSalePriceTier = tier;
-                                        });
-                                        _applySelectedPriceTierToCart(
-                                          context,
-                                          state.cart,
-                                        );
-                                      },
-                                    ),
-                                  )
-                                  .toList(growable: false),
-                            ),
-                            cartContent: _buildCartTableContent(
-                              context,
-                              state,
-                              cubit,
-                            ),
-                            customers: _customers,
-                            customerId: state.customerId,
-                            newCustomerController: _newCustomerController,
-                            taxPercentController: _taxPercentController,
-                            paidController: _paidController,
-                            paidAmount: state.paidAmount,
-                            taxAmount: state.taxAmount,
-                            paymentMethod: state.paymentMethod,
-                            onCustomerChanged: (value) =>
-                                context.read<SalesCubit>().setCustomerId(value),
-                            onNewCustomerNameChanged: context
-                                .read<SalesCubit>()
-                                .setNewCustomerName,
-                            onTaxChanged: (v) => context
-                                .read<SalesCubit>()
-                                .setTaxPercentage(_parseFlexibleNumber(v) ?? 0),
-                            onPaidChanged: (v) => context
-                                .read<SalesCubit>()
-                                .setPaidAmount(_parseFlexibleNumber(v) ?? 0),
-                            onPaymentMethodChanged: (value) => context
-                                .read<SalesCubit>()
-                                .setPaymentMethod(value),
-                            onCompleteSale: () =>
-                                _attemptCheckout(cubit, state),
-                            onSavePendingSale: () =>
-                                _attemptSavePendingInvoice(cubit, state),
-                            onReturnFromInvoice: () =>
-                                _showReturnDialog(context),
-                            onCancelInvoice: () =>
-                                _showCancelSaleDialog(context),
-                            onGeneratePdf: () {
-                              final invoiceId = state.successInvoiceId;
-                              if (invoiceId == null) return;
-                              _generatePdf(context, invoiceId);
-                            },
-                            readOnlyMode: _readOnlyMode,
-                            readOnlyMessage: _readOnlyMessage,
-                          ),
-                        ),
-                      ],
+                      children: compact
+                          ? <Widget>[
+                              cartPane,
+                              SizedBox(height: sectionGap),
+                              productsPane,
+                            ]
+                          : <Widget>[
+                              productsPane,
+                              SizedBox(width: sectionGap),
+                              cartPane,
+                            ],
                     );
                   },
                 ),
               ),
-              if (MediaQuery.sizeOf(context).width <
-                  _compactLayoutBreakpoint) ...[
-                SizedBox(height: sectionGap),
-                SizedBox(
-                  height: MediaQuery.sizeOf(context).height * 0.5,
-                  child: _buildInvoicesExplorer(context),
-                ),
-              ],
             ],
           ),
         );
@@ -875,6 +990,10 @@ class _SalesPageState extends State<SalesPage> {
       initialQuantity: initialQuantity,
       parseFlexibleInt: _parseFlexibleInt,
       parseFlexibleNumber: _parseFlexibleNumber,
+      lookupSaleInvoiceSuggestion: (id) =>
+          getIt<SalesRepository>().lookupSaleInvoiceSuggestionForReturn(id),
+      searchSaleInvoicesForReturn: (prefix) =>
+          getIt<SalesRepository>().suggestSaleInvoicesForReturn(prefix),
       loadInvoiceLines: (saleId) =>
           getIt<SalesRepository>().listInvoiceLines(saleId),
       onReturnSaleItem:
@@ -899,7 +1018,14 @@ class _SalesPageState extends State<SalesPage> {
       onRefreshInvoiceLines: _refreshActiveInvoiceLines,
       animateDialogEntrance: _animateDialogEntrance,
       activeInvoiceId: _activeInvoiceId,
+      activeInvoiceDisplayNumber: _activeInvoiceNumber,
       activeInvoiceLines: _activeInvoiceLines,
+      canAmendInvoiceForCart:
+          (saleId) => getIt<SalesRepository>().canAmendSaleInvoice(saleId),
+      onInvoiceAmendedInCart: (saleId) async {
+        if (!context.mounted) return;
+        await salesCubit.loadInvoiceForAmendment(saleId);
+      },
     );
   }
 
@@ -949,64 +1075,7 @@ class _SalesPageState extends State<SalesPage> {
     }
   }
 
-  Widget _buildInvoicesExplorer(BuildContext blocContext) {
-    return SalesInvoicesExplorer(
-      fromDate: widget.fromDate,
-      toDate: widget.toDate,
-      accountId: widget.accountId,
-      categoryId: widget.categoryId,
-      loadingInvoices: _loadingInvoices,
-      invoiceRows: _invoiceRows,
-      invoiceScrollController: _invoiceScrollController,
-      activeInvoiceId: _activeInvoiceId,
-      activeInvoiceNumber: _activeInvoiceNumber,
-      canCompletePendingSelected:
-          _activeInvoiceId != null &&
-          _invoiceRows.any(
-            (row) => row.id == _activeInvoiceId && row.status == 'pending',
-          ),
-      activeSaleItemId: _activeSaleItemId,
-      selectedTypeFilter: _invoiceTypeFilter,
-      invoiceTypeCounts: _invoiceTypeCounts,
-      invoicePage: _invoicePage,
-      invoicePageSize: _invoicePageSize,
-      onSelectInvoice: _selectInvoice,
-      onReturnSelected: () => _showReturnDialog(
-        blocContext,
-        initialSaleId: _activeInvoiceId,
-        initialSaleItemId: _activeSaleItemId,
-      ),
-      onCancelSelected: () =>
-          _showCancelSaleDialog(blocContext, initialSaleId: _activeInvoiceId),
-      onShowDetails: () => _showInvoiceDetailsDialog(blocContext),
-      onGeneratePdfSelected: () {
-        final id = _activeInvoiceId;
-        if (id == null) return;
-        _generatePdf(blocContext, id);
-      },
-      onCompletePendingSelected: () => _loadPendingInvoiceToCart(blocContext),
-      onTypeFilterChanged: (filter) {
-        setState(() {
-          _invoiceTypeFilter = filter;
-          _invoicePage = 0;
-          _activeInvoiceId = null;
-          _activeInvoiceNumber = null;
-          _activeSaleItemId = null;
-          _activeInvoiceLines = const [];
-        });
-        _loadInvoices();
-      },
-      onPreviousPage: () {
-        setState(() => _invoicePage -= 1);
-        _loadInvoices();
-      },
-      onNextPage: () {
-        setState(() => _invoicePage += 1);
-        _loadInvoices();
-      },
-    );
-  }
-
+  // ignore: unused_element
   Future<void> _selectInvoice(SalesInvoiceSummary row) async {
     final lines = await getIt<SalesRepository>().listInvoiceLines(row.id);
     SalesInvoiceLine? selectedLine;
@@ -1067,6 +1136,7 @@ class _SalesPageState extends State<SalesPage> {
     });
   }
 
+  // ignore: unused_element
   Future<void> _loadPendingInvoiceToCart(BuildContext pageContext) async {
     final saleId = _activeInvoiceId;
     if (saleId == null) {
@@ -1078,6 +1148,7 @@ class _SalesPageState extends State<SalesPage> {
     await cubit.loadPendingInvoiceToCart(saleId);
   }
 
+  // ignore: unused_element
   Future<void> _showInvoiceDetailsDialog(BuildContext context) async {
     final invoiceId = _activeInvoiceId;
     if (invoiceId == null) return;

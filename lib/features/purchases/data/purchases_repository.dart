@@ -1,10 +1,13 @@
 import 'package:clothes_inventory/core/utils/number_utils.dart';
 import 'package:clothes_inventory/core/utils/return_rules.dart';
+import 'package:clothes_inventory/core/utils/sql_like_escape.dart';
+import 'package:clothes_inventory/features/invoices/domain/invoice_suggestion.dart';
 import 'package:clothes_inventory/features/purchases/domain/purchase_models.dart';
 import 'package:clothes_inventory/features/sales/domain/sale_models.dart';
 import 'package:clothes_inventory/services/auth/session_service.dart';
 import 'package:clothes_inventory/services/database/app_database.dart';
 import 'package:clothes_inventory/services/database/db_transaction_runner.dart';
+import 'package:clothes_inventory/services/database/invoice_sequence_allocator.dart';
 
 class PurchaseInvoiceSummary {
   const PurchaseInvoiceSummary({
@@ -175,6 +178,89 @@ class PurchasesRepository {
         .toList();
   }
 
+  Future<InvoiceSuggestion?> lookupPurchaseInvoiceSuggestionForReturn(
+    int purchaseId,
+  ) async {
+    final db = await _appDatabase.database;
+
+    final where = <String>['p.status != ?', 'p.id = ?'];
+    final args = <Object?>['cancelled', purchaseId];
+    final currentUser = _sessionService.currentUser;
+
+    if (currentUser != null && !_sessionService.canViewAllInvoices) {
+      where.add('p.created_by_user_id = ?');
+      args.add(currentUser.id);
+    }
+
+    final rows = await db.rawQuery(
+      '''
+      SELECT p.id, p.invoice_number, a.name AS account_name
+      FROM purchases p
+      JOIN accounts a ON a.id = p.account_id
+      WHERE ${where.join(' AND ')}
+      LIMIT 1
+      ''',
+      args,
+    );
+
+    if (rows.isEmpty) return null;
+    final row = rows.first;
+    return InvoiceSuggestion(
+      id: (row['id'] as num).toInt(),
+      invoiceNumber: (row['invoice_number'] as String?) ?? '-',
+      accountLabel: (row['account_name'] as String?) ?? '-',
+    );
+  }
+
+  Future<List<InvoiceSuggestion>> suggestPurchaseInvoicesForReturn(
+    String prefixRaw, {
+    int limit = 40,
+  }) async {
+    final prefix = prefixRaw.trim();
+    if (prefix.isEmpty) return const [];
+
+    final db = await _appDatabase.database;
+
+    final where = <String>['p.status != ?'];
+    final args = <Object?>['cancelled'];
+    final currentUser = _sessionService.currentUser;
+
+    if (currentUser != null && !_sessionService.canViewAllInvoices) {
+      where.add('p.created_by_user_id = ?');
+      args.add(currentUser.id);
+    }
+
+    final pattern = '${escapeSqlLikeLiteral(prefix)}%';
+    where.add(
+      r"(p.invoice_number LIKE ? ESCAPE '\' OR CAST(p.id AS TEXT) LIKE ? ESCAPE '\')",
+    );
+    args.add(pattern);
+    args.add(pattern);
+    args.add(limit);
+
+    final rows = await db.rawQuery(
+      '''
+      SELECT p.id, p.invoice_number, a.name AS account_name
+      FROM purchases p
+      JOIN accounts a ON a.id = p.account_id
+      WHERE ${where.join(' AND ')}
+      ORDER BY datetime(p.created_at) DESC, p.id DESC
+      LIMIT ?
+      ''',
+      args,
+    );
+
+    return rows
+        .map(
+          (row) => InvoiceSuggestion(
+            id: (row['id'] as num).toInt(),
+            invoiceNumber: (row['invoice_number'] as String?) ?? '-',
+            accountLabel: (row['account_name'] as String?) ?? '-',
+          ),
+        )
+        .toList();
+  }
+
   Future<double?> averagePurchasedUnitPrice(int productId) async {
     final db = await _appDatabase.database;
     final rows = await db.rawQuery(
@@ -288,14 +374,17 @@ class PurchasesRepository {
       final subtotalAmount = roundCurrency(
         request.items.fold<double>(0, (sum, item) => sum + item.lineTotal),
       );
-      final taxPercentage = roundCurrency(request.taxPercentage.clamp(0, 100));
-      final taxAmount = roundCurrency(subtotalAmount * (taxPercentage / 100));
-      final totalAmount = roundCurrency(subtotalAmount + taxAmount);
+      final discountAmount = computeInvoiceHeaderDiscountAmount(
+        subtotal: subtotalAmount,
+        kind: request.headerDiscountKind,
+        value: request.headerDiscountValue,
+      );
+      final totalAmount = roundCurrency(subtotalAmount - discountAmount);
       final paidAmount = roundCurrency(
         request.paidAmount.clamp(0, totalAmount),
       );
       final status = paidAmount >= totalAmount ? 'completed' : 'partial';
-      final invoiceNo = 'P-${DateTime.now().millisecondsSinceEpoch}';
+      final invoiceNo = await allocatePurchaseInvoiceNumber(txn);
       final createdAt = (request.createdAt ?? DateTime.now()).toIso8601String();
 
       final purchaseId = await txn.insert('purchases', {
@@ -668,6 +757,11 @@ class PurchasesRepository {
   }
 
   String _toDbMethod(PaymentMethod method) {
-    return method == PaymentMethod.cash ? 'cash' : 'vodafone_cash';
+    return switch (method) {
+      PaymentMethod.cash => 'cash',
+      PaymentMethod.vodafoneCash => 'vodafone_cash',
+      PaymentMethod.cashAndWallet =>
+        throw StateError('Purchases cannot use split cash+wallet payment.'),
+    };
   }
 }

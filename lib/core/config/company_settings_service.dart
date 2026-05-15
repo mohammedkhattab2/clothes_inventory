@@ -20,6 +20,9 @@ class CompanySettingsService {
   static const String _addressKey = 'company_address';
   static const String _phonesKey = 'company_phones_json';
   static const String _logoPathKey = 'company_logo_path';
+  static const String _invoiceFooterNoteKey = 'company_invoice_footer_note';
+  static const String _invoiceFooterImageKey =
+      'company_invoice_footer_image_path';
 
   final ValueNotifier<CompanySettings> _settingsNotifier =
       ValueNotifier<CompanySettings>(_defaults);
@@ -43,12 +46,14 @@ class CompanySettingsService {
     final db = await _appDatabase.database;
     final rows = await db.query(
       'app_settings',
-      where: 'key IN (?, ?, ?, ?)',
+      where: 'key IN (?, ?, ?, ?, ?, ?)',
       whereArgs: const <String>[
         _nameKey,
         _addressKey,
         _phonesKey,
         _logoPathKey,
+        _invoiceFooterNoteKey,
+        _invoiceFooterImageKey,
       ],
     );
 
@@ -64,6 +69,8 @@ class CompanySettingsService {
       address: _clean(values[_addressKey], fallback: _defaults.address),
       phoneNumbers: phones.isEmpty ? _defaults.phoneNumbers : phones,
       logoPath: _cleanOptional(values[_logoPathKey]),
+      invoiceFooterNote: values[_invoiceFooterNoteKey]?.trim() ?? '',
+      invoiceFooterImagePath: _cleanOptional(values[_invoiceFooterImageKey]),
     );
   }
 
@@ -71,6 +78,7 @@ class CompanySettingsService {
     required String name,
     required String address,
     required List<String> phoneNumbers,
+    required String invoiceFooterNote,
   }) async {
     _ensureWriteAllowed();
     final cleanedPhones = phoneNumbers
@@ -85,6 +93,8 @@ class CompanySettingsService {
           ? _defaults.phoneNumbers
           : cleanedPhones,
       logoPath: _settingsNotifier.value.logoPath,
+      invoiceFooterNote: invoiceFooterNote.trim(),
+      invoiceFooterImagePath: _settingsNotifier.value.invoiceFooterImagePath,
     );
 
     final db = await _appDatabase.database;
@@ -101,10 +111,21 @@ class CompanySettingsService {
       'key': _phonesKey,
       'value': jsonEncode(effective.phoneNumbers),
     }, conflictAlgorithm: ConflictAlgorithm.replace);
+    batch.insert('app_settings', <String, String>{
+      'key': _invoiceFooterNoteKey,
+      'value': effective.invoiceFooterNote,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
     if (effective.logoPath != null && effective.logoPath!.isNotEmpty) {
       batch.insert('app_settings', <String, String>{
         'key': _logoPathKey,
         'value': effective.logoPath!,
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
+    }
+    if (effective.invoiceFooterImagePath != null &&
+        effective.invoiceFooterImagePath!.isNotEmpty) {
+      batch.insert('app_settings', <String, String>{
+        'key': _invoiceFooterImageKey,
+        'value': effective.invoiceFooterImagePath!,
       }, conflictAlgorithm: ConflictAlgorithm.replace);
     }
     await batch.commit(noResult: true);
@@ -169,6 +190,74 @@ class CompanySettingsService {
     );
 
     _settingsNotifier.value = _settingsNotifier.value.copyWith(logoPath: null);
+  }
+
+  Future<void> setFooterImageFromPath(String sourcePath) async {
+    _ensureWriteAllowed();
+    final file = File(sourcePath);
+    if (!await file.exists()) {
+      throw StateError('Footer image file not found.');
+    }
+
+    final dir = await _ensureCompanyAssetsDir();
+    final extension = p.extension(file.path).trim();
+    final targetPath = p.join(
+      dir.path,
+      'invoice_footer${extension.isEmpty ? '.png' : extension}',
+    );
+    final targetFile = File(targetPath);
+    final normalizedSource = p.normalize(file.absolute.path);
+    final normalizedTarget = p.normalize(targetFile.absolute.path);
+    final isSamePath = normalizedSource == normalizedTarget;
+
+    if (!isSamePath) {
+      final bytes = await file.readAsBytes();
+      await targetFile.writeAsBytes(bytes, flush: true);
+    }
+
+    final db = await _appDatabase.database;
+    await db.insert('app_settings', <String, String>{
+      'key': _invoiceFooterImageKey,
+      'value': targetPath,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+
+    _settingsNotifier.value = _settingsNotifier.value.copyWith(
+      invoiceFooterImagePath: targetPath,
+    );
+  }
+
+  Future<void> clearFooterImage() async {
+    _ensureWriteAllowed();
+    final existing = _settingsNotifier.value.invoiceFooterImagePath;
+    if (existing != null && existing.trim().isNotEmpty) {
+      final f = File(existing);
+      if (await f.exists()) {
+        try {
+          await f.delete();
+        } catch (_) {}
+      }
+    }
+
+    final db = await _appDatabase.database;
+    await db.delete(
+      'app_settings',
+      where: 'key = ?',
+      whereArgs: [_invoiceFooterImageKey],
+    );
+
+    _settingsNotifier.value = _settingsNotifier.value.copyWith(
+      invoiceFooterImagePath: null,
+    );
+  }
+
+  Future<Uint8List?> loadFooterImageBytes() async {
+    final path = _settingsNotifier.value.invoiceFooterImagePath;
+    if (path == null || path.trim().isEmpty) return null;
+    final file = File(path.trim());
+    if (await file.exists()) {
+      return file.readAsBytes();
+    }
+    return null;
   }
 
   Future<Uint8List?> loadLogoBytes({bool includeFallbackAsset = true}) async {

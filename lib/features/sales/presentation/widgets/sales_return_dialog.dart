@@ -1,6 +1,7 @@
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:clothes_inventory/core/utils/translation_utils.dart';
+import 'package:clothes_inventory/features/invoices/domain/invoice_suggestion.dart';
 import 'package:clothes_inventory/features/sales/data/sales_repository.dart';
 import 'package:clothes_inventory/features/sales/domain/sale_models.dart';
 import 'package:clothes_inventory/features/sales/presentation/widgets/sales_return_dialog_actions.dart';
@@ -12,23 +13,39 @@ class SalesReturnDialog extends StatefulWidget {
   const SalesReturnDialog({
     required this.parseFlexibleInt,
     required this.parseFlexibleNumber,
+    required this.lookupSaleInvoiceSuggestion,
+    required this.searchSaleInvoicesForReturn,
     required this.loadInvoiceLines,
     required this.onReturnSaleItem,
     required this.onRefreshInvoiceLines,
     required this.animateDialogEntrance,
     required this.activeInvoiceId,
+    this.activeInvoiceDisplayNumber,
     required this.activeInvoiceLines,
+    this.canAmendInvoiceForCart,
+    this.onInvoiceAmendedInCart,
     this.initialSaleId,
     this.initialSaleItemId,
     this.initialQuantity,
     super.key,
   });
 
+  /// When set and returns [true], the dialog shows “edit in cart”.
+  final Future<bool> Function(int saleId)? canAmendInvoiceForCart;
+
+  /// Invoked after the dialog is closed; loads the invoice into the cart.
+  final Future<void> Function(int saleId)? onInvoiceAmendedInCart;
+
   final int? initialSaleId;
   final int? initialSaleItemId;
   final double? initialQuantity;
   final int? activeInvoiceId;
+  final String? activeInvoiceDisplayNumber;
   final List<SalesInvoiceLine> activeInvoiceLines;
+
+  final Future<InvoiceSuggestion?> Function(int saleId) lookupSaleInvoiceSuggestion;
+  final Future<List<InvoiceSuggestion>> Function(String prefix)
+      searchSaleInvoicesForReturn;
 
   final int? Function(String value) parseFlexibleInt;
   final double? Function(String value) parseFlexibleNumber;
@@ -46,6 +63,10 @@ class SalesReturnDialog extends StatefulWidget {
 
   static Future<void> show(
     BuildContext context, {
+    required Future<InvoiceSuggestion?> Function(int saleId)
+        lookupSaleInvoiceSuggestion,
+    required Future<List<InvoiceSuggestion>> Function(String prefix)
+        searchSaleInvoicesForReturn,
     required int? Function(String value) parseFlexibleInt,
     required double? Function(String value) parseFlexibleNumber,
     required Future<List<SalesInvoiceLine>> Function(int saleId)
@@ -61,7 +82,10 @@ class SalesReturnDialog extends StatefulWidget {
     onRefreshInvoiceLines,
     required Widget Function(Widget child) animateDialogEntrance,
     required int? activeInvoiceId,
+    String? activeInvoiceDisplayNumber,
     required List<SalesInvoiceLine> activeInvoiceLines,
+    Future<bool> Function(int saleId)? canAmendInvoiceForCart,
+    Future<void> Function(int saleId)? onInvoiceAmendedInCart,
     int? initialSaleId,
     int? initialSaleItemId,
     double? initialQuantity,
@@ -71,12 +95,17 @@ class SalesReturnDialog extends StatefulWidget {
       builder: (_) => SalesReturnDialog(
         parseFlexibleInt: parseFlexibleInt,
         parseFlexibleNumber: parseFlexibleNumber,
+        lookupSaleInvoiceSuggestion: lookupSaleInvoiceSuggestion,
+        searchSaleInvoicesForReturn: searchSaleInvoicesForReturn,
         loadInvoiceLines: loadInvoiceLines,
         onReturnSaleItem: onReturnSaleItem,
         onRefreshInvoiceLines: onRefreshInvoiceLines,
         animateDialogEntrance: animateDialogEntrance,
         activeInvoiceId: activeInvoiceId,
+        activeInvoiceDisplayNumber: activeInvoiceDisplayNumber,
         activeInvoiceLines: activeInvoiceLines,
+        canAmendInvoiceForCart: canAmendInvoiceForCart,
+        onInvoiceAmendedInCart: onInvoiceAmendedInCart,
         initialSaleId: initialSaleId,
         initialSaleItemId: initialSaleItemId,
         initialQuantity: initialQuantity,
@@ -102,15 +131,90 @@ class _SalesReturnDialogState extends State<SalesReturnDialog> {
   bool _submittingReturns = false;
   PaymentMethod _method = PaymentMethod.cash;
 
+  bool _canAmendInCartCheck = false;
+  bool _resolvingAmendEligibility = false;
+
+  InvoiceSuggestion? _lockedSuggestion;
+
+  int? _resolveSaleIdFromField() {
+    final locked = _lockedSuggestion;
+    final t = _saleIdController.text.trim();
+    if (locked != null) {
+      if (t == locked.invoiceNumber.trim()) {
+        return locked.id;
+      }
+      final parsed = widget.parseFlexibleInt(t);
+      if (parsed == locked.id) {
+        return locked.id;
+      }
+    }
+    return widget.parseFlexibleInt(t);
+  }
+
+  void _invalidateLockIfNeeded() {
+    final locked = _lockedSuggestion;
+    if (locked == null) return;
+    final t = _saleIdController.text.trim();
+    if (t.isEmpty) {
+      setState(() => _lockedSuggestion = null);
+      return;
+    }
+    if (t != locked.invoiceNumber.trim()) {
+      final parsed = widget.parseFlexibleInt(t);
+      if (parsed != locked.id) {
+        setState(() => _lockedSuggestion = null);
+      }
+    }
+  }
+
+  Future<void> _refreshAmendEligibility(int saleId) async {
+    final checker = widget.canAmendInvoiceForCart;
+    if (checker == null) return;
+    if (!mounted) return;
+    setState(() {
+      _resolvingAmendEligibility = true;
+    });
+    try {
+      final ok = await checker(saleId);
+      if (!mounted) return;
+      setState(() {
+        _canAmendInCartCheck = ok;
+        _resolvingAmendEligibility = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _canAmendInCartCheck = false;
+        _resolvingAmendEligibility = false;
+      });
+    }
+  }
+
   @override
   void initState() {
     super.initState();
     final resolvedInitialSaleId =
         widget.initialSaleId ?? widget.activeInvoiceId;
-    _saleIdController = TextEditingController(
-      text: resolvedInitialSaleId?.toString() ?? '',
-    );
-    _primeInitialState(resolvedInitialSaleId);
+    _saleIdController = TextEditingController();
+
+    if (resolvedInitialSaleId != null) {
+      _prepareEntry(resolvedInitialSaleId);
+    }
+  }
+
+  Future<void> _prepareEntry(int saleId) async {
+    final suggestion = await widget.lookupSaleInvoiceSuggestion(saleId);
+    if (!mounted) return;
+    setState(() {
+      if (suggestion != null) {
+        _saleIdController.text = suggestion.invoiceNumber;
+        _lockedSuggestion = suggestion;
+      } else {
+        _saleIdController.text = saleId.toString();
+        _lockedSuggestion = null;
+      }
+    });
+    await _primeInitialState(saleId);
   }
 
   Future<void> _primeInitialState(int? resolvedInitialSaleId) async {
@@ -120,6 +224,9 @@ class _SalesReturnDialogState extends State<SalesReturnDialog> {
       _loadedInvoiceLines = widget.activeInvoiceLines;
       _loadedForSaleId = resolvedInitialSaleId;
       _syncSelectionForLines(_loadedInvoiceLines);
+      if (_loadedInvoiceLines.isNotEmpty) {
+        await _refreshAmendEligibility(resolvedInitialSaleId);
+      }
       if (mounted) setState(() {});
       return;
     }
@@ -134,6 +241,9 @@ class _SalesReturnDialogState extends State<SalesReturnDialog> {
         _invoiceItemsLoadError = null;
         _syncSelectionForLines(fetched);
       });
+      if (fetched.isNotEmpty) {
+        await _refreshAmendEligibility(resolvedInitialSaleId);
+      }
     } catch (_) {
       if (!mounted) return;
       setState(() {
@@ -193,10 +303,14 @@ class _SalesReturnDialogState extends State<SalesReturnDialog> {
         if (fetched.isEmpty) {
           _selectedSaleItemIds.clear();
           _selectedQtyByItemId.clear();
+          _canAmendInCartCheck = false;
           return;
         }
         _syncSelectionForLines(fetched);
       });
+      if (fetched.isNotEmpty) {
+        await _refreshAmendEligibility(id);
+      }
     } catch (_) {
       if (!mounted) return;
       setState(() {
@@ -206,6 +320,7 @@ class _SalesReturnDialogState extends State<SalesReturnDialog> {
         _selectedSaleItemIds.clear();
         _selectedQtyByItemId.clear();
         _invoiceItemsLoadError = 'Failed to load sale items.'.tr();
+        _canAmendInCartCheck = false;
       });
     }
   }
@@ -231,7 +346,7 @@ class _SalesReturnDialogState extends State<SalesReturnDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final saleId = widget.parseFlexibleInt(_saleIdController.text);
+    final saleId = _resolveSaleIdFromField();
     final canUseInvoicePicker =
         saleId != null && saleId == widget.activeInvoiceId;
 
@@ -256,6 +371,17 @@ class _SalesReturnDialogState extends State<SalesReturnDialog> {
         !_loadingInvoiceItems &&
         !_submittingReturns &&
         !hasLineErrors;
+
+    final amendAvailable =
+        widget.canAmendInvoiceForCart != null &&
+        widget.onInvoiceAmendedInCart != null &&
+        !_resolvingAmendEligibility &&
+        !_loadingInvoiceItems;
+
+    final canAmendLoaded =
+        saleId != null &&
+        invoiceLinesForPicker.isNotEmpty &&
+        _canAmendInCartCheck;
 
     return widget.animateDialogEntrance(
       Dialog(
@@ -287,11 +413,23 @@ class _SalesReturnDialogState extends State<SalesReturnDialog> {
                       children: [
                         SalesReturnSaleIdSection(
                           canUseInvoicePicker: canUseInvoicePicker,
-                          saleId: saleId,
+                          activeInvoiceNumber:
+                              widget.activeInvoiceDisplayNumber,
+                          resolvedSaleId: saleId,
                           saleIdController: _saleIdController,
                           loadingInvoiceItems: _loadingInvoiceItems,
-                          onSaleIdChanged: (_) {
+                          searchSuggestions: widget.searchSaleInvoicesForReturn,
+                          onInvoiceQueryActivity: () {
+                            _invalidateLockIfNeeded();
                             setState(() {
+                              _selectedSaleItemIds.clear();
+                              _selectedQtyByItemId.clear();
+                              _invoiceItemsLoadError = null;
+                            });
+                          },
+                          onSuggestionChosen: (suggestion) {
+                            setState(() {
+                              _lockedSuggestion = suggestion;
                               _selectedSaleItemIds.clear();
                               _selectedQtyByItemId.clear();
                               _invoiceItemsLoadError = null;
@@ -402,6 +540,17 @@ class _SalesReturnDialogState extends State<SalesReturnDialog> {
                 SalesReturnDialogActions(
                   canSubmit: canSubmit,
                   submittingReturns: _submittingReturns,
+                  showAmendInCart: amendAvailable,
+                  canAmendInCart:
+                      canAmendLoaded && !_submittingReturns,
+                  onAmendInCart:
+                      amendAvailable
+                      ? () async {
+                          final sid = saleId!;
+                          Navigator.of(context).pop();
+                          await widget.onInvoiceAmendedInCart?.call(sid);
+                        }
+                      : null,
                   onCancel: () => Navigator.of(context).pop(),
                   onApply: () async {
                     setState(() => _submittingReturns = true);

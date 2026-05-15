@@ -10,21 +10,28 @@ class SalesState extends Equatable {
     this.cart = const <SaleDraftItem>[],
     this.customerId,
     this.newCustomerName = '',
-    this.taxPercentage = 0,
+    this.headerDiscountKind = InvoiceHeaderDiscountKind.percent,
+    this.headerDiscountValue = 0,
     this.paidAmount = 0,
+    this.paidWalletAmount = 0,
     this.paymentMethod = PaymentMethod.cash,
     this.loading = false,
     this.error,
     this.successInvoiceId,
     this.successEvent,
     this.pendingSaleId,
+    this.editingSaleId,
+    this.amendmentStockCreditByProduct = const <int, double>{},
   });
 
   final List<SaleDraftItem> cart;
   final int? customerId;
   final String newCustomerName;
-  final double taxPercentage;
+  final InvoiceHeaderDiscountKind headerDiscountKind;
+  final double headerDiscountValue;
   final double paidAmount;
+  /// Wallet portion when [paymentMethod] is [PaymentMethod.cashAndWallet].
+  final double paidWalletAmount;
   final PaymentMethod paymentMethod;
   final bool loading;
   final String? error;
@@ -32,35 +39,65 @@ class SalesState extends Equatable {
   final String? successEvent;
   final int? pendingSaleId;
 
+  /// When set, completing the sale calls [SalesRepository.amendSale] instead of
+  /// creating a new invoice.
+  final int? editingSaleId;
+
+  /// Quantities that were on the invoice when amendment load started; used to
+  /// offset live stock while original sale `out` movements still exist.
+  final Map<int, double> amendmentStockCreditByProduct;
+
   double get subtotal =>
       roundCurrency(cart.fold<double>(0, (sum, item) => sum + item.lineTotal));
 
-  double get taxAmount => roundCurrency(subtotal * (taxPercentage / 100));
+  double get headerDiscountAmount => computeInvoiceHeaderDiscountAmount(
+        subtotal: subtotal,
+        kind: headerDiscountKind,
+        value: headerDiscountValue,
+      );
 
-  double get total => roundCurrency(subtotal + taxAmount);
+  double get total => roundCurrency(subtotal - headerDiscountAmount);
+
+  double get effectivePaidTotal {
+    switch (paymentMethod) {
+      case PaymentMethod.cashAndWallet:
+        return roundCurrency(paidAmount + paidWalletAmount);
+      case PaymentMethod.cash:
+      case PaymentMethod.vodafoneCash:
+        return paidAmount;
+    }
+  }
 
   SalesState copyWith({
     List<SaleDraftItem>? cart,
     int? customerId,
     String? newCustomerName,
-    double? taxPercentage,
+    InvoiceHeaderDiscountKind? headerDiscountKind,
+    double? headerDiscountValue,
     double? paidAmount,
+    double? paidWalletAmount,
     PaymentMethod? paymentMethod,
     bool? loading,
     String? error,
     int? successInvoiceId,
     String? successEvent,
     int? pendingSaleId,
+    int? editingSaleId,
+    Map<int, double>? amendmentStockCreditByProduct,
     bool clearError = false,
     bool clearSuccessEvent = false,
     bool clearPendingSaleId = false,
+    bool clearEditingSaleId = false,
+    bool clearAmendmentStockCredit = false,
   }) {
     return SalesState(
       cart: cart ?? this.cart,
       customerId: customerId ?? this.customerId,
       newCustomerName: newCustomerName ?? this.newCustomerName,
-      taxPercentage: taxPercentage ?? this.taxPercentage,
+      headerDiscountKind: headerDiscountKind ?? this.headerDiscountKind,
+      headerDiscountValue: headerDiscountValue ?? this.headerDiscountValue,
       paidAmount: paidAmount ?? this.paidAmount,
+      paidWalletAmount: paidWalletAmount ?? this.paidWalletAmount,
       paymentMethod: paymentMethod ?? this.paymentMethod,
       loading: loading ?? this.loading,
       error: clearError ? null : (error ?? this.error),
@@ -71,6 +108,13 @@ class SalesState extends Equatable {
       pendingSaleId: clearPendingSaleId
           ? null
           : (pendingSaleId ?? this.pendingSaleId),
+      editingSaleId:
+          clearEditingSaleId ? null : (editingSaleId ?? this.editingSaleId),
+      amendmentStockCreditByProduct: clearEditingSaleId ||
+              clearAmendmentStockCredit
+          ? const <int, double>{}
+          : (amendmentStockCreditByProduct ??
+              this.amendmentStockCreditByProduct),
     );
   }
 
@@ -79,14 +123,18 @@ class SalesState extends Equatable {
     cart,
     customerId,
     newCustomerName,
-    taxPercentage,
+    headerDiscountKind,
+    headerDiscountValue,
     paidAmount,
+    paidWalletAmount,
     paymentMethod,
     loading,
     error,
     successInvoiceId,
     successEvent,
     pendingSaleId,
+    editingSaleId,
+    amendmentStockCreditByProduct,
   ];
 }
 
@@ -105,6 +153,11 @@ class SalesCubit extends Cubit<SalesState> {
     );
   }
 
+  /// Clears the cart and exits “amend invoice in cart” mode.
+  void clearInvoiceAmendment() {
+    emit(const SalesState());
+  }
+
   void setCustomerId(int? accountId) {
     emit(state.copyWith(customerId: accountId));
   }
@@ -117,13 +170,52 @@ class SalesCubit extends Cubit<SalesState> {
     emit(state.copyWith(paidAmount: roundCurrency(value)));
   }
 
-  void setTaxPercentage(double value) {
-    final normalized = value.clamp(0, 100).toDouble();
-    emit(state.copyWith(taxPercentage: roundCurrency(normalized)));
+  void setPaidWalletAmount(double value) {
+    emit(state.copyWith(paidWalletAmount: roundCurrency(value)));
+  }
+
+  void setHeaderDiscountKind(InvoiceHeaderDiscountKind kind) {
+    emit(state.copyWith(headerDiscountKind: kind));
+  }
+
+  void setHeaderDiscountValue(double value) {
+    final normalized = state.headerDiscountKind == InvoiceHeaderDiscountKind.percent
+        ? roundCurrency(value.clamp(0, 100))
+        : roundCurrency(value.clamp(0, double.infinity));
+    emit(state.copyWith(headerDiscountValue: normalized));
   }
 
   void setPaymentMethod(PaymentMethod method) {
-    emit(state.copyWith(paymentMethod: method));
+    if (method == state.paymentMethod) return;
+
+    final (priorCash, priorWallet) = switch (state.paymentMethod) {
+      PaymentMethod.cash => (state.paidAmount, 0.0),
+      PaymentMethod.vodafoneCash => (0.0, state.paidAmount),
+      PaymentMethod.cashAndWallet => (
+          state.paidAmount,
+          state.paidWalletAmount,
+        ),
+    };
+
+    switch (method) {
+      case PaymentMethod.cash:
+      case PaymentMethod.vodafoneCash:
+        emit(
+          state.copyWith(
+            paymentMethod: method,
+            paidAmount: roundCurrency(priorCash + priorWallet),
+            paidWalletAmount: 0,
+          ),
+        );
+      case PaymentMethod.cashAndWallet:
+        emit(
+          state.copyWith(
+            paymentMethod: method,
+            paidAmount: priorCash,
+            paidWalletAmount: priorWallet,
+          ),
+        );
+    }
   }
 
   void addProduct(Product product, {double? initialUnitPrice}) {
@@ -247,11 +339,21 @@ class SalesCubit extends Cubit<SalesState> {
 
     final pendingSaleId = pendingSaleIdOverride ?? state.pendingSaleId;
 
-    if (!isPending && pendingSaleId != null) {
+    if (!isPending && pendingSaleId != null && state.editingSaleId == null) {
       await settlePendingSale(
         saleId: pendingSaleId,
         paidAmount: state.paidAmount,
+        paidWalletAmount: state.paidWalletAmount,
         paymentMethod: state.paymentMethod,
+      );
+      return;
+    }
+
+    if (state.editingSaleId != null && isPending) {
+      emit(
+        state.copyWith(
+          error: 'sale.amend_complete_only',
+        ),
       );
       return;
     }
@@ -271,11 +373,19 @@ class SalesCubit extends Cubit<SalesState> {
         productIds,
       );
 
+      final credit = state.amendmentStockCreditByProduct;
+      final isAmending = state.editingSaleId != null;
       final syncedCart = state.cart
           .map(
-            (item) => item.copyWith(
-              availableStock: liveStockByProduct[item.productId] ?? 0,
-            ),
+            (item) {
+              final live = liveStockByProduct[item.productId] ?? 0;
+              final extra = isAmending
+                  ? (credit[item.productId] ?? 0)
+                  : 0.0;
+              return item.copyWith(
+                availableStock: roundQuantity(live + extra),
+              );
+            },
           )
           .toList();
 
@@ -307,6 +417,26 @@ class SalesCubit extends Cubit<SalesState> {
         return;
       }
 
+      if (state.editingSaleId != null) {
+        final amendmentId = state.editingSaleId!;
+        await _repository.amendSale(
+          SaleAmendRequest(
+            saleId: amendmentId,
+            items: syncedCart,
+            headerDiscountKind: state.headerDiscountKind,
+            headerDiscountValue: state.headerDiscountValue,
+          ),
+        );
+        emit(
+          SalesState(
+            successInvoiceId: amendmentId,
+            paymentMethod: state.paymentMethod,
+            successEvent: 'sale_amended',
+          ),
+        );
+        return;
+      }
+
       final saleId = await _repository.createSale(
         SaleCreateRequest(
           customerId: state.customerId,
@@ -314,8 +444,10 @@ class SalesCubit extends Cubit<SalesState> {
               ? null
               : state.newCustomerName.trim(),
           items: syncedCart,
-          taxPercentage: state.taxPercentage,
+          headerDiscountKind: state.headerDiscountKind,
+          headerDiscountValue: state.headerDiscountValue,
           paidAmount: state.paidAmount,
+          paidWalletAmount: state.paidWalletAmount,
           paymentMethod: state.paymentMethod,
           isPending: isPending,
           pendingSaleId: pendingSaleId,
@@ -338,6 +470,7 @@ class SalesCubit extends Cubit<SalesState> {
   Future<void> settlePendingSale({
     required int saleId,
     required double paidAmount,
+    double paidWalletAmount = 0,
     required PaymentMethod paymentMethod,
   }) async {
     emit(
@@ -353,6 +486,7 @@ class SalesCubit extends Cubit<SalesState> {
       await _repository.settlePendingSale(
         saleId: saleId,
         paidAmount: paidAmount,
+        paidWalletAmount: paidWalletAmount,
         paymentMethod: paymentMethod,
       );
       emit(
@@ -387,11 +521,66 @@ class SalesCubit extends Cubit<SalesState> {
           newCustomerName: draft.customerId == null
               ? (draft.customerName ?? '')
               : '',
-          taxPercentage: draft.taxPercentage,
+          headerDiscountKind: draft.headerDiscountKind,
+          headerDiscountValue: draft.headerDiscountValue,
           paidAmount: 0,
+          paidWalletAmount: 0,
           paymentMethod: PaymentMethod.cash,
           successEvent: 'pending_loaded',
           pendingSaleId: draft.saleId,
+          editingSaleId: null,
+          amendmentStockCreditByProduct: const <int, double>{},
+        ),
+      );
+    } catch (e) {
+      emit(state.copyWith(loading: false, error: _humanizeError(e)));
+    }
+  }
+
+  Future<void> loadInvoiceForAmendment(int saleId) async {
+    emit(
+      state.copyWith(
+        loading: true,
+        clearError: true,
+        successInvoiceId: null,
+        clearSuccessEvent: true,
+        clearPendingSaleId: true,
+      ),
+    );
+
+    try {
+      final draft = await _repository.loadSaleDraftForAmendment(saleId);
+      final pay = draft.amendmentPayments!;
+
+      final double paidAmt;
+      final double paidWlt;
+      switch (pay.method) {
+        case PaymentMethod.cash:
+          paidAmt = roundCurrency(pay.paidCash);
+          paidWlt = 0;
+        case PaymentMethod.vodafoneCash:
+          paidAmt = roundCurrency(pay.paidCash);
+          paidWlt = 0;
+        case PaymentMethod.cashAndWallet:
+          paidAmt = roundCurrency(pay.paidCash);
+          paidWlt = roundCurrency(pay.paidWallet);
+      }
+
+      emit(
+        SalesState(
+          cart: draft.items,
+          customerId: draft.customerId,
+          newCustomerName: draft.customerId == null
+              ? (draft.customerName ?? '')
+              : '',
+          headerDiscountKind: draft.headerDiscountKind,
+          headerDiscountValue: draft.headerDiscountValue,
+          paidAmount: paidAmt,
+          paidWalletAmount: paidWlt,
+          paymentMethod: pay.method,
+          successEvent: 'invoice_amendment_loaded',
+          editingSaleId: draft.saleId,
+          amendmentStockCreditByProduct: draft.amendmentStockCreditByProduct,
         ),
       );
     } catch (e) {
@@ -443,6 +632,15 @@ class SalesCubit extends Cubit<SalesState> {
     }
     if (lower.contains('sale price cannot be less than purchase price')) {
       return 'Sale price cannot be less than purchase price.';
+    }
+    if (lower.contains('cannot amend a sale that has returns')) {
+      return 'sale.amend_blocked_returns';
+    }
+    if (lower.contains('this invoice cannot be amended')) {
+      return 'sale.amend_blocked_status';
+    }
+    if (lower.contains('ledger debit entry missing')) {
+      return 'sale.amend_blocked_ledger';
     }
 
     return raw;

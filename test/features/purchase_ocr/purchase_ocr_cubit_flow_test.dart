@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:clothes_inventory/features/accounts/data/accounts_repository.dart';
+import 'package:clothes_inventory/features/auth/domain/auth_user.dart';
 import 'package:clothes_inventory/features/products/data/product_repository.dart';
 import 'package:clothes_inventory/features/products/domain/product.dart';
 import 'package:clothes_inventory/features/purchase_ocr/data/purchase_ocr_service.dart';
@@ -11,8 +12,11 @@ import 'package:clothes_inventory/features/purchase_ocr/domain/purchase_invoice_
 import 'package:clothes_inventory/features/purchase_ocr/domain/purchase_ocr_product_matcher.dart';
 import 'package:clothes_inventory/features/purchase_ocr/presentation/purchase_ocr_cubit.dart';
 import 'package:clothes_inventory/features/purchases/data/purchases_repository.dart';
+import 'package:clothes_inventory/services/auth/session_service.dart';
 import 'package:clothes_inventory/services/database/app_database.dart';
 import 'package:clothes_inventory/services/di/service_locator.dart';
+
+import '../../support/test_app_isolation.dart';
 
 class _FakePurchaseOcrService implements PurchaseOcrService {
   const _FakePurchaseOcrService(this.text);
@@ -117,14 +121,31 @@ void main() {
           return null;
         });
 
-    await setupServiceLocator();
+    await TestAppIsolation.bootstrap();
     accountsRepository = getIt<AccountsRepository>();
     productRepository = getIt<ProductRepository>();
     purchasesRepository = getIt<PurchasesRepository>();
   });
 
+  tearDownAll(() async {
+    await TestAppIsolation.shutdown();
+  });
+
   setUp(() async {
     await _clearTestData();
+    getIt<SessionService>().login(
+      const AuthUser(
+        id: 1,
+        username: 'owner',
+        fullName: 'Owner',
+        role: UserRole.owner,
+        isActive: true,
+      ),
+    );
+  });
+
+  tearDown(() {
+    getIt<SessionService>().logout();
   });
 
   test('process image then save creates purchase and side effects', () async {

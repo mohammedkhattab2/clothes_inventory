@@ -25,7 +25,6 @@ import 'package:clothes_inventory/features/purchases/presentation/widgets/purcha
 import 'package:clothes_inventory/features/purchases/presentation/widgets/purchases_edit_item_dialog.dart';
 import 'package:clothes_inventory/features/purchases/presentation/widgets/purchases_header_section.dart';
 import 'package:clothes_inventory/features/purchases/presentation/widgets/purchases_invoice_details_dialog.dart';
-import 'package:clothes_inventory/features/purchases/presentation/widgets/purchases_invoices_explorer.dart';
 import 'package:clothes_inventory/features/purchases/presentation/widgets/purchases_product_dialog.dart';
 import 'package:clothes_inventory/features/purchases/presentation/widgets/purchases_products_pane.dart';
 import 'package:clothes_inventory/features/purchases/presentation/widgets/purchases_return_dialog.dart';
@@ -34,7 +33,9 @@ import 'package:clothes_inventory/features/license/domain/license_service.dart';
 import 'package:clothes_inventory/services/di/service_locator.dart';
 import 'package:clothes_inventory/services/printing/a4_invoice_printer.dart';
 import 'package:clothes_inventory/services/printing/invoice_print_manager.dart';
-import 'package:clothes_inventory/services/printing/unsupported_invoice_printer.dart';
+import 'package:clothes_inventory/services/printing/product_barcode_label_printer.dart';
+import 'package:clothes_inventory/services/printing/thermal_pdf_invoice_printer.dart';
+import 'package:clothes_inventory/services/printing/thermal_printer_preferences.dart';
 
 part 'purchases_page_state.part.dart';
 
