@@ -1,7 +1,6 @@
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:clothes_inventory/core/widgets/app_brand_header.dart';
 import 'package:clothes_inventory/core/widgets/app_empty_state.dart';
 import 'package:clothes_inventory/core/widgets/app_error_banner.dart';
 import 'package:clothes_inventory/core/widgets/app_inline_loading_indicator.dart';
@@ -96,85 +95,90 @@ class AccountsPageContent extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          AppSectionPanel(
-            emphasis: true,
-            padding: EdgeInsets.symmetric(
-              horizontal: isDenseViewport ? 10 : 12,
-              vertical: isDenseViewport ? 8 : 10,
-            ),
-            child: AppBrandHeader(
-              pageTitle: 'Accounts & Ledger'.tr(),
-              description: 'Balances are derived from ledger transactions only.'
-                  .tr(),
-              actions: [
-                // Enhanced button styles for a premium feel
-                FilledButton.icon(
-                  style: FilledButton.styleFrom(
-                    backgroundColor: Theme.of(
-                      context,
-                    ).colorScheme.primary, // Use primary color
-                    foregroundColor: Theme.of(
-                      context,
-                    ).colorScheme.onPrimary, // Use onPrimary color
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(
-                        12,
-                      ), // Rounded corners
-                    ),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 12,
-                    ),
-                  ),
-                  onPressed: onQuickAddAccount,
-                  icon: Icon(
-                    Icons.person_add_alt_1_outlined,
-                    color: Theme.of(context).colorScheme.onPrimary,
-                  ),
-                  label: Text(
-                    'Add Account'.tr(),
-                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Accounts & Ledger'.tr(),
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.w800,
                 ),
-                const SizedBox(width: 8), // Spacing between buttons
-                OutlinedButton.icon(
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Theme.of(
-                      context,
-                    ).colorScheme.primary, // Use primary color for text
-                    side: BorderSide(
-                      color: Theme.of(
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Balances are derived from ledger transactions only.'.tr(),
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+              SizedBox(height: isDenseViewport ? 10 : 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: Theme.of(
                         context,
-                      ).colorScheme.primary, // Use primary color for border
-                      width: 1.5, // Slightly thicker border
+                      ).colorScheme.primary,
+                      foregroundColor: Theme.of(
+                        context,
+                      ).colorScheme.onPrimary,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
                     ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(
-                        12,
-                      ), // Rounded corners
+                    onPressed: onQuickAddAccount,
+                    icon: Icon(
+                      Icons.person_add_alt_1_outlined,
+                      color: Theme.of(context).colorScheme.onPrimary,
                     ),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 12,
+                    label: Text(
+                      'Add Account'.tr(),
+                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
-                  onPressed: onSettlement,
-                  icon: Icon(
-                    Icons.balance_outlined,
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
-                  label: Text(
-                    'Settlement'.tr(),
-                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                      fontWeight: FontWeight.w700,
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Theme.of(
+                        context,
+                      ).colorScheme.primary,
+                      side: BorderSide(
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.primary,
+                        width: 1.5,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
+                    ),
+                    onPressed: onSettlement,
+                    icon: Icon(
+                      Icons.balance_outlined,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                    label: Text(
+                      'Settlement'.tr(),
+                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
-                ),
-              ],
-              isDense: isDenseViewport,
-            ),
+                ],
+              ),
+            ],
           ),
           const SizedBox(height: 8),
           FutureBuilder<List<AccountSummary>>(

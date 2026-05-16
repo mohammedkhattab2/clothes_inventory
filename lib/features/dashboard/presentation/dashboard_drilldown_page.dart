@@ -6,7 +6,6 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:path/path.dart' as p;
 import 'package:clothes_inventory/core/widgets/app_empty_state.dart';
-import 'package:clothes_inventory/core/widgets/app_brand_header.dart';
 import 'package:clothes_inventory/core/widgets/app_error_banner.dart';
 import 'package:clothes_inventory/core/widgets/app_inline_loading_indicator.dart';
 import 'package:clothes_inventory/core/widgets/app_loading_indicator.dart';
@@ -14,6 +13,7 @@ import 'package:clothes_inventory/features/dashboard/data/dashboard_drilldown_ex
 import 'package:clothes_inventory/features/dashboard/data/dashboard_repository.dart';
 import 'package:clothes_inventory/features/dashboard/presentation/dashboard_cubit.dart';
 import 'package:clothes_inventory/features/dashboard/presentation/widgets/dashboard_drilldown_stretch_table.dart';
+import 'package:clothes_inventory/features/invoices/presentation/invoice_payment_display.dart';
 import 'package:clothes_inventory/services/di/service_locator.dart';
 import 'package:clothes_inventory/services/platform/folder_opener_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -253,12 +253,18 @@ class _DashboardDrillDownPageState extends State<DashboardDrillDownPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          AppBrandHeader(
-            pageTitle: _title(),
-            description:
-                '${'Range'.tr()}: ${DateFormat('yyyy-MM-dd').format(widget.fromDate)} ${'to'.tr()} ${DateFormat('yyyy-MM-dd').format(widget.toDate)}',
-            isDense: isDenseViewport,
-            slim: isVeryDenseViewport,
+          Text(
+            _title(),
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '${'Range'.tr()}: ${DateFormat('yyyy-MM-dd').format(widget.fromDate)} ${'to'.tr()} ${DateFormat('yyyy-MM-dd').format(widget.toDate)}',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
           ),
           SizedBox(height: sectionGap),
           LayoutBuilder(
@@ -543,12 +549,41 @@ class _DashboardDrillDownPageState extends State<DashboardDrillDownPage> {
     }
   }
 
+  bool get _showSalesInvoicePaymentColumn =>
+      widget.kind == 'revenue' || widget.kind == 'customer_debt';
+
+  Map<String, double> _revenueTotalsByPaymentRaw() {
+    final map = <String, double>{};
+    if (!_showSalesInvoicePaymentColumn) return map;
+    for (final row in _invoiceRows) {
+      final key = row.paymentMethodRaw?.trim() ?? '';
+      map[key] = (map[key] ?? 0) + row.totalAmount;
+    }
+    return map;
+  }
+
+  List<MapEntry<String, double>> _sortedRevenuePaymentTotals() {
+    final entries = _revenueTotalsByPaymentRaw().entries.toList();
+    entries.sort((a, b) {
+      if (a.key.isEmpty && b.key.isNotEmpty) return 1;
+      if (a.key.isNotEmpty && b.key.isEmpty) return -1;
+      return a.key.compareTo(b.key);
+    });
+    return entries;
+  }
+
   Widget _buildInvoiceTable() {
-    final columns = [
+    final showPayment = _showSalesInvoicePaymentColumn;
+    final columns = <StretchDrilldownColumn>[
       StretchDrilldownColumn(label: 'Date'.tr(), flex: 11),
       StretchDrilldownColumn(label: 'Invoice'.tr(), flex: 10),
-      StretchDrilldownColumn(label: 'Account'.tr(), flex: 22),
-      StretchDrilldownColumn(label: 'Status'.tr(), flex: 9),
+      StretchDrilldownColumn(
+        label: 'Account'.tr(),
+        flex: showPayment ? 18 : 22,
+      ),
+      StretchDrilldownColumn(label: 'Status'.tr(), flex: showPayment ? 8 : 9),
+      if (showPayment)
+        StretchDrilldownColumn(label: 'Payment method'.tr(), flex: 14),
       StretchDrilldownColumn(
         label: 'Total'.tr(),
         flex: 10,
@@ -571,11 +606,57 @@ class _DashboardDrillDownPageState extends State<DashboardDrillDownPage> {
     return DashboardDrilldownStretchTable(
       columns: columns,
       rowCount: _invoiceRows.length,
+      minWidthWhenScrolling: showPayment ? 1040 : 920,
       cellBuilder: (context, rowIndex, colIndex) {
         final row = _invoiceRows[rowIndex];
+        if (!showPayment) {
+          switch (colIndex) {
+            case 0:
+              return Text(
+                DateFormat('yyyy-MM-dd HH:mm').format(row.createdAt),
+              );
+            case 1:
+              return Text(
+                row.invoiceNumber,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              );
+            case 2:
+              return Text(
+                row.accountName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              );
+            case 3:
+              return Text(
+                row.status,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              );
+            case 4:
+              return Text(
+                _currency.format(row.totalAmount),
+                textAlign: TextAlign.end,
+              );
+            case 5:
+              return Text(
+                _currency.format(row.paidAmount),
+                textAlign: TextAlign.end,
+              );
+            case 6:
+              return Text(
+                _currency.format(row.outstandingAmount),
+                textAlign: TextAlign.end,
+              );
+            default:
+              return const SizedBox.shrink();
+          }
+        }
         switch (colIndex) {
           case 0:
-            return Text(DateFormat('yyyy-MM-dd HH:mm').format(row.createdAt));
+            return Text(
+              DateFormat('yyyy-MM-dd HH:mm').format(row.createdAt),
+            );
           case 1:
             return Text(
               row.invoiceNumber,
@@ -596,15 +677,21 @@ class _DashboardDrillDownPageState extends State<DashboardDrillDownPage> {
             );
           case 4:
             return Text(
+              invoicePaymentMethodsDisplayLabel(row.paymentMethodRaw),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            );
+          case 5:
+            return Text(
               _currency.format(row.totalAmount),
               textAlign: TextAlign.end,
             );
-          case 5:
+          case 6:
             return Text(
               _currency.format(row.paidAmount),
               textAlign: TextAlign.end,
             );
-          case 6:
+          case 7:
             return Text(
               _currency.format(row.outstandingAmount),
               textAlign: TextAlign.end,
@@ -790,6 +877,29 @@ class _DashboardDrillDownPageState extends State<DashboardDrillDownPage> {
                     ),
                   ],
           ),
+          if (!isProfit &&
+              _showSalesInvoicePaymentColumn &&
+              _revenueTotalsByPaymentRaw().isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Text(
+              'Revenue by payment method'.tr(),
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+            ),
+            const SizedBox(height: 8),
+            _NetMiniMetrics(
+              items: [
+                for (final e in _sortedRevenuePaymentTotals())
+                  _NetMiniMetricItem(
+                    label: invoicePaymentMethodsDisplayLabel(
+                      e.key.isEmpty ? null : e.key,
+                    ),
+                    value: _currency.format(e.value),
+                  ),
+              ],
+            ),
+          ],
         ],
       ),
     );

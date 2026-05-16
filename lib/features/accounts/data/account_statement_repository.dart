@@ -40,6 +40,9 @@ class AccountStatementTransaction {
         if (paymentMethod == 'vodafone_cash') {
           return 'Payment (Vodafone Cash)';
         }
+        if (paymentMethod == 'visa') {
+          return 'Payment (Visa)';
+        }
         return 'Payment (Cash)';
       case 'return':
         return 'Return';

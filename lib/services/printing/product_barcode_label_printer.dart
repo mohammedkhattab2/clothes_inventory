@@ -15,6 +15,24 @@ class ProductBarcodeLabelPrinter {
   final double paperWidthMm;
   final ThermalPrinterPreferences printerPrefs;
 
+  Future<Uint8List> buildLabelPdfBytes({
+    required String productName,
+    required String barcodeValue,
+    int copies = 1,
+  }) {
+    if (barcodeValue.trim().isEmpty) {
+      throw ArgumentError('Barcode cannot be empty.');
+    }
+    if (copies < 1) {
+      throw ArgumentError('Copies must be at least 1.');
+    }
+    return _buildPdf(
+      productName: productName.trim(),
+      barcodeValue: barcodeValue.trim(),
+      copies: copies,
+    );
+  }
+
   Future<void> printLabel({
     required String productName,
     required String barcodeValue,
@@ -27,7 +45,7 @@ class ProductBarcodeLabelPrinter {
       throw ArgumentError('Copies must be at least 1.');
     }
 
-    final bytes = await _buildPdf(
+    final bytes = await buildLabelPdfBytes(
       productName: productName.trim(),
       barcodeValue: barcodeValue.trim(),
       copies: copies,

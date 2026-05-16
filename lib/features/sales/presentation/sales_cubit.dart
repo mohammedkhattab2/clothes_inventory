@@ -10,6 +10,7 @@ class SalesState extends Equatable {
     this.cart = const <SaleDraftItem>[],
     this.customerId,
     this.newCustomerName = '',
+    this.customerPhone = '',
     this.headerDiscountKind = InvoiceHeaderDiscountKind.percent,
     this.headerDiscountValue = 0,
     this.paidAmount = 0,
@@ -27,6 +28,7 @@ class SalesState extends Equatable {
   final List<SaleDraftItem> cart;
   final int? customerId;
   final String newCustomerName;
+  final String customerPhone;
   final InvoiceHeaderDiscountKind headerDiscountKind;
   final double headerDiscountValue;
   final double paidAmount;
@@ -64,6 +66,7 @@ class SalesState extends Equatable {
         return roundCurrency(paidAmount + paidWalletAmount);
       case PaymentMethod.cash:
       case PaymentMethod.vodafoneCash:
+      case PaymentMethod.visa:
         return paidAmount;
     }
   }
@@ -72,6 +75,7 @@ class SalesState extends Equatable {
     List<SaleDraftItem>? cart,
     int? customerId,
     String? newCustomerName,
+    String? customerPhone,
     InvoiceHeaderDiscountKind? headerDiscountKind,
     double? headerDiscountValue,
     double? paidAmount,
@@ -94,6 +98,7 @@ class SalesState extends Equatable {
       cart: cart ?? this.cart,
       customerId: customerId ?? this.customerId,
       newCustomerName: newCustomerName ?? this.newCustomerName,
+      customerPhone: customerPhone ?? this.customerPhone,
       headerDiscountKind: headerDiscountKind ?? this.headerDiscountKind,
       headerDiscountValue: headerDiscountValue ?? this.headerDiscountValue,
       paidAmount: paidAmount ?? this.paidAmount,
@@ -123,6 +128,7 @@ class SalesState extends Equatable {
     cart,
     customerId,
     newCustomerName,
+    customerPhone,
     headerDiscountKind,
     headerDiscountValue,
     paidAmount,
@@ -159,11 +165,20 @@ class SalesCubit extends Cubit<SalesState> {
   }
 
   void setCustomerId(int? accountId) {
-    emit(state.copyWith(customerId: accountId));
+    emit(
+      state.copyWith(
+        customerId: accountId,
+        customerPhone: accountId == null ? '' : state.customerPhone,
+      ),
+    );
   }
 
   void setNewCustomerName(String value) {
     emit(state.copyWith(newCustomerName: value));
+  }
+
+  void setCustomerPhone(String value) {
+    emit(state.copyWith(customerPhone: value));
   }
 
   void setPaidAmount(double value) {
@@ -188,22 +203,25 @@ class SalesCubit extends Cubit<SalesState> {
   void setPaymentMethod(PaymentMethod method) {
     if (method == state.paymentMethod) return;
 
-    final (priorCash, priorWallet) = switch (state.paymentMethod) {
-      PaymentMethod.cash => (state.paidAmount, 0.0),
-      PaymentMethod.vodafoneCash => (0.0, state.paidAmount),
+    final (priorCash, priorWallet, priorVisa) = switch (state.paymentMethod) {
+      PaymentMethod.cash => (state.paidAmount, 0.0, 0.0),
+      PaymentMethod.vodafoneCash => (0.0, state.paidAmount, 0.0),
+      PaymentMethod.visa => (0.0, 0.0, state.paidAmount),
       PaymentMethod.cashAndWallet => (
           state.paidAmount,
           state.paidWalletAmount,
+          0.0,
         ),
     };
 
     switch (method) {
       case PaymentMethod.cash:
       case PaymentMethod.vodafoneCash:
+      case PaymentMethod.visa:
         emit(
           state.copyWith(
             paymentMethod: method,
-            paidAmount: roundCurrency(priorCash + priorWallet),
+            paidAmount: roundCurrency(priorCash + priorWallet + priorVisa),
             paidWalletAmount: 0,
           ),
         );
@@ -211,7 +229,7 @@ class SalesCubit extends Cubit<SalesState> {
         emit(
           state.copyWith(
             paymentMethod: method,
-            paidAmount: priorCash,
+            paidAmount: roundCurrency(priorCash + priorVisa),
             paidWalletAmount: priorWallet,
           ),
         );
@@ -345,6 +363,9 @@ class SalesCubit extends Cubit<SalesState> {
         paidAmount: state.paidAmount,
         paidWalletAmount: state.paidWalletAmount,
         paymentMethod: state.paymentMethod,
+        customerPhone: state.customerPhone.trim().isEmpty
+            ? null
+            : state.customerPhone.trim(),
       );
       return;
     }
@@ -443,6 +464,9 @@ class SalesCubit extends Cubit<SalesState> {
           newCustomerName: state.newCustomerName.trim().isEmpty
               ? null
               : state.newCustomerName.trim(),
+          customerPhone: state.customerPhone.trim().isEmpty
+              ? null
+              : state.customerPhone.trim(),
           items: syncedCart,
           headerDiscountKind: state.headerDiscountKind,
           headerDiscountValue: state.headerDiscountValue,
@@ -472,6 +496,7 @@ class SalesCubit extends Cubit<SalesState> {
     required double paidAmount,
     double paidWalletAmount = 0,
     required PaymentMethod paymentMethod,
+    String? customerPhone,
   }) async {
     emit(
       state.copyWith(
@@ -488,6 +513,7 @@ class SalesCubit extends Cubit<SalesState> {
         paidAmount: paidAmount,
         paidWalletAmount: paidWalletAmount,
         paymentMethod: paymentMethod,
+        customerPhone: customerPhone,
       );
       emit(
         state.copyWith(
@@ -521,6 +547,7 @@ class SalesCubit extends Cubit<SalesState> {
           newCustomerName: draft.customerId == null
               ? (draft.customerName ?? '')
               : '',
+          customerPhone: draft.customerPhone ?? '',
           headerDiscountKind: draft.headerDiscountKind,
           headerDiscountValue: draft.headerDiscountValue,
           paidAmount: 0,
@@ -561,6 +588,9 @@ class SalesCubit extends Cubit<SalesState> {
         case PaymentMethod.vodafoneCash:
           paidAmt = roundCurrency(pay.paidCash);
           paidWlt = 0;
+        case PaymentMethod.visa:
+          paidAmt = roundCurrency(pay.paidCash);
+          paidWlt = 0;
         case PaymentMethod.cashAndWallet:
           paidAmt = roundCurrency(pay.paidCash);
           paidWlt = roundCurrency(pay.paidWallet);
@@ -573,6 +603,7 @@ class SalesCubit extends Cubit<SalesState> {
           newCustomerName: draft.customerId == null
               ? (draft.customerName ?? '')
               : '',
+          customerPhone: draft.customerPhone ?? '',
           headerDiscountKind: draft.headerDiscountKind,
           headerDiscountValue: draft.headerDiscountValue,
           paidAmount: paidAmt,

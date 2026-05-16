@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:intl/intl.dart';
 import 'package:clothes_inventory/features/dashboard/data/dashboard_repository.dart';
+import 'package:clothes_inventory/features/invoices/presentation/invoice_payment_display.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
@@ -110,32 +111,67 @@ class DashboardDrillDownExportService {
                 );
               }
             } else {
-              widgets.add(
-                pw.TableHelper.fromTextArray(
-                  headers: const [
-                    'Date',
-                    'Invoice',
-                    'Account',
-                    'Status',
-                    'Total',
-                    'Paid',
-                    'Outstanding',
-                  ],
-                  data: invoiceRows
-                      .map(
-                        (row) => [
-                          date.format(row.createdAt),
-                          row.invoiceNumber,
-                          row.accountName,
-                          row.status,
-                          money.format(row.totalAmount),
-                          money.format(row.paidAmount),
-                          money.format(row.outstandingAmount),
-                        ],
-                      )
-                      .toList(),
-                ),
-              );
+              final salesPaymentExport =
+                  kind == 'revenue' || kind == 'customer_debt';
+              if (salesPaymentExport) {
+                widgets.add(
+                  pw.TableHelper.fromTextArray(
+                    headers: const [
+                      'Date',
+                      'Invoice',
+                      'Account',
+                      'Status',
+                      'Payment method',
+                      'Total',
+                      'Paid',
+                      'Outstanding',
+                    ],
+                    data: invoiceRows
+                        .map(
+                          (row) => [
+                            date.format(row.createdAt),
+                            row.invoiceNumber,
+                            row.accountName,
+                            row.status,
+                            invoicePaymentMethodsDisplayLabel(
+                              row.paymentMethodRaw,
+                            ),
+                            money.format(row.totalAmount),
+                            money.format(row.paidAmount),
+                            money.format(row.outstandingAmount),
+                          ],
+                        )
+                        .toList(),
+                  ),
+                );
+              } else {
+                widgets.add(
+                  pw.TableHelper.fromTextArray(
+                    headers: const [
+                      'Date',
+                      'Invoice',
+                      'Account',
+                      'Status',
+                      'Total',
+                      'Paid',
+                      'Outstanding',
+                    ],
+                    data: invoiceRows
+                        .map(
+                          (row) => [
+                            date.format(row.createdAt),
+                            row.invoiceNumber,
+                            row.accountName,
+                            row.status,
+                            money.format(row.totalAmount),
+                            money.format(row.paidAmount),
+                            money.format(row.outstandingAmount),
+                          ],
+                        )
+                        .toList(),
+                  ),
+                );
+              }
             }
 
             return widgets;
@@ -205,11 +241,23 @@ class DashboardDrillDownExportService {
           }
         }
       } else {
-        b.writeln('Date,Invoice,Account,Status,Total,Paid,Outstanding');
-        for (final row in invoiceRows) {
+        final salesPaymentExport = kind == 'revenue' || kind == 'customer_debt';
+        if (salesPaymentExport) {
           b.writeln(
-            '${date.format(row.createdAt)},${esc(row.invoiceNumber)},${esc(row.accountName)},${esc(row.status)},${money.format(row.totalAmount)},${money.format(row.paidAmount)},${money.format(row.outstandingAmount)}',
+            'Date,Invoice,Account,Status,Payment method,Total,Paid,Outstanding',
           );
+          for (final row in invoiceRows) {
+            b.writeln(
+              '${date.format(row.createdAt)},${esc(row.invoiceNumber)},${esc(row.accountName)},${esc(row.status)},${esc(invoicePaymentMethodsDisplayLabel(row.paymentMethodRaw))},${money.format(row.totalAmount)},${money.format(row.paidAmount)},${money.format(row.outstandingAmount)}',
+            );
+          }
+        } else {
+          b.writeln('Date,Invoice,Account,Status,Total,Paid,Outstanding');
+          for (final row in invoiceRows) {
+            b.writeln(
+              '${date.format(row.createdAt)},${esc(row.invoiceNumber)},${esc(row.accountName)},${esc(row.status)},${money.format(row.totalAmount)},${money.format(row.paidAmount)},${money.format(row.outstandingAmount)}',
+            );
+          }
         }
       }
 

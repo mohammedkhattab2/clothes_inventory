@@ -81,6 +81,11 @@ class _AppShellState extends State<AppShell> {
         selectedIcon: Icons.warehouse,
       ),
       _NavDestination(
+        label: 'contacts.nav_label'.tr(),
+        icon: Icons.contacts_outlined,
+        selectedIcon: Icons.contacts,
+      ),
+      _NavDestination(
         label: 'Accounts'.tr(),
         icon: Icons.account_balance_wallet_outlined,
         selectedIcon: Icons.account_balance_wallet,
@@ -109,31 +114,33 @@ class _AppShellState extends State<AppShell> {
 
     return Scaffold(
       body: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Container(
+          SizedBox(
             width: _sidebarWidth,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: sidebarGradientColors,
-              ),
-              border: Border(
-                right: BorderSide(
-                  color: colorScheme.outlineVariant.withValues(alpha: 0.85),
+            child: Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: sidebarGradientColors,
                 ),
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: colorScheme.shadow.withValues(
-                    alpha: isDarkMode ? 0.24 : 0.08,
+                border: Border(
+                  right: BorderSide(
+                    color: colorScheme.outlineVariant.withValues(alpha: 0.85),
                   ),
-                  blurRadius: 18,
-                  offset: const Offset(2, 0),
                 ),
-              ],
-            ),
-            child: LayoutBuilder(
+                boxShadow: [
+                  BoxShadow(
+                    color: colorScheme.shadow.withValues(
+                      alpha: isDarkMode ? 0.24 : 0.08,
+                    ),
+                    blurRadius: 18,
+                    offset: const Offset(2, 0),
+                  ),
+                ],
+              ),
+              child: LayoutBuilder(
               builder: (context, constraints) {
                 return MouseRegion(
                   onHover: (event) {
@@ -211,48 +218,77 @@ class _AppShellState extends State<AppShell> {
                                     color: colorScheme.outlineVariant,
                                   ),
                                 ),
-                                child: Row(
-                                  children: [
-                                    _AnimatedBrandBadge(
-                                      isDarkMode: isDarkMode,
-                                      colorScheme: colorScheme,
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            'Clothes Inventory POS',
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: Theme.of(context)
-                                                .textTheme
-                                                .titleMedium
-                                                ?.copyWith(
-                                                  fontWeight: FontWeight.w900,
-                                                  color: colorScheme.onSurface,
+                                child: LayoutBuilder(
+                                  builder: (context, innerConstraints) {
+                                    final innerW = innerConstraints.maxWidth;
+                                    final showBadge = innerW >= 100;
+                                    final gap =
+                                        showBadge ? (innerW < 200 ? 6.0 : 8.0) : 0.0;
+                                    final titleStyle = Theme.of(context)
+                                        .textTheme
+                                        .titleMedium
+                                        ?.copyWith(
+                                          fontWeight: FontWeight.w900,
+                                          color: colorScheme.onSurface,
+                                        );
+                                    final subtitleStyle = Theme.of(context)
+                                        .textTheme
+                                        .bodySmall
+                                        ?.copyWith(
+                                          color: colorScheme.onSurfaceVariant,
+                                          fontWeight: FontWeight.w600,
+                                        );
+                                    return Row(
+                                      children: [
+                                        if (showBadge) ...[
+                                          Flexible(
+                                            flex: 0,
+                                            fit: FlexFit.loose,
+                                            child: FittedBox(
+                                              fit: BoxFit.scaleDown,
+                                              alignment: AlignmentDirectional
+                                                  .centerStart,
+                                              child: SizedBox(
+                                                width: 54,
+                                                height: 54,
+                                                child: _AnimatedBrandBadge(
+                                                  isDarkMode: isDarkMode,
+                                                  colorScheme: colorScheme,
                                                 ),
+                                              ),
+                                            ),
                                           ),
-                                          const SizedBox(height: 2),
-                                          Text(
-                                            'Smart control panel'.tr(),
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: Theme.of(context)
-                                                .textTheme
-                                                .bodySmall
-                                                ?.copyWith(
-                                                  color: colorScheme
-                                                      .onSurfaceVariant,
-                                                  fontWeight: FontWeight.w600,
-                                                ),
-                                          ),
+                                          SizedBox(width: gap),
                                         ],
-                                      ),
-                                    ),
-                                  ],
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Text(
+                                                'Clothes Inventory POS',
+                                                maxLines: 1,
+                                                softWrap: false,
+                                                overflow:
+                                                    TextOverflow.ellipsis,
+                                                style: titleStyle,
+                                              ),
+                                              const SizedBox(height: 2),
+                                              Text(
+                                                'Smart control panel'.tr(),
+                                                maxLines: 1,
+                                                softWrap: false,
+                                                overflow:
+                                                    TextOverflow.ellipsis,
+                                                style: subtitleStyle,
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    );
+                                  },
                                 ),
                               ),
                             ),
@@ -562,6 +598,7 @@ class _AppShellState extends State<AppShell> {
               },
             ),
           ),
+          ),
           Expanded(child: widget.child),
         ],
       ),
@@ -574,11 +611,12 @@ class _AppShellState extends State<AppShell> {
     if (location.startsWith('/purchases')) return 3;
     if (location.startsWith('/invoices')) return 4;
     if (location.startsWith('/inventory')) return 5;
-    if (location.startsWith('/accounts')) return 6;
-    if (location.startsWith('/expenses')) return 7;
-    if (location.startsWith('/statement')) return 8;
-    if (location.startsWith('/settings')) return 9;
-    if (location.startsWith('/users')) return 10;
+    if (location.startsWith('/contacts')) return 6;
+    if (location.startsWith('/accounts')) return 7;
+    if (location.startsWith('/expenses')) return 8;
+    if (location.startsWith('/statement')) return 9;
+    if (location.startsWith('/settings')) return 10;
+    if (location.startsWith('/users')) return 11;
     return 0;
   }
 
@@ -636,18 +674,21 @@ class _AppShellState extends State<AppShell> {
         context.go('/inventory');
         return;
       case 6:
-        context.go('/accounts');
+        context.go('/contacts');
         return;
       case 7:
-        context.go('/expenses');
+        context.go('/accounts');
         return;
       case 8:
-        context.go('/statement');
+        context.go('/expenses');
         return;
       case 9:
-        context.go('/settings');
+        context.go('/statement');
         return;
       case 10:
+        context.go('/settings');
+        return;
+      case 11:
         context.go('/users');
         return;
     }

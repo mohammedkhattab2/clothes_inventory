@@ -31,8 +31,8 @@ class SalesHeaderSection extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           AppBrandHeader(
-            pageTitle: 'Sales POS'.tr(),
-            description: 'Sales'.tr(),
+            pageTitle: 'Sales'.tr(),
+            description: null,
             isDense: isShortViewport,
             slim: isVeryDenseViewport,
             actions: actions,

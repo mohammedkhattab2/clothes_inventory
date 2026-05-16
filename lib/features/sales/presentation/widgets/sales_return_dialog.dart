@@ -525,6 +525,10 @@ class _SalesReturnDialogState extends State<SalesReturnDialog> {
                               value: PaymentMethod.vodafoneCash,
                               child: Text('Vodafone Cash'.tr()),
                             ),
+                            DropdownMenuItem(
+                              value: PaymentMethod.visa,
+                              child: Text('Visa'.tr()),
+                            ),
                           ],
                           onChanged: (value) {
                             if (value != null) {

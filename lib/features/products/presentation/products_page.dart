@@ -74,10 +74,24 @@ class _ProductsPageState extends State<ProductsPage> {
       printerPrefs: ThermalPrinterPreferences(),
     );
     _restoreProductsPageState();
+    _productRepository.productsRevisionListenable.addListener(
+      _onProductsRepositoryRevision,
+    );
+  }
+
+  void _onProductsRepositoryRevision() {
+    if (!mounted) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _productsCubit.load(withLoading: false);
+    });
   }
 
   @override
   void dispose() {
+    _productRepository.productsRevisionListenable.removeListener(
+      _onProductsRepositoryRevision,
+    );
     _debounce?.cancel();
     _nameController.dispose();
     _barcodeController.dispose();
@@ -196,7 +210,7 @@ class _ProductsPageState extends State<ProductsPage> {
               },
               onEditProduct: (product) => _showProductDialog(context, product),
               onDeleteProduct: (product) {
-                context.read<ProductsCubit>().delete(product.id!);
+                _productsCubit.delete(product.id!);
               },
               selectionMode: _selectionMode,
               selectedProductIds: _selectedProductIds,
@@ -222,19 +236,19 @@ class _ProductsPageState extends State<ProductsPage> {
             error: state.error,
             loading: state.loading,
             onAddProduct: () => _showProductDialog(context),
-            onNameChanged: (value) => _onNameChanged(context, value),
-            onBarcodeChanged: (value) => _onBarcodeChanged(context, value),
+            onNameChanged: _onNameChanged,
+            onBarcodeChanged: _onBarcodeChanged,
             onClearSearch: () async {
               _nameController.clear();
               _barcodeController.clear();
-              await context.read<ProductsCubit>().clearSearch();
+              await _productsCubit.clearSearch();
               _persistProductsPageState();
             },
             onStockFilterChanged: (index) {
               setState(() => _stockFilter = _StockFilter.values[index]);
               _persistProductsPageState();
             },
-            onRefresh: () => context.read<ProductsCubit>().load(),
+            onRefresh: () => _productsCubit.load(),
             onExportPdf: () => _exportProductsPdf(context, visibleItems),
             onExportCsv: () => _exportProductsCsv(context, visibleItems),
             onImportProducts: () => _importProductsFromFile(context),
@@ -708,16 +722,17 @@ class _ProductsPageState extends State<ProductsPage> {
     }
   }
 
-  void _onNameChanged(BuildContext context, String query) {
+  void _onNameChanged(String query) {
     _debounce?.cancel();
     _debounce = Timer(const Duration(milliseconds: 300), () {
-      context.read<ProductsCubit>().searchByName(query);
+      if (!mounted) return;
+      _productsCubit.searchByName(query);
       _persistProductsPageState();
     });
   }
 
-  void _onBarcodeChanged(BuildContext context, String barcode) {
-    context.read<ProductsCubit>().searchByBarcode(barcode);
+  void _onBarcodeChanged(String barcode) {
+    _productsCubit.searchByBarcode(barcode);
     _persistProductsPageState();
   }
 
@@ -729,20 +744,18 @@ class _ProductsPageState extends State<ProductsPage> {
       context: context,
       builder: (_) => ProductFormDialog(
         product: product,
-        onGenerateBarcode: _generateBarcodeFromPrefix,
+        onGenerateBarcode: () => _productRepository.generateNextShortBarcode(),
         onPrintBarcode: _printProductBarcodeLabel,
-        onSave: (payload) {
+        barcodeLabelPrinter: _barcodeLabelPrinter,
+        onSave: (payload) async {
           if (product == null) {
-            return context.read<ProductsCubit>().create(payload);
+            await _productsCubit.create(payload);
+          } else {
+            await _productsCubit.update(payload);
           }
-          return context.read<ProductsCubit>().update(payload);
         },
       ),
     );
-  }
-
-  Future<String> _generateBarcodeFromPrefix(String prefix) {
-    return _productRepository.generateNextBarcodeFromPrefix(prefix: prefix);
   }
 
   Future<void> _printProductBarcodeLabel({
@@ -793,7 +806,7 @@ class _ProductsPageState extends State<ProductsPage> {
 
     if (confirmed != true || !context.mounted) return;
 
-    final result = await context.read<ProductsCubit>().deleteMany(
+    final result = await _productsCubit.deleteMany(
       _selectedProductIds.toList(growable: false),
     );
 

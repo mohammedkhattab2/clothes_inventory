@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 
 import 'package:clothes_inventory/features/products/data/products_import_service.dart';
+import 'package:clothes_inventory/features/products/domain/duplicate_product_barcode_exception.dart';
 import 'package:clothes_inventory/features/products/domain/product.dart';
 import 'package:clothes_inventory/services/database/app_database.dart';
 import 'package:clothes_inventory/services/database/maintenance_coordinator.dart';
@@ -37,6 +38,7 @@ class ProductRepository {
   Future<List<Product>> listProducts({
     String? nameQuery,
     String? barcode,
+    int? limit,
   }) async {
     final db = await _appDatabase.database;
 
@@ -49,11 +51,15 @@ class ProductRepository {
     }
 
     if (barcode != null && barcode.trim().isNotEmpty) {
-      where.add('barcode = ?');
+      where.add(
+        '(p.barcode IS NOT NULL AND LOWER(TRIM(p.barcode)) = LOWER(?))',
+      );
       args.add(barcode.trim());
     }
 
     final whereClause = where.isEmpty ? '' : 'WHERE ${where.join(' AND ')}';
+    final limitClause =
+        limit != null && limit > 0 ? 'LIMIT ${limit.clamp(1, 10000)}' : '';
     final rows = await db.rawQuery('''
       SELECT
         p.*, 
@@ -72,6 +78,7 @@ class ProductRepository {
       $whereClause
       GROUP BY p.id
       ORDER BY p.name ASC
+      $limitClause
       ''', args);
 
     final products = rows.map(Product.fromMap).toList();
@@ -120,19 +127,66 @@ class ProductRepository {
     return products;
   }
 
+  static String? _normalizedBarcodeColumn(String? barcode) {
+    if (barcode == null) return null;
+    final t = barcode.trim();
+    return t.isEmpty ? null : t;
+  }
+
+  /// Rows for INSERT: omit auto-increment `id` and null columns so sqflite/SQLite
+  /// never receive an explicit NULL primary key or stray keys.
+  /// Empty barcode is omitted so the DB stores NULL (SQLite allows many NULLs on UNIQUE).
+  Map<String, Object?> _insertRowForProduct(Product product) {
+    final row = Map<String, Object?>.from(product.toMap())..remove('id');
+    final bc = _normalizedBarcodeColumn(product.barcode);
+    if (bc == null) {
+      row.remove('barcode');
+    } else {
+      row['barcode'] = bc;
+    }
+    row.removeWhere((_, v) => v == null);
+    return row;
+  }
+
+  Map<String, Object?> _updateRowForProduct(Product product) {
+    final row = Map<String, Object?>.from(product.toMap())..remove('id');
+    row['barcode'] = _normalizedBarcodeColumn(product.barcode);
+    return row;
+  }
+
+  static bool _isBarcodeUniqueViolation(DatabaseException e) {
+    final m = e.toString().toUpperCase();
+    return m.contains('UNIQUE') &&
+        (m.contains('BARCODE') || m.contains('PRODUCTS.BARCODE'));
+  }
+
   Future<Product> createProduct(Product product) async {
     _ensureWriteAllowed();
     final db = await _appDatabase.database;
+    final now = DateTime.now().toIso8601String();
+    final row = _insertRowForProduct(product);
+    row['created_at'] = now;
 
-    final id = await db.insert('products', {
-      ...product.toMap(),
-      'created_at': DateTime.now().toIso8601String(),
-    }, conflictAlgorithm: ConflictAlgorithm.abort);
+    try {
+      final id = await db.insert(
+        'products',
+        row,
+        conflictAlgorithm: ConflictAlgorithm.abort,
+      );
 
-    final created = product.copyWith(id: id);
-    _cache[id] = created;
-    _notifyProductsChanged();
-    return created;
+      final created = product.copyWith(
+        id: id,
+        barcode: _normalizedBarcodeColumn(product.barcode),
+      );
+      _cache[id] = created;
+      _notifyProductsChanged();
+      return created;
+    } on DatabaseException catch (e) {
+      if (_isBarcodeUniqueViolation(e)) {
+        throw const DuplicateProductBarcodeException();
+      }
+      rethrow;
+    }
   }
 
   Future<ProductsImportApplyResult> upsertImportedProducts({
@@ -162,7 +216,8 @@ class ProductRepository {
           final existingByBarcode = await txn.query(
             'products',
             columns: const ['id'],
-            where: 'barcode = ?',
+            where:
+                'barcode IS NOT NULL AND LOWER(TRIM(barcode)) = LOWER(?)',
             whereArgs: [normalizedBarcode],
             limit: 1,
           );
@@ -213,7 +268,8 @@ class ProductRepository {
           final conflictByBarcode = await txn.query(
             'products',
             columns: const ['id'],
-            where: 'barcode = ?',
+            where:
+                'barcode IS NOT NULL AND LOWER(TRIM(barcode)) = LOWER(?)',
             whereArgs: [normalizedBarcode],
             limit: 1,
           );
@@ -268,28 +324,41 @@ class ProductRepository {
     final quantity = isPiece ? roundedQty : initialQuantity;
     late final Product created;
 
-    await db.transaction((txn) async {
-      final id = await txn.insert('products', {
-        ...product.toMap(),
-        'created_at': now,
-        'updated_at': now,
-      }, conflictAlgorithm: ConflictAlgorithm.abort);
+    try {
+      await db.transaction((txn) async {
+        final row = _insertRowForProduct(product);
+        row['created_at'] = now;
+        row['updated_at'] = now;
+        final id = await txn.insert(
+          'products',
+          row,
+          conflictAlgorithm: ConflictAlgorithm.abort,
+        );
 
-      if (quantity > 0) {
-        // Use purchase/in movement with null invoice to represent opening stock.
-        await txn.insert('stock_movements', {
-          'product_id': id,
-          'invoice_type': 'purchase',
-          'invoice_id': null,
-          'movement_type': 'in',
-          'quantity': quantity,
-          'unit_type': product.unitType.name,
-          'created_at': now,
-        }, conflictAlgorithm: ConflictAlgorithm.abort);
+        if (quantity > 0) {
+          // Use purchase/in movement with null invoice to represent opening stock.
+          await txn.insert('stock_movements', {
+            'product_id': id,
+            'invoice_type': 'purchase',
+            'invoice_id': null,
+            'movement_type': 'in',
+            'quantity': quantity,
+            'unit_type': product.unitType.name,
+            'created_at': now,
+          }, conflictAlgorithm: ConflictAlgorithm.abort);
+        }
+
+        created = product.copyWith(
+          id: id,
+          barcode: _normalizedBarcodeColumn(product.barcode),
+        );
+      });
+    } on DatabaseException catch (e) {
+      if (_isBarcodeUniqueViolation(e)) {
+        throw const DuplicateProductBarcodeException();
       }
-
-      created = product.copyWith(id: id);
-    });
+      rethrow;
+    }
 
     _cache[created.id!] = created;
     _notifyProductsChanged();
@@ -373,6 +442,58 @@ class ProductRepository {
     return '$normalized${next.toString().padLeft(suffixLength, '0')}';
   }
 
+  /// Short retail barcode: one ASCII letter + exactly 4 digits (e.g. P2000).
+  /// Sequence continues from the highest existing code with the same letter, min 2000.
+  static const String shortBarcodeLetter = 'P';
+  static const int shortBarcodeMinNumeric = 2000;
+  static const int shortBarcodeMaxNumeric = 9999;
+
+  Future<String> generateNextShortBarcode({String? letter}) async {
+    final raw = (letter ?? shortBarcodeLetter).trim();
+    if (raw.length != 1 || !RegExp(r'[A-Za-z]').hasMatch(raw)) {
+      throw ArgumentError('Barcode letter must be a single A–Z character.');
+    }
+    final L = raw.toUpperCase();
+    final db = await _appDatabase.database;
+    final rows = await db.query('products', columns: const ['barcode']);
+
+    // Highest numeric suffix among L#### (any 4 digits), not capped at min floor,
+    // so the next code follows the last matching barcode in the DB.
+    var maxNum = -1;
+    final pattern = RegExp(
+      '^${RegExp.escape(L)}(\\d{4})\$',
+      caseSensitive: false,
+    );
+    for (final row in rows) {
+      final rawBarcode = (row['barcode'] as String?)?.trim();
+      if (rawBarcode == null || rawBarcode.isEmpty) continue;
+      final m = pattern.firstMatch(rawBarcode);
+      if (m == null) continue;
+      final n = int.tryParse(m.group(1)!);
+      if (n != null && n > maxNum) maxNum = n;
+    }
+
+    var candidateNum = maxNum + 1;
+    if (candidateNum < shortBarcodeMinNumeric) {
+      candidateNum = shortBarcodeMinNumeric;
+    }
+    while (candidateNum <= shortBarcodeMaxNumeric) {
+      final candidate = '$L${candidateNum.toString().padLeft(4, '0')}';
+      final clash = await db.query(
+        'products',
+        columns: const ['id'],
+        where: 'barcode IS NOT NULL AND LOWER(TRIM(barcode)) = LOWER(?)',
+        whereArgs: [candidate],
+        limit: 1,
+      );
+      if (clash.isEmpty) return candidate;
+      candidateNum++;
+    }
+    throw StateError(
+      'Short barcode numeric range exhausted ($L$shortBarcodeMinNumeric–$L$shortBarcodeMaxNumeric).',
+    );
+  }
+
   int pow10(int exponent) {
     var value = 1;
     for (var i = 0; i < exponent; i++) {
@@ -389,15 +510,25 @@ class ProductRepository {
     }
 
     final db = await _appDatabase.database;
-    await db.update(
-      'products',
-      product.toMap()..remove('id'),
-      where: 'id = ?',
-      whereArgs: [id],
-      conflictAlgorithm: ConflictAlgorithm.abort,
-    );
+    final row = _updateRowForProduct(product);
+    try {
+      await db.update(
+        'products',
+        row,
+        where: 'id = ?',
+        whereArgs: [id],
+        conflictAlgorithm: ConflictAlgorithm.abort,
+      );
+    } on DatabaseException catch (e) {
+      if (_isBarcodeUniqueViolation(e)) {
+        throw const DuplicateProductBarcodeException();
+      }
+      rethrow;
+    }
 
-    _cache[id] = product;
+    _cache[id] = product.copyWith(
+      barcode: _normalizedBarcodeColumn(product.barcode),
+    );
     _notifyProductsChanged();
   }
 

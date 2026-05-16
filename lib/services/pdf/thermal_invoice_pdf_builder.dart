@@ -118,7 +118,7 @@ void buildThermalRtlInvoicePage({
                 pw.Center(
                   child: pw.Image(
                     pw.MemoryImage(invoice.invoiceFooterImageBytes!),
-                    width: contentWidthPt * 0.85,
+                    width: contentWidthPt * 0.55,
                     fit: pw.BoxFit.contain,
                   ),
                 ),

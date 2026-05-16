@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:clothes_inventory/features/accounts/presentation/account_statement_page.dart';
 import 'package:clothes_inventory/features/accounts/presentation/account_settlement_page.dart';
 import 'package:clothes_inventory/features/accounts/presentation/accounts_page.dart';
+import 'package:clothes_inventory/features/accounts/presentation/contacts_directory_page.dart';
 import 'package:clothes_inventory/features/auth/domain/auth_user.dart';
 import 'package:clothes_inventory/features/auth/presentation/user_management_page.dart';
 import 'package:clothes_inventory/features/backup/presentation/backup_page.dart';
@@ -209,6 +210,11 @@ final GoRouter appRouter = GoRouter(
           path: '/inventory',
           pageBuilder: (context, state) =>
               const NoTransitionPage(child: InventoryPage()),
+        ),
+        GoRoute(
+          path: '/contacts',
+          pageBuilder: (context, state) =>
+              const NoTransitionPage(child: ContactsDirectoryPage()),
         ),
         GoRoute(
           path: '/accounts',

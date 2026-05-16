@@ -1,8 +1,6 @@
 part of 'sales_page.dart';
 
 class _SalesPageState extends State<SalesPage> {
-  static const double _compactLayoutBreakpoint = 950;
-
   final _productRepo = getIt<ProductRepository>();
   final _accountsRepo = getIt<AccountsRepository>();
   final _pdfService = getIt<SalesInvoicePdfService>();
@@ -23,17 +21,18 @@ class _SalesPageState extends State<SalesPage> {
   final _nameSearchController = TextEditingController();
   final _barcodeController = TextEditingController();
   final _barcodeFocusNode = FocusNode();
+  final _nameFocusNode = FocusNode();
   final _paidController = TextEditingController();
   final _paidWalletController = TextEditingController();
   final _headerDiscountValueController = TextEditingController();
   final _newCustomerController = TextEditingController();
+  final _customerPhoneController = TextEditingController();
   final _licenseService = getIt<LicenseService>();
-  Timer? _searchDebounce;
   Timer? _barcodeDebounce;
+  int _barcodeLookupGeneration = 0;
   bool _readOnlyMode = false;
   String? _readOnlyMessage;
 
-  List<Product> _searchResults = const [];
   List<AccountLookup> _customers = const [];
   List<SalesInvoiceSummary> _invoiceRows = const [];
   // ignore: unused_field
@@ -50,7 +49,6 @@ class _SalesPageState extends State<SalesPage> {
   int? _loadedPendingSaleId;
   int? _activeSaleItemId;
   List<SalesInvoiceLine> _activeInvoiceLines = const [];
-  List<SaleDraftItem> _lastCheckoutItems = const <SaleDraftItem>[];
   final Map<int, String> _inlineQuantityDrafts = <int, String>{};
   final Map<int, TextEditingController> _inlineQtyControllers =
       <int, TextEditingController>{};
@@ -62,6 +60,7 @@ class _SalesPageState extends State<SalesPage> {
     _paidWalletController.clear();
     _headerDiscountValueController.clear();
     _newCustomerController.clear();
+    _customerPhoneController.clear();
   }
 
   void _showLatestSnackBar(BuildContext targetContext, String message) {
@@ -82,10 +81,6 @@ class _SalesPageState extends State<SalesPage> {
         : widget.invoicePageSize;
     _activeInvoiceId = widget.selectedInvoiceId;
     _loadCustomers();
-    _searchByName('');
-    _productRepo.productsRevisionListenable.addListener(
-      _handleProductsRevisionChanged,
-    );
     _loadInvoices();
     _refreshWritePermissionStatus();
 
@@ -95,14 +90,6 @@ class _SalesPageState extends State<SalesPage> {
         context,
         '${'Opened from'.tr()} ${widget.navSource ?? 'navigation'.tr()}: ${'invoice'.tr()} #${widget.selectedInvoiceId} ${'highlighted'.tr()}.',
       );
-    });
-  }
-
-  void _handleProductsRevisionChanged() {
-    if (!mounted) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      _searchByName(_nameSearchController.text);
     });
   }
 
@@ -198,7 +185,6 @@ class _SalesPageState extends State<SalesPage> {
 
     final draftsOk = _commitInlineQuantityDrafts(context, state.cart);
     if (!draftsOk) return;
-    _lastCheckoutItems = List<SaleDraftItem>.from(state.cart);
     cubit.checkout(pendingSaleIdOverride: _loadedPendingSaleId);
   }
 
@@ -212,14 +198,7 @@ class _SalesPageState extends State<SalesPage> {
 
     final draftsOk = _commitInlineQuantityDrafts(context, state.cart);
     if (!draftsOk) return;
-    _lastCheckoutItems = const <SaleDraftItem>[];
     cubit.checkout(isPending: true);
-  }
-
-  Future<void> _searchByName(String query) async {
-    final items = await _productRepo.listProducts(nameQuery: query);
-    if (!mounted) return;
-    setState(() => _searchResults = items);
   }
 
   Future<void> _loadInvoices() async {
@@ -308,15 +287,20 @@ class _SalesPageState extends State<SalesPage> {
     String barcode, {
     bool notifyOnNoMatch = true,
   }) async {
-    final trimmed = barcode.trim();
+    final trimmed = normalizePosBarcodeInput(barcode);
     if (trimmed.isEmpty) return;
+    final gen = ++_barcodeLookupGeneration;
     final items = await _productRepo.listProducts(barcode: trimmed);
-    if (!mounted) return;
+    if (!mounted || gen != _barcodeLookupGeneration) return;
     if (items.isEmpty) {
       if (notifyOnNoMatch && context.mounted) {
         _showLatestSnackBar(
           context,
           'No product matches this barcode.'.tr(),
+        );
+        refocusBarcodeForNextScan(
+          focus: _barcodeFocusNode,
+          controller: _barcodeController,
         );
       }
       return;
@@ -327,11 +311,15 @@ class _SalesPageState extends State<SalesPage> {
       initialUnitPrice: _resolveSalePriceByTier(items.first),
     );
     _barcodeController.clear();
+    refocusBarcodeForNextScan(
+      focus: _barcodeFocusNode,
+      controller: _barcodeController,
+    );
   }
 
   void _onBarcodeFieldChanged(BuildContext context, String _) {
     _barcodeDebounce?.cancel();
-    _barcodeDebounce = Timer(const Duration(milliseconds: 280), () {
+    _barcodeDebounce = Timer(kPosBarcodeDebounce, () {
       if (!mounted) return;
       unawaited(
         _searchBarcodeAndAdd(
@@ -399,18 +387,16 @@ class _SalesPageState extends State<SalesPage> {
 
   @override
   void dispose() {
-    _productRepo.productsRevisionListenable.removeListener(
-      _handleProductsRevisionChanged,
-    );
-    _searchDebounce?.cancel();
     _barcodeDebounce?.cancel();
     _nameSearchController.dispose();
     _barcodeController.dispose();
     _barcodeFocusNode.dispose();
+    _nameFocusNode.dispose();
     _paidController.dispose();
     _paidWalletController.dispose();
     _headerDiscountValueController.dispose();
     _newCustomerController.dispose();
+    _customerPhoneController.dispose();
     _invoiceScrollController.dispose();
     for (final controller in _inlineQtyControllers.values) {
       controller.dispose();
@@ -578,31 +564,6 @@ class _SalesPageState extends State<SalesPage> {
     });
   }
 
-  void _applyOptimisticStockDeduction(List<SaleDraftItem> soldItems) {
-    if (soldItems.isEmpty) return;
-
-    final soldByProduct = <int, double>{};
-    for (final item in soldItems) {
-      soldByProduct[item.productId] =
-          (soldByProduct[item.productId] ?? 0) + item.quantity;
-    }
-
-    setState(() {
-      _searchResults = _searchResults
-          .map((product) {
-            final id = product.id;
-            if (id == null) return product;
-            final soldQty = soldByProduct[id];
-            if (soldQty == null) return product;
-            final nextStock = (product.currentStock - soldQty)
-                .clamp(0, double.infinity)
-                .toDouble();
-            return product.copyWith(currentStock: nextStock);
-          })
-          .toList(growable: false);
-    });
-  }
-
   bool _hasInvalidInlineDrafts(List<SaleDraftItem> cart) {
     for (final item in cart) {
       final draft = _inlineQuantityDrafts[item.productId];
@@ -634,13 +595,9 @@ class _SalesPageState extends State<SalesPage> {
 
         if (state.successInvoiceId != null) {
           final event = state.successEvent ?? 'sale_saved';
-          if (event == 'sale_saved') {
-            _applyOptimisticStockDeduction(_lastCheckoutItems);
-          }
           if (event == 'pending_completed' || event == 'sale_amended') {
             _loadedPendingSaleId = null;
           }
-          _lastCheckoutItems = const <SaleDraftItem>[];
           if (mounted) {
             setState(() {
               _invoicePage = 0;
@@ -660,7 +617,6 @@ class _SalesPageState extends State<SalesPage> {
             );
           }
           _loadInvoices();
-          _searchByName(_nameSearchController.text);
           final successMessage = switch (event) {
             'pending_saved' =>
               '${'Pending invoice saved'.tr()}: #${state.successInvoiceId}',
@@ -674,11 +630,17 @@ class _SalesPageState extends State<SalesPage> {
           };
           _showLatestSnackBar(context, successMessage);
           if (event != 'pending_completed') {
+            _nameSearchController.clear();
             _barcodeController.clear();
+            refocusBarcodeForNextScan(
+              focus: _barcodeFocusNode,
+              controller: _barcodeController,
+            );
             _paidController.clear();
             _paidWalletController.clear();
             _headerDiscountValueController.clear();
             _newCustomerController.clear();
+            _customerPhoneController.clear();
           }
           shouldClearTransient = true;
         }
@@ -691,6 +653,7 @@ class _SalesPageState extends State<SalesPage> {
           _paidController.text = '0';
           _paidWalletController.text = '';
           _newCustomerController.text = state.newCustomerName;
+          _customerPhoneController.text = state.customerPhone;
           if (mounted) {
             setState(() {
               _activeInvoiceId = null;
@@ -717,6 +680,7 @@ class _SalesPageState extends State<SalesPage> {
                   ? ''
                   : state.paidWalletAmount.toStringAsFixed(2);
           _newCustomerController.text = state.newCustomerName;
+          _customerPhoneController.text = state.customerPhone;
           if (mounted && state.editingSaleId != null) {
             unawaited(_refreshActiveInvoiceLines(state.editingSaleId!));
           }
@@ -756,164 +720,169 @@ class _SalesPageState extends State<SalesPage> {
           ),
           child: Column(
             children: [
-              SalesHeaderSection(
-                isShortViewport: isShortViewport,
-                isVeryDenseViewport: isVeryDenseViewport,
-                readOnlyMode: _readOnlyMode,
-                readOnlyMessage: _readOnlyMessage,
+              if (_readOnlyMode) ...[
+                Container(
+                  width: double.infinity,
+                  padding: EdgeInsets.symmetric(
+                    horizontal: isVeryDenseViewport ? 10 : 12,
+                    vertical: isVeryDenseViewport ? 6 : 8,
+                  ),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(999),
+                    color: Colors.orange.shade100,
+                    border: Border.all(color: Colors.orange.shade300),
+                  ),
+                  child: Text(
+                    _readOnlyMessage ?? 'license.read_only_banner'.tr(),
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Colors.orange.shade900,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                SizedBox(height: sectionGap),
+              ],
+              SalesCheckoutToolbar(
+                veryDense: isVeryDenseViewport,
+                colorScheme: Theme.of(context).colorScheme,
+                nameFocusNode: _nameFocusNode,
+                nameSearchController: _nameSearchController,
+                barcodeController: _barcodeController,
+                barcodeFocusNode: _barcodeFocusNode,
+                searchProducts: (q) => _productRepo.listProducts(
+                  nameQuery: q,
+                  limit: 72,
+                ),
+                onProductSelected: (item) {
+                  _nameSearchController.clear();
+                  context.read<SalesCubit>().addProduct(
+                    item,
+                    initialUnitPrice: _resolveSalePriceByTier(item),
+                  );
+                },
+                onBarcodeChanged: (value) =>
+                    _onBarcodeFieldChanged(context, value),
+                onBarcodeSubmitted: (value) =>
+                    _onBarcodeFieldSubmitted(context, value),
               ),
               SizedBox(height: sectionGap),
               Expanded(
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final compact =
-                        constraints.maxWidth < _compactLayoutBreakpoint;
-                    final productsPaneFlex = compact ? 4 : 4;
-                    final cartPaneFlex = compact ? 6 : 6;
-                    final productsPane = Expanded(
-                      flex: productsPaneFlex,
-                      child: SalesProductsPane(
-                        compact: compact,
-                        veryDense: isVeryDenseViewport,
-                        nameSearchController: _nameSearchController,
-                        barcodeController: _barcodeController,
-                        barcodeFocusNode: _barcodeFocusNode,
-                        searchResults: _searchResults,
-                        onNameChanged: (value) {
-                          _searchDebounce?.cancel();
-                          _searchDebounce = Timer(
-                            const Duration(milliseconds: 300),
-                            () => _searchByName(value),
-                          );
-                        },
-                        onBarcodeChanged: (value) =>
-                            _onBarcodeFieldChanged(context, value),
-                        onBarcodeSubmitted: (value) =>
-                            _onBarcodeFieldSubmitted(context, value),
-                        onAddProduct: (item) =>
-                            context.read<SalesCubit>().addProduct(
-                              item,
-                              initialUnitPrice: _resolveSalePriceByTier(item),
-                            ),
-                      ),
-                    );
-                    final cartPane = Expanded(
-                      flex: cartPaneFlex,
-                      child: SalesCartPane(
-                        veryDense: isVeryDenseViewport,
-                        total: state.total,
-                        effectivePaidTotal: state.effectivePaidTotal,
-                        loading: state.loading,
-                        hasInvalidInlineDrafts: hasInvalidInlineDrafts,
-                        successInvoiceId: state.successInvoiceId,
-                        priceTierSelector: Wrap(
-                          spacing: 8,
-                          runSpacing: 6,
-                          children: _SalePriceTier.values
-                              .map(
-                                (tier) => ChoiceChip(
-                                  selected: _selectedSalePriceTier == tier,
-                                  label: Text(_salePriceTierLabel(tier)),
-                                  onSelected: (selected) {
-                                    if (!selected) return;
-                                    setState(() {
-                                      _selectedSalePriceTier = tier;
-                                    });
-                                    _applySelectedPriceTierToCart(
-                                      context,
-                                      state.cart,
-                                    );
-                                  },
-                                ),
-                              )
-                              .toList(growable: false),
-                        ),
-                        cartContent: _buildCartTableContent(
-                          context,
-                          state,
-                          cubit,
-                        ),
-                        customers: _customers,
-                        customerId: state.customerId,
-                        newCustomerController: _newCustomerController,
-                        headerDiscountKind: state.headerDiscountKind,
-                        headerDiscountValueController:
-                            _headerDiscountValueController,
-                        paidController: _paidController,
-                        paidWalletController: _paidWalletController,
-                        paidAmount: state.paidAmount,
-                        paidWalletAmount: state.paidWalletAmount,
-                        headerDiscountAmount: state.headerDiscountAmount,
-                        paymentMethod: state.paymentMethod,
-                        onCustomerChanged: (value) =>
-                            context.read<SalesCubit>().setCustomerId(value),
-                        onNewCustomerNameChanged: context
-                            .read<SalesCubit>()
-                            .setNewCustomerName,
-                        onHeaderDiscountKindChanged: (kind) => context
-                            .read<SalesCubit>()
-                            .setHeaderDiscountKind(kind),
-                        onHeaderDiscountValueChanged: (v) => context
-                            .read<SalesCubit>()
-                            .setHeaderDiscountValue(
-                              _parseFlexibleNumber(v) ?? 0,
-                            ),
-                        onPaidChanged: (v) => context
-                            .read<SalesCubit>()
-                            .setPaidAmount(_parseFlexibleNumber(v) ?? 0),
-                        onPaidWalletChanged: (v) => context
-                            .read<SalesCubit>()
-                            .setPaidWalletAmount(_parseFlexibleNumber(v) ?? 0),
-                        onPaymentMethodChanged: (value) {
-                          context.read<SalesCubit>().setPaymentMethod(value);
-                          WidgetsBinding.instance.addPostFrameCallback((_) {
-                            if (!mounted) return;
-                            final updated = context.read<SalesCubit>().state;
-                            _paidController.text =
-                                updated.paidAmount == 0
-                                ? ''
-                                : updated.paidAmount.toStringAsFixed(2);
-                            _paidWalletController.text =
-                                updated.paidWalletAmount == 0
-                                ? ''
-                                : updated.paidWalletAmount.toStringAsFixed(2);
-                          });
-                        },
-                        onCompleteSale: () => _attemptCheckout(cubit, state),
-                        onSavePendingSale: () =>
-                            _attemptSavePendingInvoice(cubit, state),
-                        onReturnFromInvoice: () => _showReturnDialog(context),
-                        onCancelInvoice: () => _showCancelSaleDialog(context),
-                        onGeneratePdf: () {
-                          final invoiceId = state.successInvoiceId;
-                          if (invoiceId == null) return;
-                          _generatePdf(context, invoiceId);
-                        },
-                        invoiceAmendmentMode: state.editingSaleId != null,
-                        onCancelInvoiceAmendment: () {
-                          cubit.clearInvoiceAmendment();
-                          if (!mounted) return;
-                          _resetCartPaymentControllers();
-                        },
-                        readOnlyMode: _readOnlyMode,
-                        readOnlyMessage: _readOnlyMessage,
-                      ),
-                    );
-                    return Flex(
-                      direction: compact ? Axis.vertical : Axis.horizontal,
-                      children: compact
-                          ? <Widget>[
-                              cartPane,
-                              SizedBox(height: sectionGap),
-                              productsPane,
-                            ]
-                          : <Widget>[
-                              productsPane,
-                              SizedBox(width: sectionGap),
-                              cartPane,
-                            ],
-                    );
+                child: SalesCartPane(
+                  veryDense: isVeryDenseViewport,
+                  total: state.total,
+                  effectivePaidTotal: state.effectivePaidTotal,
+                  loading: state.loading,
+                  hasInvalidInlineDrafts: hasInvalidInlineDrafts,
+                  successInvoiceId: state.successInvoiceId,
+                  priceTierSelector: Wrap(
+                    spacing: 8,
+                    runSpacing: 6,
+                    children: _SalePriceTier.values
+                        .map(
+                          (tier) => ChoiceChip(
+                            selected: _selectedSalePriceTier == tier,
+                            label: Text(_salePriceTierLabel(tier)),
+                            onSelected: (selected) {
+                              if (!selected) return;
+                              setState(() {
+                                _selectedSalePriceTier = tier;
+                              });
+                              _applySelectedPriceTierToCart(
+                                context,
+                                state.cart,
+                              );
+                            },
+                          ),
+                        )
+                        .toList(growable: false),
+                  ),
+                  cartContent: _buildCartTableContent(
+                    context,
+                    state,
+                    cubit,
+                  ),
+                  customers: _customers,
+                  customerId: state.customerId,
+                  newCustomerController: _newCustomerController,
+                  customerPhoneController: _customerPhoneController,
+                  headerDiscountKind: state.headerDiscountKind,
+                  headerDiscountValueController:
+                      _headerDiscountValueController,
+                  paidController: _paidController,
+                  paidWalletController: _paidWalletController,
+                  headerDiscountAmount: state.headerDiscountAmount,
+                  paymentMethod: state.paymentMethod,
+                  onCustomerChanged: (value) {
+                    final cubit = context.read<SalesCubit>();
+                    cubit.setCustomerId(value);
+                    if (value == null) {
+                      cubit.setCustomerPhone('');
+                      _customerPhoneController.clear();
+                    } else {
+                      String? phone;
+                      for (final c in _customers) {
+                        if (c.id == value) {
+                          phone = c.phone;
+                          break;
+                        }
+                      }
+                      final t = phone?.trim() ?? '';
+                      cubit.setCustomerPhone(t);
+                      _customerPhoneController.text = t;
+                    }
                   },
+                  onNewCustomerNameChanged: context
+                      .read<SalesCubit>()
+                      .setNewCustomerName,
+                  onCustomerPhoneChanged:
+                      context.read<SalesCubit>().setCustomerPhone,
+                  onHeaderDiscountKindChanged: (kind) => context
+                      .read<SalesCubit>()
+                      .setHeaderDiscountKind(kind),
+                  onHeaderDiscountValueChanged: (v) => context
+                      .read<SalesCubit>()
+                      .setHeaderDiscountValue(
+                        _parseFlexibleNumber(v) ?? 0,
+                      ),
+                  onPaidChanged: (v) => context
+                      .read<SalesCubit>()
+                      .setPaidAmount(_parseFlexibleNumber(v) ?? 0),
+                  onPaidWalletChanged: (v) => context
+                      .read<SalesCubit>()
+                      .setPaidWalletAmount(_parseFlexibleNumber(v) ?? 0),
+                  onPaymentMethodChanged: (value) {
+                    context.read<SalesCubit>().setPaymentMethod(value);
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (!mounted) return;
+                      final updated = context.read<SalesCubit>().state;
+                      _paidController.text =
+                          updated.paidAmount == 0
+                              ? ''
+                              : updated.paidAmount.toStringAsFixed(2);
+                      _paidWalletController.text =
+                          updated.paidWalletAmount == 0
+                              ? ''
+                              : updated.paidWalletAmount.toStringAsFixed(2);
+                    });
+                  },
+                  onCompleteSale: () => _attemptCheckout(cubit, state),
+                  onSavePendingSale: () =>
+                      _attemptSavePendingInvoice(cubit, state),
+                  onReturnFromInvoice: () => _showReturnDialog(context),
+                  onCancelInvoice: () => _showCancelSaleDialog(context),
+                  onGeneratePdf: () {
+                    final invoiceId = state.successInvoiceId;
+                    if (invoiceId == null) return;
+                    _generatePdf(context, invoiceId);
+                  },
+                  invoiceAmendmentMode: state.editingSaleId != null,
+                  onCancelInvoiceAmendment: () {
+                    cubit.clearInvoiceAmendment();
+                    if (!mounted) return;
+                    _resetCartPaymentControllers();
+                  },
+                  readOnlyMode: _readOnlyMode,
+                  readOnlyMessage: _readOnlyMessage,
                 ),
               ),
             ],
@@ -1054,7 +1023,6 @@ class _SalesPageState extends State<SalesPage> {
             });
           }
           await _loadInvoices();
-          await _searchByName(_nameSearchController.text);
         }
         return !failed;
       },

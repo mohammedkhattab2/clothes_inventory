@@ -1,6 +1,6 @@
 import 'package:clothes_inventory/core/utils/number_utils.dart';
 
-enum PaymentMethod { cash, vodafoneCash, cashAndWallet }
+enum PaymentMethod { cash, vodafoneCash, visa, cashAndWallet }
 
 /// Invoice-level discount applied after line totals (subtotal).
 enum InvoiceHeaderDiscountKind { percent, fixed }
@@ -109,17 +109,20 @@ class SaleCreateRequest {
     this.pendingSaleId,
     this.customerId,
     this.newCustomerName,
+    this.customerPhone,
     this.notes,
   });
 
   final int? customerId;
   final String? newCustomerName;
+  /// Saved to [accounts.phone] when completing a sale (existing or new customer).
+  final String? customerPhone;
   final List<SaleDraftItem> items;
   final InvoiceHeaderDiscountKind headerDiscountKind;
   final double headerDiscountValue;
   final double paidAmount;
   /// Used when [paymentMethod] is [PaymentMethod.cashAndWallet]; stored as
-  /// a separate wallet (`vodafone_cash`) payment row.
+  /// a separate `vodafone_cash` payment row (wallet portion).
   final double paidWalletAmount;
   final PaymentMethod paymentMethod;
   final bool isPending;

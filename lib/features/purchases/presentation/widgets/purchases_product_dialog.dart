@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:clothes_inventory/features/products/domain/duplicate_product_barcode_exception.dart';
 import 'package:clothes_inventory/features/products/domain/product.dart';
 
 class PurchasesProductDialog {
@@ -30,7 +33,7 @@ class PurchasesProductDialog {
     double? initialQuantity,
     double? initialPurchasePrice,
     required double? Function(String value) parseFlexibleNumber,
-    Future<String> Function(String prefix)? onGenerateBarcode,
+    Future<String> Function()? onGenerateBarcode,
     Future<void> Function({
       required String productName,
       required String barcode,
@@ -112,6 +115,16 @@ class PurchasesProductDialog {
       return normalized;
     }
 
+    /// Same rules as [ProductFormDialog] short barcodes (leading letter uppercase).
+    String normalizeBarcodeForSave(String raw) {
+      final t = normalizeDigits(raw).trim();
+      if (t.isEmpty) return '';
+      if (t.length == 5 && RegExp(r'^[A-Za-z]\d{4}$').hasMatch(t)) {
+        return '${t[0].toUpperCase()}${t.substring(1)}';
+      }
+      return t;
+    }
+
     Future<void> tryAutoGenerateBarcode(
       BuildContext dialogContext,
       StateSetter setDialogState,
@@ -119,15 +132,11 @@ class PurchasesProductDialog {
       if (existingProduct != null || onGenerateBarcode == null) {
         return;
       }
-
-      final prefix = normalizeDigits(barcodeController.text).trim();
-      if (!RegExp(r'^\d{4}$').hasMatch(prefix) || generatingBarcode) {
-        return;
-      }
+      if (generatingBarcode) return;
 
       setDialogState(() => generatingBarcode = true);
       try {
-        final generated = await onGenerateBarcode(prefix);
+        final generated = await onGenerateBarcode();
         barcodeController.text = generated;
         barcodeController.selection = TextSelection.collapsed(
           offset: generated.length,
@@ -144,6 +153,7 @@ class PurchasesProductDialog {
       }
     }
 
+    final autoBarcodeOnce = <bool>[false];
     try {
       await showDialog<void>(
         context: context,
@@ -166,6 +176,16 @@ class PurchasesProductDialog {
             ),
             content: StatefulBuilder(
               builder: (context, setDialogState) {
+                if (!autoBarcodeOnce[0] &&
+                    existingProduct == null &&
+                    onGenerateBarcode != null &&
+                    barcodeController.text.trim().isEmpty) {
+                  autoBarcodeOnce[0] = true;
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (!dialogContext.mounted) return;
+                    tryAutoGenerateBarcode(dialogContext, setDialogState);
+                  });
+                }
                 final parsedSalePrice = parseFlexibleNumber(
                   salePriceRetailController.text,
                 );
@@ -211,50 +231,63 @@ class PurchasesProductDialog {
                             },
                           ),
                           SizedBox(height: veryDense ? 6 : 8),
-                          Focus(
-                            onKeyEvent: (node, event) {
-                              if (event is KeyDownEvent &&
-                                  event.logicalKey == LogicalKeyboardKey.tab) {
-                                tryAutoGenerateBarcode(
-                                  dialogContext,
-                                  setDialogState,
-                                );
-                              }
-                              return KeyEventResult.ignored;
-                            },
-                            child: TextFormField(
-                              controller: barcodeController,
-                              focusNode: barcodeFocusNode,
-                              textInputAction: TextInputAction.next,
-                              inputFormatters: [
-                                FilteringTextInputFormatter.allow(
-                                  RegExp(r'[0-9٠-٩]'),
-                                ),
-                              ],
-                              onEditingComplete: () {
-                                tryAutoGenerateBarcode(
-                                  dialogContext,
-                                  setDialogState,
-                                );
-                                FocusScope.of(dialogContext).nextFocus();
-                              },
-                              decoration: InputDecoration(
-                                labelText: 'Barcode (optional)'.tr(),
-                                helperText: 'Enter 4 digits then press Tab'
-                                    .tr(),
-                                suffixIcon: generatingBarcode
-                                    ? const Padding(
-                                        padding: EdgeInsets.all(10),
-                                        child: SizedBox(
-                                          width: 16,
-                                          height: 16,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                          ),
-                                        ),
-                                      )
-                                    : const Icon(Icons.qr_code_2_outlined),
+                          TextFormField(
+                            controller: barcodeController,
+                            focusNode: barcodeFocusNode,
+                            textInputAction: TextInputAction.next,
+                            maxLength: existingProduct == null ? 5 : null,
+                            inputFormatters: [
+                              FilteringTextInputFormatter.allow(
+                                RegExp(r'[A-Za-z0-9٠-٩]'),
                               ),
+                            ],
+                            onEditingComplete: () {
+                              FocusScope.of(dialogContext).nextFocus();
+                            },
+                            validator: (value) {
+                              final t = normalizeBarcodeForSave(value ?? '');
+                              if (t.isEmpty) return null;
+                              if (existingProduct == null &&
+                                  !RegExp(r'^[A-Za-z]\d{4}$').hasMatch(t)) {
+                                return 'products.barcode_short_invalid'.tr();
+                              }
+                              return null;
+                            },
+                            buildCounter: existingProduct == null
+                                ? (_, {required currentLength,
+                                    required isFocused,
+                                    required maxLength}) =>
+                                    null
+                                : null,
+                            decoration: InputDecoration(
+                              labelText: 'Barcode (optional)'.tr(),
+                              helperText: existingProduct == null
+                                  ? 'products.barcode_short_helper'.tr()
+                                  : null,
+                              suffixIcon: generatingBarcode
+                                  ? const Padding(
+                                      padding: EdgeInsets.all(10),
+                                      child: SizedBox(
+                                        width: 16,
+                                        height: 16,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      ),
+                                    )
+                                  : (existingProduct == null &&
+                                          onGenerateBarcode != null
+                                      ? IconButton(
+                                          tooltip: 'Regenerate'.tr(),
+                                          icon:
+                                              const Icon(Icons.refresh_rounded),
+                                          onPressed: () =>
+                                              tryAutoGenerateBarcode(
+                                                dialogContext,
+                                                setDialogState,
+                                              ),
+                                        )
+                                      : const Icon(Icons.qr_code_2_outlined)),
                             ),
                           ),
                           SizedBox(height: veryDense ? 6 : 8),
@@ -485,9 +518,8 @@ class PurchasesProductDialog {
                       ? null
                       : () async {
                           final productName = nameController.text.trim();
-                          final productBarcode = normalizeDigits(
-                            barcodeController.text,
-                          ).trim();
+                          final productBarcode =
+                              normalizeBarcodeForSave(barcodeController.text);
                           if (productName.isEmpty || productBarcode.isEmpty) {
                             ScaffoldMessenger.of(dialogContext).showSnackBar(
                               SnackBar(
@@ -602,13 +634,14 @@ class PurchasesProductDialog {
                         parsedPurchasePrice ??
                         (existingProduct?.purchasePrice ?? 0);
 
+                    final normalizedBarcode =
+                        normalizeBarcodeForSave(barcodeController.text);
+
                     final payload = Product(
                       id: existingProduct?.id,
                       name: nameController.text.trim(),
                       barcode:
-                          normalizeDigits(barcodeController.text).trim().isEmpty
-                          ? null
-                          : normalizeDigits(barcodeController.text).trim(),
+                          normalizedBarcode.isEmpty ? null : normalizedBarcode,
                       categoryId: existingProduct?.categoryId,
                       unitType: unit,
                       salePrice: resolvedSalePrice,
@@ -625,20 +658,29 @@ class PurchasesProductDialog {
                           parseFlexibleNumber(quantityController.text.trim()) ??
                           1;
                       final created = await onCreateProduct(payload);
-                      await onRefreshSearch();
                       onCreatedAttachToCart(created, enteredQuantity);
+                      unawaited(onRefreshSearch());
                     } else {
                       await onUpdateProduct(payload);
-                      await onRefreshSearch();
                       final existingId = existingProduct.id;
                       if (existingId != null && parsedPurchasePrice != null) {
                         onUpdatedSyncCart(existingId, parsedPurchasePrice);
                       }
+                      unawaited(onRefreshSearch());
                     }
 
                     if (dialogContext.mounted) {
                       Navigator.of(dialogContext).pop();
                     }
+                  } on DuplicateProductBarcodeException {
+                    if (!dialogContext.mounted) return;
+                    ScaffoldMessenger.of(
+                      dialogContext,
+                    ).showSnackBar(
+                      SnackBar(
+                        content: Text('products.duplicate_barcode'.tr()),
+                      ),
+                    );
                   } catch (e) {
                     if (!dialogContext.mounted) return;
                     ScaffoldMessenger.of(

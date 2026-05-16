@@ -4,6 +4,8 @@ import 'package:flutter/services.dart';
 import 'package:clothes_inventory/core/config/company_settings_service.dart';
 import 'package:clothes_inventory/core/widgets/app_empty_state.dart';
 import 'package:clothes_inventory/features/invoices/domain/invoice_print_model.dart';
+import 'package:clothes_inventory/features/invoices/presentation/invoice_details_dialog_constraints.dart';
+import 'package:clothes_inventory/features/invoices/presentation/invoice_payment_display.dart';
 import 'package:clothes_inventory/features/sales/data/sales_repository.dart';
 import 'package:clothes_inventory/features/sales/presentation/widgets/sales_invoice_details_header.dart';
 import 'package:clothes_inventory/features/sales/presentation/widgets/sales_invoice_line_tile.dart';
@@ -185,6 +187,7 @@ class _SalesInvoiceDetailsDialogState extends State<SalesInvoiceDetailsDialog> {
         '${'Outstanding'.tr()}: ${outstandingAmount.toStringAsFixed(2)}\n'
         '${'Payment Progress'.tr()}: ${(paymentRatio * 100).toStringAsFixed(0)}%\n'
         '${'Payment Status'.tr()}: $paymentStatusLabel\n'
+        '${'Payment method'.tr()}: ${invoicePaymentMethodsDisplayLabel(_selectedInvoice?.paymentMethod)}\n'
         '${'Items Count'.tr()}: ${_sortedLines.length}';
   }
 
@@ -250,16 +253,7 @@ class _SalesInvoiceDetailsDialogState extends State<SalesInvoiceDetailsDialog> {
       Dialog(
         insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
         child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxWidth: (MediaQuery.sizeOf(context).width * 0.94).clamp(
-              320.0,
-              760.0,
-            ),
-            maxHeight: (MediaQuery.sizeOf(context).height * 0.88).clamp(
-              360.0,
-              760.0,
-            ),
-          ),
+          constraints: invoiceDetailsDialogConstraints(context),
           child: Padding(
             padding: EdgeInsets.all(veryDense ? 12 : 16),
             child: Column(
@@ -309,6 +303,12 @@ class _SalesInvoiceDetailsDialogState extends State<SalesInvoiceDetailsDialog> {
                   runSpacing: 8,
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
+                    Text(
+                      '${'Payment method'.tr()}: ${invoicePaymentMethodsDisplayLabel(_selectedInvoice?.paymentMethod)}',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
                     Text(
                       '${'Date'.tr()}: ${_selectedInvoice == null ? '-' : widget.dateFormat.format(_selectedInvoice!.createdAt)}',
                       style: Theme.of(context).textTheme.bodySmall,

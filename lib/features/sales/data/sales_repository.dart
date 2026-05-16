@@ -1,3 +1,4 @@
+import 'package:clothes_inventory/core/utils/invoice_number_display.dart';
 import 'package:clothes_inventory/core/utils/number_utils.dart';
 import 'package:clothes_inventory/core/utils/return_rules.dart';
 import 'package:clothes_inventory/core/utils/sql_like_escape.dart';
@@ -20,6 +21,7 @@ class SalesInvoiceSummary {
     required this.paidAmount,
     required this.outstandingAmount,
     required this.createdAt,
+    this.paymentMethod,
   });
 
   final int id;
@@ -31,6 +33,8 @@ class SalesInvoiceSummary {
   final double paidAmount;
   final double outstandingAmount;
   final DateTime createdAt;
+  /// Distinct payment methods from SQL `GROUP_CONCAT`, or one method. Display via `invoicePaymentMethodsDisplayLabel`.
+  final String? paymentMethod;
 }
 
 class SalesInvoiceLine {
@@ -70,6 +74,7 @@ class PendingSaleDraft {
     required this.saleId,
     required this.customerId,
     required this.customerName,
+    this.customerPhone,
     required this.headerDiscountKind,
     required this.headerDiscountValue,
     required this.items,
@@ -80,6 +85,7 @@ class PendingSaleDraft {
   final int saleId;
   final int? customerId;
   final String? customerName;
+  final String? customerPhone;
   final InvoiceHeaderDiscountKind headerDiscountKind;
   final double headerDiscountValue;
   final List<SaleDraftItem> items;
@@ -201,6 +207,18 @@ class SalesRepository {
           FROM payments pay
           WHERE pay.invoice_type = 'sale' AND pay.invoice_id = s.id
         ), 0) AS paid_amount,
+        COALESCE(
+          NULLIF(TRIM(COALESCE((
+            SELECT GROUP_CONCAT(DISTINCT payment_method)
+            FROM payments
+            WHERE invoice_type = 'sale'
+              AND invoice_id = s.id
+              AND reversal_for_id IS NULL
+              AND is_refund = 0
+              AND amount > 0
+          ), '')), ''),
+          NULLIF(TRIM(s.primary_payment_method), '')
+        ) AS last_payment_method,
         s.created_at
       FROM sales s
       LEFT JOIN accounts a ON a.id = s.account_id
@@ -225,6 +243,13 @@ class SalesRepository {
                         .clamp(0, double.infinity))
                     .toDouble(),
             createdAt: DateTime.parse(row['created_at'] as String),
+            paymentMethod: () {
+              final raw = row['last_payment_method'] as String?;
+              if (raw == null || raw.trim().isEmpty) {
+                return null;
+              }
+              return raw.trim();
+            }(),
           ),
         )
         .toList();
@@ -252,9 +277,11 @@ class SalesRepository {
 
     if (rows.isEmpty) return null;
     final row = rows.first;
+    final id = (row['id'] as num).toInt();
+    final rawNo = (row['invoice_number'] as String?) ?? '-';
     return InvoiceSuggestion(
-      id: (row['id'] as num).toInt(),
-      invoiceNumber: (row['invoice_number'] as String?) ?? '-',
+      id: id,
+      invoiceNumber: displaySaleInvoiceNumber(id: id, rawInvoiceNumber: rawNo),
       accountLabel: (row['account_name'] as String?) ?? 'Walk-in',
     );
   }
@@ -299,11 +326,16 @@ class SalesRepository {
 
     return rows
         .map(
-          (row) => InvoiceSuggestion(
-            id: (row['id'] as num).toInt(),
-            invoiceNumber: (row['invoice_number'] as String?) ?? '-',
-            accountLabel: (row['account_name'] as String?) ?? 'Walk-in',
-          ),
+          (row) {
+            final id = (row['id'] as num).toInt();
+            final rawNo = (row['invoice_number'] as String?) ?? '-';
+            return InvoiceSuggestion(
+              id: id,
+              invoiceNumber:
+                  displaySaleInvoiceNumber(id: id, rawInvoiceNumber: rawNo),
+              accountLabel: (row['account_name'] as String?) ?? 'Walk-in',
+            );
+          },
         )
         .toList();
   }
@@ -403,7 +435,8 @@ class SalesRepository {
 
     final saleRows = await db.rawQuery(
       '''
-      SELECT s.id, s.account_id, s.status, s.total_amount, a.name AS account_name
+      SELECT s.id, s.account_id, s.status, s.total_amount, a.name AS account_name,
+             a.phone AS account_phone
       FROM sales s
       LEFT JOIN accounts a ON a.id = s.account_id
       WHERE s.id = ?
@@ -479,10 +512,17 @@ class SalesRepository {
       headerValue = 0;
     }
 
+    final accountPhoneRaw = sale['account_phone'] as String?;
+    final accountPhone = (accountPhoneRaw != null &&
+            accountPhoneRaw.trim().isNotEmpty)
+        ? accountPhoneRaw.trim()
+        : null;
+
     return PendingSaleDraft(
       saleId: (sale['id'] as num).toInt(),
       customerId: (sale['account_id'] as num?)?.toInt(),
       customerName: sale['account_name'] as String?,
+      customerPhone: accountPhone,
       headerDiscountKind: headerKind,
       headerDiscountValue: headerValue,
       items: items,
@@ -543,6 +583,7 @@ class SalesRepository {
 
     var cashNet = 0.0;
     var walletNet = 0.0;
+    var visaNet = 0.0;
     for (final row in rows) {
       final method = (row['m'] as String?) ?? '';
       final amt = ((row['net_amount'] ?? 0) as num).toDouble();
@@ -550,13 +591,16 @@ class SalesRepository {
         cashNet += amt;
       } else if (method == 'vodafone_cash') {
         walletNet += amt;
+      } else if (method == 'visa') {
+        visaNet += amt;
       }
     }
     final cash = roundCurrency(cashNet.clamp(0, double.infinity));
     final wallet = roundCurrency(walletNet.clamp(0, double.infinity));
+    final visa = roundCurrency(visaNet.clamp(0, double.infinity));
 
     final PaymentMethod method;
-    if (cash > 0.000001 && wallet > 0.000001) {
+    if (cash > 0.000001 && wallet > 0.000001 && visa < 0.000001) {
       method = PaymentMethod.cashAndWallet;
       return AmendmentPaymentSnapshot(
         paidCash: cash,
@@ -564,7 +608,17 @@ class SalesRepository {
         method: method,
       );
     }
-    if (wallet > 0.000001) {
+    if (visa > 0.000001 &&
+        cash < 0.000001 &&
+        wallet < 0.000001) {
+      method = PaymentMethod.visa;
+      return AmendmentPaymentSnapshot(
+        paidCash: visa,
+        paidWallet: 0,
+        method: method,
+      );
+    }
+    if (wallet > 0.000001 && cash < 0.000001 && visa < 0.000001) {
       method = PaymentMethod.vodafoneCash;
       return AmendmentPaymentSnapshot(
         paidCash: wallet,
@@ -614,7 +668,8 @@ class SalesRepository {
 
     final saleRows = await db.rawQuery(
       '''
-      SELECT s.id, s.account_id, s.status, s.total_amount, a.name AS account_name
+      SELECT s.id, s.account_id, s.status, s.total_amount, a.name AS account_name,
+             a.phone AS account_phone
       FROM sales s
       LEFT JOIN accounts a ON a.id = s.account_id
       WHERE s.id = ?
@@ -701,10 +756,17 @@ class SalesRepository {
 
     final amendmentPayments = await _loadAmendmentPaymentSnapshot(db, saleId);
 
+    final accountPhoneRawAmend = sale['account_phone'] as String?;
+    final accountPhoneAmend =
+        (accountPhoneRawAmend != null && accountPhoneRawAmend.trim().isNotEmpty)
+        ? accountPhoneRawAmend.trim()
+        : null;
+
     return PendingSaleDraft(
       saleId: (sale['id'] as num).toInt(),
       customerId: (sale['account_id'] as num?)?.toInt(),
       customerName: sale['account_name'] as String?,
+      customerPhone: accountPhoneAmend,
       headerDiscountKind: headerKind,
       headerDiscountValue: headerValue,
       items: items,
@@ -983,6 +1045,7 @@ class SalesRepository {
         paidAmount: request.paidAmount,
         paidWalletAmount: request.paidWalletAmount,
         paymentMethod: request.paymentMethod,
+        customerPhone: request.customerPhone,
       );
       return request.pendingSaleId!;
     }
@@ -1076,10 +1139,13 @@ class SalesRepository {
 
       int? accountId = request.customerId;
       final newName = request.newCustomerName?.trim() ?? '';
+      final phoneTrimmed = request.customerPhone?.trim() ?? '';
+      final phoneForDb = phoneTrimmed.isEmpty ? null : phoneTrimmed;
       if (accountId == null && newName.isNotEmpty) {
         accountId = await txn.insert('accounts', {
           'name': newName,
           'account_type': 'customer',
+          'phone': phoneForDb,
           'created_at': DateTime.now().toIso8601String(),
         });
       }
@@ -1115,6 +1181,8 @@ class SalesRepository {
         'notes': request.notes,
         'created_by_user_id': actorUserId,
         'created_at': DateTime.now().toIso8601String(),
+        'primary_payment_method':
+            _salePrimaryPaymentMethodForStorage(request.paymentMethod),
       });
 
       for (final item in request.items) {
@@ -1191,6 +1259,16 @@ class SalesRepository {
 
         await insertPart(paymentParts.cashAmount, 'cash');
         await insertPart(paymentParts.walletAmount, 'vodafone_cash');
+        await insertPart(paymentParts.visaAmount, 'visa');
+      }
+
+      if (!request.isPending && accountId != null && phoneForDb != null) {
+        await txn.update(
+          'accounts',
+          {'phone': phoneForDb},
+          where: 'id = ?',
+          whereArgs: [accountId],
+        );
       }
 
       return saleId;
@@ -1202,6 +1280,7 @@ class SalesRepository {
     required double paidAmount,
     double paidWalletAmount = 0,
     required PaymentMethod paymentMethod,
+    String? customerPhone,
   }) async {
     await _appDatabase.database;
 
@@ -1366,15 +1445,30 @@ class SalesRepository {
 
         await insertPart(parts.cashAmount, 'cash');
         await insertPart(parts.walletAmount, 'vodafone_cash');
+        await insertPart(parts.visaAmount, 'visa');
       }
 
       final nextStatus = paidTotalSum + 0.000001 >= totalAmount
           ? SaleStatus.completed.dbValue
           : SaleStatus.partial.dbValue;
 
+      final phoneTrim = customerPhone?.trim() ?? '';
+      if (accountId != null && phoneTrim.isNotEmpty) {
+        await txn.update(
+          'accounts',
+          {'phone': phoneTrim},
+          where: 'id = ?',
+          whereArgs: [accountId],
+        );
+      }
+
       await txn.update(
         'sales',
-        {'status': nextStatus},
+        {
+          'status': nextStatus,
+          'primary_payment_method':
+              _salePrimaryPaymentMethodForStorage(paymentMethod),
+        },
         where: 'id = ?',
         whereArgs: [saleId],
       );
@@ -1664,17 +1758,32 @@ class SalesRepository {
     });
   }
 
+  String _salePrimaryPaymentMethodForStorage(PaymentMethod method) {
+    return switch (method) {
+      PaymentMethod.cash => 'cash',
+      PaymentMethod.vodafoneCash => 'vodafone_cash',
+      PaymentMethod.visa => 'visa',
+      PaymentMethod.cashAndWallet => 'cash_and_wallet',
+    };
+  }
+
   String _toDbMethod(PaymentMethod method) {
     return switch (method) {
       PaymentMethod.cash => 'cash',
       PaymentMethod.vodafoneCash => 'vodafone_cash',
+      PaymentMethod.visa => 'visa',
       PaymentMethod.cashAndWallet => throw StateError(
         'Refunds/settlement must target a single channel.',
       ),
     };
   }
 
-  ({double cashAmount, double walletAmount, double totalPaid})
+  ({
+    double cashAmount,
+    double walletAmount,
+    double visaAmount,
+    double totalPaid,
+  })
   _salePaymentCashWalletParts({
     required PaymentMethod method,
     required double totalAmount,
@@ -1684,10 +1793,28 @@ class SalesRepository {
     switch (method) {
       case PaymentMethod.cash:
         final c = roundCurrency(paidCash.clamp(0, totalAmount));
-        return (cashAmount: c, walletAmount: 0.0, totalPaid: c);
+        return (
+          cashAmount: c,
+          walletAmount: 0.0,
+          visaAmount: 0.0,
+          totalPaid: c,
+        );
       case PaymentMethod.vodafoneCash:
         final w = roundCurrency(paidCash.clamp(0, totalAmount));
-        return (cashAmount: 0.0, walletAmount: w, totalPaid: w);
+        return (
+          cashAmount: 0.0,
+          walletAmount: w,
+          visaAmount: 0.0,
+          totalPaid: w,
+        );
+      case PaymentMethod.visa:
+        final v = roundCurrency(paidCash.clamp(0, totalAmount));
+        return (
+          cashAmount: 0.0,
+          walletAmount: 0.0,
+          visaAmount: v,
+          totalPaid: v,
+        );
       case PaymentMethod.cashAndWallet:
         var c = roundCurrency(paidCash.clamp(0, totalAmount));
         final maxWallet = roundCurrency(
@@ -1697,6 +1824,7 @@ class SalesRepository {
         return (
           cashAmount: c,
           walletAmount: w,
+          visaAmount: 0.0,
           totalPaid: roundCurrency(c + w),
         );
     }

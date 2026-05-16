@@ -1,7 +1,6 @@
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:clothes_inventory/core/widgets/app_brand_header.dart';
 import 'package:clothes_inventory/core/widgets/app_empty_state.dart';
 import 'package:clothes_inventory/core/widgets/app_error_banner.dart';
 import 'package:clothes_inventory/core/widgets/app_loading_indicator.dart';
@@ -226,18 +225,24 @@ class _AccountSettlementViewState extends State<_AccountSettlementView> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          AppSectionPanel(
-            emphasis: true,
-            child: AppBrandHeader(
-              pageTitle: 'Account Settlement'.tr(),
-              description:
-                  'Settle customer and supplier balances to zero with one step.'
-                      .tr(),
-              actions: [
-                // Add actions here if needed, similar to AccountsPageContent
-              ],
-              isDense: isCompact,
-            ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Account Settlement'.tr(),
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Settle customer and supplier balances to zero with one step.'
+                    .tr(),
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 8),
           AppSectionPanel(

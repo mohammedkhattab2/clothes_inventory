@@ -6,6 +6,7 @@ class PurchasesProductsPane extends StatelessWidget {
   const PurchasesProductsPane({
     super.key,
     required this.compact,
+    this.showTitle = true,
     required this.searchController,
     required this.searchResults,
     required this.onSearchChanged,
@@ -21,6 +22,7 @@ class PurchasesProductsPane extends StatelessWidget {
   });
 
   final bool compact;
+  final bool showTitle;
   final TextEditingController searchController;
   final List<Product> searchResults;
   final ValueChanged<String> onSearchChanged;
@@ -51,18 +53,20 @@ class PurchasesProductsPane extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'Purchase Entry'.tr(),
-              style:
-                  (veryDense
-                          ? Theme.of(context).textTheme.headlineSmall
-                          : Theme.of(context).textTheme.headlineMedium)
-                      ?.copyWith(
-                        fontWeight: FontWeight.w800,
-                        color: colorScheme.onSurface,
-                      ),
-            ),
-            SizedBox(height: veryDense ? 8 : 12),
+            if (showTitle) ...[
+              Text(
+                'Purchase Entry'.tr(),
+                style:
+                    (veryDense
+                            ? Theme.of(context).textTheme.headlineSmall
+                            : Theme.of(context).textTheme.headlineMedium)
+                        ?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          color: colorScheme.onSurface,
+                        ),
+              ),
+              SizedBox(height: veryDense ? 8 : 12),
+            ],
             if (compactActions)
               Column(
                 children: [

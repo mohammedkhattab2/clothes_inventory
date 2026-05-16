@@ -14,6 +14,7 @@ class InventoryStockCard extends StatelessWidget {
     this.onSelectionChanged,
     this.onEdit,
     this.onDelete,
+    this.emphasizeBarcodeMatch = false,
     super.key,
   });
 
@@ -27,6 +28,7 @@ class InventoryStockCard extends StatelessWidget {
   final ValueChanged<bool>? onSelectionChanged;
   final VoidCallback? onEdit;
   final VoidCallback? onDelete;
+  final bool emphasizeBarcodeMatch;
 
   @override
   Widget build(BuildContext context) {
@@ -50,10 +52,22 @@ class InventoryStockCard extends StatelessWidget {
         color: cardTint,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: outOfStock
-              ? colorScheme.error.withValues(alpha: 0.45)
-              : colorScheme.outlineVariant,
+          color: emphasizeBarcodeMatch
+              ? colorScheme.primary
+              : (outOfStock
+                    ? colorScheme.error.withValues(alpha: 0.45)
+                    : colorScheme.outlineVariant),
+          width: emphasizeBarcodeMatch ? 2.4 : 1,
         ),
+        boxShadow: emphasizeBarcodeMatch
+            ? [
+                BoxShadow(
+                  color: colorScheme.primary.withValues(alpha: 0.22),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                ),
+              ]
+            : null,
       ),
       child: Padding(
         padding: EdgeInsets.symmetric(

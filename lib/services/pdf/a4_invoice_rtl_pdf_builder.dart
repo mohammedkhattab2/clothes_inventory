@@ -208,7 +208,7 @@ void buildA4RtlInvoicePage({
                 pw.SizedBox(height: 10),
                 pw.Center(
                   child:
-                      pw.Image(footerImg, width: 100, fit: pw.BoxFit.contain),
+                      pw.Image(footerImg, width: 65, fit: pw.BoxFit.contain),
                 ),
               ],
             ],

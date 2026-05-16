@@ -20,11 +20,13 @@ class AccountLookup {
     required this.id,
     required this.name,
     required this.accountType,
+    this.phone,
   });
 
   final int id;
   final String name;
   final String accountType;
+  final String? phone;
 }
 
 class SettlementInvoiceOption {
@@ -54,7 +56,7 @@ class AccountsRepository {
     final db = await _appDatabase.database;
     final rows = await db.query(
       'accounts',
-      columns: ['id', 'name', 'account_type'],
+      columns: ['id', 'name', 'account_type', 'phone'],
       orderBy: 'name ASC',
     );
 
@@ -64,6 +66,7 @@ class AccountsRepository {
             id: row['id'] as int,
             name: row['name'] as String,
             accountType: row['account_type'] as String,
+            phone: row['phone'] as String?,
           ),
         )
         .toList();
@@ -73,7 +76,7 @@ class AccountsRepository {
     final db = await _appDatabase.database;
     final rows = await db.query(
       'accounts',
-      columns: ['id', 'name', 'account_type'],
+      columns: ['id', 'name', 'account_type', 'phone'],
       where: 'account_type = ?',
       whereArgs: [accountType],
       orderBy: 'name ASC',
@@ -85,6 +88,7 @@ class AccountsRepository {
             id: row['id'] as int,
             name: row['name'] as String,
             accountType: row['account_type'] as String,
+            phone: row['phone'] as String?,
           ),
         )
         .toList();

@@ -1,5 +1,6 @@
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 enum InventoryFilterOption { all, low, out }
 
@@ -9,6 +10,10 @@ class InventoryControls extends StatelessWidget {
     required this.searchQuery,
     required this.onSearchChanged,
     required this.onClearSearch,
+    required this.barcodeController,
+    required this.barcodeFocusNode,
+    required this.onBarcodeChanged,
+    required this.onBarcodeSubmitted,
     required this.filter,
     required this.onFilterChanged,
     required this.sortStockDesc,
@@ -21,6 +26,10 @@ class InventoryControls extends StatelessWidget {
   final String searchQuery;
   final ValueChanged<String> onSearchChanged;
   final VoidCallback onClearSearch;
+  final TextEditingController barcodeController;
+  final FocusNode barcodeFocusNode;
+  final ValueChanged<String> onBarcodeChanged;
+  final ValueChanged<String> onBarcodeSubmitted;
   final InventoryFilterOption filter;
   final ValueChanged<InventoryFilterOption> onFilterChanged;
   final bool sortStockDesc;
@@ -56,6 +65,33 @@ class InventoryControls extends StatelessWidget {
                   ),
           ),
           onChanged: onSearchChanged,
+        ),
+        SizedBox(height: isUltraDense ? 4 : 6),
+        TextField(
+          controller: barcodeController,
+          focusNode: barcodeFocusNode,
+          textInputAction: TextInputAction.search,
+          textAlign: TextAlign.left,
+          decoration: InputDecoration(
+            labelText: 'Barcode (exact)'.tr(),
+            prefixIcon: const Icon(Icons.qr_code_scanner_rounded),
+            isDense: true,
+            contentPadding: EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: isUltraDense ? 8 : 10,
+            ),
+            filled: true,
+            fillColor: colorScheme.surfaceContainerLow,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide: BorderSide.none,
+            ),
+          ),
+          inputFormatters: [
+            FilteringTextInputFormatter.allow(RegExp(r'[A-Za-z0-9٠-٩]')),
+          ],
+          onChanged: onBarcodeChanged,
+          onSubmitted: onBarcodeSubmitted,
         ),
         SizedBox(height: isUltraDense ? 4 : 6),
         Wrap(

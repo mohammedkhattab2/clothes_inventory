@@ -1,6 +1,8 @@
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:clothes_inventory/core/widgets/app_loading_indicator.dart';
+import 'package:clothes_inventory/features/invoices/presentation/invoice_payment_display.dart';
+import 'package:clothes_inventory/features/invoices/presentation/widgets/invoice_hub_list_card.dart';
 import 'package:clothes_inventory/features/purchases/data/purchases_repository.dart';
 
 class PurchasesInvoicesExplorer extends StatelessWidget {
@@ -48,6 +50,37 @@ class PurchasesInvoicesExplorer extends StatelessWidget {
   final VoidCallback onPreviousPage;
   final VoidCallback onNextPage;
 
+  String _statusLabel(String status) {
+    switch (status.trim().toLowerCase()) {
+      case 'completed':
+        return 'Completed'.tr();
+      case 'partial':
+        return 'Credit (no immediate payment)'.tr();
+      case 'pending':
+        return 'Pending'.tr();
+      case 'cancelled':
+        return 'Cancelled'.tr();
+      default:
+        return status;
+    }
+  }
+
+  Color _statusColor(BuildContext context, String status) {
+    final scheme = Theme.of(context).colorScheme;
+    switch (status.trim().toLowerCase()) {
+      case 'completed':
+        return Colors.green.shade700;
+      case 'partial':
+        return Colors.orange.shade700;
+      case 'pending':
+        return scheme.primary;
+      case 'cancelled':
+        return scheme.error;
+      default:
+        return scheme.onSurfaceVariant;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Card(
@@ -74,26 +107,35 @@ class PurchasesInvoicesExplorer extends StatelessWidget {
                   ? AppLoadingIndicator(label: 'Loading invoices...'.tr())
                   : ListView.builder(
                       controller: invoiceScrollController,
+                      padding: const EdgeInsets.only(top: 4, bottom: 8),
                       itemCount: invoiceRows.length,
                       itemBuilder: (context, index) {
                         final row = invoiceRows[index];
                         final highlighted = row.id == activeInvoiceId;
-                        return Container(
-                          color: highlighted
-                              ? Theme.of(context).colorScheme.primaryContainer
-                              : null,
-                          child: ListTile(
-                            dense: true,
+                        final statusText = _statusLabel(row.status);
+                        final statusColor = _statusColor(context, row.status);
+                        final payLabel =
+                            invoicePaymentMethodsDisplayLabel(
+                              row.paymentMethod,
+                            );
+                        final invLabel = invoiceLabelBuilder(
+                          id: row.id,
+                          rawInvoiceNumber: row.invoiceNumber,
+                        );
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 6),
+                          child: InvoiceHubListCard(
+                            invoiceNumberDisplay: invLabel,
+                            accountName: row.accountName,
+                            totalAmount: row.totalAmount,
+                            statusRaw: row.status,
+                            statusLabel: statusText,
+                            statusColor: statusColor,
+                            paymentMethodRaw: row.paymentMethod,
+                            paymentLabel: payLabel,
+                            createdAt: row.createdAt,
+                            highlighted: highlighted,
                             onTap: () => onSelectInvoice(row),
-                            title: Text(
-                              '${invoiceLabelBuilder(id: row.id, rawInvoiceNumber: row.invoiceNumber)} • ${row.accountName}',
-                            ),
-                            subtitle: Text(
-                              '${DateFormat('yyyy-MM-dd HH:mm').format(row.createdAt)} • ${row.status} • ${row.totalAmount.toStringAsFixed(2)}',
-                            ),
-                            trailing: highlighted
-                                ? const Icon(Icons.pin_drop_outlined)
-                                : null,
                           ),
                         );
                       },

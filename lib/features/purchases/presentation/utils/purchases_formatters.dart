@@ -1,4 +1,5 @@
 import 'package:easy_localization/easy_localization.dart';
+import 'package:clothes_inventory/core/utils/invoice_number_display.dart';
 import 'package:clothes_inventory/features/products/domain/product.dart';
 import 'package:clothes_inventory/features/purchases/domain/purchase_models.dart';
 
@@ -63,18 +64,6 @@ String formatInvoiceQuantityValue(double value) {
   return withThree
       .replaceFirst(RegExp(r'0+$'), '')
       .replaceFirst(RegExp(r'\.$'), '');
-}
-
-String displayPurchaseInvoiceNumber({
-  required int id,
-  String? rawInvoiceNumber,
-}) {
-  final raw = (rawInvoiceNumber ?? '').trim();
-  final machineLike = RegExp(r'^[Pp]\d+$').hasMatch(raw);
-  if (raw.isEmpty || raw == '-' || machineLike) {
-    return '#$id';
-  }
-  return raw;
 }
 
 String buildPurchaseInvoiceLabel({required int id, String? rawInvoiceNumber}) {

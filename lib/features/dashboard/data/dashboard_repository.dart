@@ -84,6 +84,7 @@ class DashboardInvoiceRecord {
     required this.outstandingAmount,
     required this.createdAt,
     required this.type,
+    this.paymentMethodRaw,
   });
 
   final int id;
@@ -95,6 +96,8 @@ class DashboardInvoiceRecord {
   final double outstandingAmount;
   final DateTime createdAt;
   final String type;
+  /// Distinct payment methods from DB; sale drilldown only.
+  final String? paymentMethodRaw;
 }
 
 class DashboardProfitRecord {
@@ -657,7 +660,19 @@ class DashboardRepository {
           ), 0)
         ) AS outstanding_amount,
         s.created_at,
-        COALESCE(a.name, 'Walk-in') AS account_name
+        COALESCE(a.name, 'Walk-in') AS account_name,
+        COALESCE(
+          NULLIF(TRIM(COALESCE((
+            SELECT GROUP_CONCAT(DISTINCT payment_method)
+            FROM payments
+            WHERE invoice_type = 'sale'
+              AND invoice_id = s.id
+              AND reversal_for_id IS NULL
+              AND is_refund = 0
+              AND amount > 0
+          ), '')), ''),
+          NULLIF(TRIM(s.primary_payment_method), '')
+        ) AS payment_method_raw
       FROM sales s
       LEFT JOIN accounts a ON a.id = s.account_id
       WHERE ${where.join(' AND ')}
@@ -678,6 +693,11 @@ class DashboardRepository {
                 .toDouble(),
             createdAt: DateTime.parse(e['created_at'] as String),
             type: 'sale',
+            paymentMethodRaw: () {
+              final raw = e['payment_method_raw'] as String?;
+              if (raw == null || raw.trim().isEmpty) return null;
+              return raw.trim();
+            }(),
           ),
         )
         .toList();

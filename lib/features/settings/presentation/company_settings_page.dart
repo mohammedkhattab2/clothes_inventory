@@ -10,7 +10,6 @@ import 'package:clothes_inventory/core/config/company_settings_service.dart';
 import 'package:clothes_inventory/core/config/company_settings.dart';
 import 'package:clothes_inventory/core/utils/app_paths.dart';
 import 'package:clothes_inventory/core/utils/translation_utils.dart';
-import 'package:clothes_inventory/core/widgets/app_brand_header.dart';
 import 'package:clothes_inventory/core/widgets/app_page_shell.dart';
 import 'package:clothes_inventory/features/invoices/domain/invoice_print_model.dart';
 import 'package:clothes_inventory/features/invoices/domain/a4_invoice_view_data.dart';
@@ -180,11 +179,13 @@ class _CompanySettingsPageState extends State<CompanySettingsPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            AppSectionPanel(
-              emphasis: true,
-              child: AppBrandHeader(
-                pageTitle: 'Company Settings'.tr(),
-                isDense: isDenseViewport,
+            Text(
+              'Company Settings'.tr(),
+              style: (isDenseViewport
+                      ? Theme.of(context).textTheme.titleLarge
+                      : Theme.of(context).textTheme.headlineSmall)
+                  ?.copyWith(
+                fontWeight: FontWeight.w800,
               ),
             ),
             const SizedBox(height: 12),

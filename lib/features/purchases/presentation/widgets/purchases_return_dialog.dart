@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:clothes_inventory/features/invoices/domain/invoice_suggestion.dart';
 import 'package:clothes_inventory/features/invoices/presentation/widgets/invoice_return_raw_autocomplete.dart';
 import 'package:clothes_inventory/features/purchases/data/purchases_repository.dart';
+import 'package:clothes_inventory/features/sales/presentation/widgets/sales_return_dialog_actions.dart';
 
 class PurchasesReturnDialog extends StatefulWidget {
   const PurchasesReturnDialog({
@@ -17,6 +18,9 @@ class PurchasesReturnDialog extends StatefulWidget {
     required this.loadInvoiceLines,
     required this.onReturnPurchaseItem,
     required this.onRefreshActiveInvoiceLines,
+    this.onAddLineToCart,
+    this.canAmendPurchaseForCart,
+    this.onPurchaseInvoiceAmendedInCart,
     required this.activeInvoiceId,
     this.activeInvoiceDisplayNumber,
     required this.activeInvoiceLines,
@@ -54,7 +58,15 @@ class PurchasesReturnDialog extends StatefulWidget {
   onReturnPurchaseItem;
 
   final Future<void> Function(int purchaseId, {int? preferredItemId})
-  onRefreshActiveInvoiceLines;
+      onRefreshActiveInvoiceLines;
+
+  /// When set (e.g. from Purchases page), adds the product to the active purchases cart.
+  final Future<void> Function(int productId)? onAddLineToCart;
+
+  final Future<bool> Function(int purchaseId)? canAmendPurchaseForCart;
+
+  /// Invoked after the dialog is closed; loads the invoice into the purchases cart.
+  final Future<void> Function(int purchaseId)? onPurchaseInvoiceAmendedInCart;
 
   static Future<void> show(
     BuildContext context, {
@@ -81,7 +93,10 @@ class PurchasesReturnDialog extends StatefulWidget {
     })
     onReturnPurchaseItem,
     required Future<void> Function(int purchaseId, {int? preferredItemId})
-    onRefreshActiveInvoiceLines,
+        onRefreshActiveInvoiceLines,
+    Future<void> Function(int productId)? onAddLineToCart,
+    Future<bool> Function(int purchaseId)? canAmendPurchaseForCart,
+    Future<void> Function(int purchaseId)? onPurchaseInvoiceAmendedInCart,
   }) {
     return showDialog<void>(
       context: context,
@@ -101,6 +116,9 @@ class PurchasesReturnDialog extends StatefulWidget {
         loadInvoiceLines: loadInvoiceLines,
         onReturnPurchaseItem: onReturnPurchaseItem,
         onRefreshActiveInvoiceLines: onRefreshActiveInvoiceLines,
+        onAddLineToCart: onAddLineToCart,
+        canAmendPurchaseForCart: canAmendPurchaseForCart,
+        onPurchaseInvoiceAmendedInCart: onPurchaseInvoiceAmendedInCart,
       ),
     );
   }
@@ -121,8 +139,35 @@ class _PurchasesReturnDialogState extends State<PurchasesReturnDialog> {
   final Set<int> _selectedPurchaseItemIds = <int>{};
   final Map<int, String> _selectedQtyByItemId = <int, String>{};
   bool _submittingReturns = false;
+  int? _addingToCartProductId;
+
+  bool _canAmendInCartCheck = false;
+  bool _resolvingAmendEligibility = false;
 
   InvoiceSuggestion? _lockedSuggestion;
+
+  Future<void> _refreshAmendEligibility(int purchaseId) async {
+    final checker = widget.canAmendPurchaseForCart;
+    if (checker == null) return;
+    if (!mounted) return;
+    setState(() {
+      _resolvingAmendEligibility = true;
+    });
+    try {
+      final ok = await checker(purchaseId);
+      if (!mounted) return;
+      setState(() {
+        _canAmendInCartCheck = ok;
+        _resolvingAmendEligibility = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _canAmendInCartCheck = false;
+        _resolvingAmendEligibility = false;
+      });
+    }
+  }
 
   int? _resolvePurchaseIdFromField() {
     final locked = _lockedSuggestion;
@@ -190,6 +235,9 @@ class _PurchasesReturnDialogState extends State<PurchasesReturnDialog> {
       _loadedInvoiceLines = widget.activeInvoiceLines;
       _loadedForPurchaseId = resolvedInitialPurchaseId;
       _syncSelectionForLines(_loadedInvoiceLines);
+      if (_loadedInvoiceLines.isNotEmpty) {
+        await _refreshAmendEligibility(resolvedInitialPurchaseId);
+      }
       if (mounted) setState(() {});
       return;
     }
@@ -204,6 +252,9 @@ class _PurchasesReturnDialogState extends State<PurchasesReturnDialog> {
         _invoiceItemsLoadError = null;
         _syncSelectionForLines(fetched);
       });
+      if (fetched.isNotEmpty) {
+        await _refreshAmendEligibility(resolvedInitialPurchaseId);
+      }
     } catch (_) {
       if (!mounted) return;
       setState(() {
@@ -263,10 +314,14 @@ class _PurchasesReturnDialogState extends State<PurchasesReturnDialog> {
         if (fetched.isEmpty) {
           _selectedPurchaseItemIds.clear();
           _selectedQtyByItemId.clear();
+          _canAmendInCartCheck = false;
           return;
         }
         _syncSelectionForLines(fetched);
       });
+      if (fetched.isNotEmpty) {
+        await _refreshAmendEligibility(id);
+      }
     } catch (_) {
       if (!mounted) return;
       setState(() {
@@ -276,6 +331,7 @@ class _PurchasesReturnDialogState extends State<PurchasesReturnDialog> {
         _selectedPurchaseItemIds.clear();
         _selectedQtyByItemId.clear();
         _invoiceItemsLoadError = 'Failed to load purchase items.'.tr();
+        _canAmendInCartCheck = false;
       });
     }
   }
@@ -328,6 +384,17 @@ class _PurchasesReturnDialogState extends State<PurchasesReturnDialog> {
         !_loadingInvoiceItems &&
         !_submittingReturns &&
         !hasLineErrors;
+
+    final amendAvailable =
+        widget.canAmendPurchaseForCart != null &&
+        widget.onPurchaseInvoiceAmendedInCart != null &&
+        !_resolvingAmendEligibility &&
+        !_loadingInvoiceItems;
+
+    final canAmendLoaded =
+        purchaseId != null &&
+        invoiceLinesForPicker.isNotEmpty &&
+        _canAmendInCartCheck;
 
     return widget.animateDialogEntrance(
       Dialog(
@@ -438,6 +505,7 @@ class _PurchasesReturnDialogState extends State<PurchasesReturnDialog> {
                                 _selectedPurchaseItemIds.clear();
                                 _selectedQtyByItemId.clear();
                                 _invoiceItemsLoadError = null;
+                                _canAmendInCartCheck = false;
                               });
                             },
                             onTextEdited: () {
@@ -446,6 +514,7 @@ class _PurchasesReturnDialogState extends State<PurchasesReturnDialog> {
                                 _selectedPurchaseItemIds.clear();
                                 _selectedQtyByItemId.clear();
                                 _invoiceItemsLoadError = null;
+                                _canAmendInCartCheck = false;
                               });
                             },
                             labelText:
@@ -544,6 +613,63 @@ class _PurchasesReturnDialogState extends State<PurchasesReturnDialog> {
                                         ),
                                       ],
                                     ),
+                                    if (widget.onAddLineToCart != null) ...[
+                                      const SizedBox(height: 6),
+                                      Align(
+                                        alignment:
+                                            AlignmentDirectional.centerStart,
+                                        child: OutlinedButton.icon(
+                                          onPressed:
+                                              _addingToCartProductId ==
+                                                  line.productId
+                                              ? null
+                                              : () async {
+                                                  setState(
+                                                    () =>
+                                                        _addingToCartProductId =
+                                                            line.productId,
+                                                  );
+                                                  try {
+                                                    await widget
+                                                        .onAddLineToCart!(
+                                                      line.productId,
+                                                    );
+                                                    if (context.mounted) {
+                                                      ScaffoldMessenger.of(
+                                                        context,
+                                                      ).showSnackBar(
+                                                        SnackBar(
+                                                          content: Text(
+                                                            'purchases_return.added_to_cart'
+                                                                .tr(),
+                                                          ),
+                                                        ),
+                                                      );
+                                                    }
+                                                  } finally {
+                                                    if (mounted) {
+                                                      setState(
+                                                        () =>
+                                                            _addingToCartProductId =
+                                                                null,
+                                                      );
+                                                    }
+                                                  }
+                                                },
+                                          icon: const Icon(
+                                            Icons.add_shopping_cart_outlined,
+                                          ),
+                                          label: Text(
+                                            'purchases_return.add_to_cart'
+                                                .tr(),
+                                          ),
+                                          style: OutlinedButton.styleFrom(
+                                            visualDensity:
+                                                VisualDensity.compact,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
                                     TextField(
                                       enabled: isSelected,
                                       keyboardType:
@@ -629,73 +755,64 @@ class _PurchasesReturnDialogState extends State<PurchasesReturnDialog> {
                   ),
                 ),
                 SizedBox(height: veryDense ? 10 : 12),
-                Wrap(
-                  alignment: WrapAlignment.end,
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    TextButton.icon(
-                      onPressed: () => Navigator.of(context).pop(),
-                      icon: const Icon(Icons.close_outlined),
-                      label: Text('Cancel'.tr()),
-                    ),
-                    FilledButton.icon(
-                      onPressed: canSubmit
-                          ? () async {
-                              setState(() => _submittingReturns = true);
-                              final selected = selectedLines
-                                  .where(
-                                    (line) => _selectedPurchaseItemIds.contains(
-                                      line.id,
-                                    ),
-                                  )
-                                  .toList();
-                              for (final line in selected) {
-                                final qty = widget.parseFlexibleNumber(
-                                  _selectedQtyByItemId[line.id] ?? '',
-                                );
-                                if (qty == null || qty <= 0) {
-                                  continue;
-                                }
-                                final error = await widget.onReturnPurchaseItem(
-                                  purchaseId: purchaseId,
-                                  purchaseItemId: line.id,
-                                  quantity: qty,
-                                );
-                                if (error != null) {
-                                  if (context.mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text(
-                                          trIfExists(error, context: context),
-                                        ),
-                                      ),
-                                    );
-                                  }
-                                  setState(() => _submittingReturns = false);
-                                  return;
-                                }
-                              }
-                              await widget.onRefreshActiveInvoiceLines(
-                                purchaseId,
-                                preferredItemId: selected.first.id,
-                              );
-                              if (context.mounted) {
-                                Navigator.of(context).pop();
-                              }
-                            }
-                          : null,
-                      icon: const Icon(Icons.assignment_return_outlined),
-                      label: Text(
-                        _submittingReturns
-                            ? 'Applying...'.tr()
-                            : 'Apply Return'.tr(),
-                      ),
-                      style: FilledButton.styleFrom(
-                        visualDensity: VisualDensity.compact,
-                      ),
-                    ),
-                  ],
+                SalesReturnDialogActions(
+                  canSubmit: canSubmit,
+                  submittingReturns: _submittingReturns,
+                  showAmendInCart: amendAvailable,
+                  canAmendInCart: canAmendLoaded && !_submittingReturns,
+                  onAmendInCart: amendAvailable
+                      ? () async {
+                          final pid = purchaseId!;
+                          Navigator.of(context).pop();
+                          await widget.onPurchaseInvoiceAmendedInCart?.call(
+                            pid,
+                          );
+                        }
+                      : null,
+                  amendInCartLabelKey: 'purchase.edit_invoice_in_cart',
+                  onCancel: () => Navigator.of(context).pop(),
+                  onApply: () async {
+                    setState(() => _submittingReturns = true);
+                    final pid = purchaseId!;
+                    final selected = selectedLines
+                        .where(
+                          (line) => _selectedPurchaseItemIds.contains(line.id),
+                        )
+                        .toList();
+                    for (final line in selected) {
+                      final qty = widget.parseFlexibleNumber(
+                        _selectedQtyByItemId[line.id] ?? '',
+                      );
+                      if (qty == null || qty <= 0) {
+                        continue;
+                      }
+                      final error = await widget.onReturnPurchaseItem(
+                        purchaseId: pid,
+                        purchaseItemId: line.id,
+                        quantity: qty,
+                      );
+                      if (error != null) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                trIfExists(error, context: context),
+                              ),
+                            ),
+                          );
+                        }
+                        setState(() => _submittingReturns = false);
+                        return;
+                      }
+                    }
+                    await widget.onRefreshActiveInvoiceLines(
+                      pid,
+                      preferredItemId: selected.first.id,
+                    );
+                    if (context.mounted) {
+                      Navigator.of(context).pop();
+                    }
+                  },
                 ),
               ],
             ),

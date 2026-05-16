@@ -1,7 +1,8 @@
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:clothes_inventory/core/widgets/app_page_shell.dart';
+import 'package:clothes_inventory/core/widgets/primary_button.dart';
 import 'package:clothes_inventory/features/products/presentation/widgets/products_filters_actions_section.dart';
-import 'package:clothes_inventory/features/products/presentation/widgets/products_header_section.dart';
 import 'package:clothes_inventory/features/products/presentation/widgets/products_last_export_label.dart';
 import 'package:clothes_inventory/features/products/presentation/widgets/products_search_section.dart';
 import 'package:clothes_inventory/features/products/presentation/widgets/products_summary_section.dart';
@@ -88,11 +89,23 @@ class ProductsPageLayout extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          ProductsHeaderSection(
-            isCompact: isCompact,
-            isDenseViewport: isDenseViewport,
-            isVeryDenseViewport: isVeryDenseViewport,
-            onAddProduct: onAddProduct,
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                child: Text(
+                  'Products'.tr(),
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              PrimaryButton(
+                label: 'Add Product'.tr(),
+                icon: Icons.add,
+                onPressed: onAddProduct,
+              ),
+            ],
           ),
           SizedBox(height: sectionGap),
           AppSectionPanel(

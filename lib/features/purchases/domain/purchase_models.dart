@@ -62,3 +62,59 @@ class PurchaseCreateRequest {
   final String? notes;
   final DateTime? createdAt;
 }
+
+/// Net payments already stored on the purchase (unchanged during amend).
+class PurchaseAmendmentPaymentSnapshot {
+  const PurchaseAmendmentPaymentSnapshot({
+    required this.paidCash,
+    required this.paidWallet,
+    required this.method,
+  });
+
+  final double paidCash;
+  final double paidWallet;
+  final PaymentMethod method;
+}
+
+/// Draft loaded when editing an existing purchase invoice in the cart.
+class PendingPurchaseDraft {
+  const PendingPurchaseDraft({
+    required this.purchaseId,
+    required this.supplierId,
+    required this.headerDiscountKind,
+    required this.headerDiscountValue,
+    required this.items,
+    this.amendmentPayments,
+    this.amendmentStockCreditByProduct = const <int, double>{},
+  });
+
+  final int purchaseId;
+  final int supplierId;
+  final InvoiceHeaderDiscountKind headerDiscountKind;
+  final double headerDiscountValue;
+  final List<PurchaseDraftItem> items;
+
+  /// When set, cart was loaded for editing an existing invoice.
+  final PurchaseAmendmentPaymentSnapshot? amendmentPayments;
+
+  /// Per-product quantities on the invoice at load time; used in the cubit to
+  /// validate reducing purchase quantities against live stock while original
+  /// `in` movements still exist in the DB.
+  final Map<int, double> amendmentStockCreditByProduct;
+}
+
+/// Replace line items/totals of an existing completed/partial purchase (no returns).
+/// Supplier and existing payment rows are unchanged.
+class PurchaseAmendRequest {
+  const PurchaseAmendRequest({
+    required this.purchaseId,
+    required this.items,
+    this.headerDiscountKind = InvoiceHeaderDiscountKind.percent,
+    this.headerDiscountValue = 0,
+  });
+
+  final int purchaseId;
+  final List<PurchaseDraftItem> items;
+  final InvoiceHeaderDiscountKind headerDiscountKind;
+  final double headerDiscountValue;
+}

@@ -1,6 +1,9 @@
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:clothes_inventory/core/widgets/app_loading_indicator.dart';
+import 'package:clothes_inventory/core/utils/invoice_number_display.dart';
+import 'package:clothes_inventory/features/invoices/presentation/invoice_payment_display.dart';
+import 'package:clothes_inventory/features/invoices/presentation/widgets/invoice_hub_list_card.dart';
 import 'package:clothes_inventory/features/sales/data/sales_repository.dart';
 
 enum SalesInvoiceTypeFilter { all, completed, credit, pending }
@@ -144,63 +147,33 @@ class SalesInvoicesExplorer extends StatelessWidget {
                   ? AppLoadingIndicator(label: 'Loading invoices...'.tr())
                   : ListView.builder(
                       controller: invoiceScrollController,
+                      padding: const EdgeInsets.only(top: 4, bottom: 8),
                       itemCount: invoiceRows.length,
                       itemBuilder: (context, index) {
                         final row = invoiceRows[index];
                         final highlighted = row.id == activeInvoiceId;
                         final statusText = _statusLabel(row.status);
                         final statusColor = _statusColor(context, row.status);
-                        return Container(
-                          color: highlighted
-                              ? Theme.of(context).colorScheme.primaryContainer
-                              : null,
-                          child: ListTile(
-                            dense: true,
+                        final payLabel =
+                            invoicePaymentMethodsDisplayLabel(
+                              row.paymentMethod,
+                            );
+                        final invLabel =
+                            '${'Invoice'.tr()} ${displaySaleInvoiceNumber(id: row.id, rawInvoiceNumber: row.invoiceNumber)}';
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 6),
+                          child: InvoiceHubListCard(
+                            invoiceNumberDisplay: invLabel,
+                            accountName: row.accountName,
+                            totalAmount: row.totalAmount,
+                            statusRaw: row.status,
+                            statusLabel: statusText,
+                            statusColor: statusColor,
+                            paymentMethodRaw: row.paymentMethod,
+                            paymentLabel: payLabel,
+                            createdAt: row.createdAt,
+                            highlighted: highlighted,
                             onTap: () => onSelectInvoice(row),
-                            title: Text(
-                              '${row.invoiceNumber} • ${row.accountName}',
-                            ),
-                            subtitle: Wrap(
-                              spacing: 8,
-                              runSpacing: 6,
-                              crossAxisAlignment: WrapCrossAlignment.center,
-                              children: [
-                                Text(
-                                  DateFormat(
-                                    'yyyy-MM-dd HH:mm',
-                                  ).format(row.createdAt),
-                                ),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 2,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(999),
-                                    border: Border.all(
-                                      color: statusColor.withValues(
-                                        alpha: 0.35,
-                                      ),
-                                    ),
-                                    color: statusColor.withValues(alpha: 0.1),
-                                  ),
-                                  child: Text(
-                                    statusText,
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .labelSmall
-                                        ?.copyWith(
-                                          color: statusColor,
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                  ),
-                                ),
-                                Text(row.totalAmount.toStringAsFixed(2)),
-                              ],
-                            ),
-                            trailing: highlighted
-                                ? const Icon(Icons.pin_drop_outlined)
-                                : null,
                           ),
                         );
                       },

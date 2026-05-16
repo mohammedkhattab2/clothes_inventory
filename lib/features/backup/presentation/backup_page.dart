@@ -6,7 +6,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:clothes_inventory/core/utils/translation_utils.dart';
-import 'package:clothes_inventory/core/widgets/app_brand_header.dart';
 import 'package:clothes_inventory/core/widgets/app_page_shell.dart';
 import 'package:clothes_inventory/features/backup/presentation/backup_cubit.dart';
 import 'package:clothes_inventory/services/di/service_locator.dart';
@@ -110,14 +109,30 @@ class _BackupViewState extends State<_BackupView> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              AppSectionPanel(
-                emphasis: true,
-                child: AppBrandHeader(
-                  pageTitle: 'backup.title'.tr(),
-                  pageSubtitle: 'backup.subtitle'.tr(),
-                  description: 'backup.description'.tr(),
-                  isDense: false,
-                ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'backup.title'.tr(),
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'backup.subtitle'.tr(),
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'backup.description'.tr(),
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 12),
               Expanded(

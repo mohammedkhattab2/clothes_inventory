@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:path/path.dart' as p;
-import 'package:clothes_inventory/core/widgets/app_brand_header.dart';
 import 'package:clothes_inventory/core/widgets/app_data_table.dart';
 import 'package:clothes_inventory/core/widgets/app_error_banner.dart';
 import 'package:clothes_inventory/core/widgets/app_loading_indicator.dart';
@@ -86,27 +85,50 @@ class _AccountStatementPageState extends State<AccountStatementPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    AppBrandHeader(
-                      pageTitle: 'Account Statement'.tr(),
-                      description:
-                          '${'Current Balance'.tr()}: ${currency.format(state.currentBalance)}',
-                      actions: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Account Statement'.tr(),
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .titleLarge
+                                    ?.copyWith(
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                '${'Current Balance'.tr()}: ${currency.format(state.currentBalance)}',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodyMedium
+                                    ?.copyWith(
+                                      fontWeight: FontWeight.w600,
+                                      color: balanceColor,
+                                    ),
+                              ),
+                            ],
+                          ),
+                        ),
                         Container(
                           padding: const EdgeInsets.symmetric(
-                            horizontal: 12, // Increased padding
-                            vertical: 8, // Increased padding
+                            horizontal: 12,
+                            vertical: 8,
                           ),
                           decoration: BoxDecoration(
                             color: colorScheme.primary.withValues(
                               alpha: 0.1,
-                            ), // Use primary color
-                            borderRadius: BorderRadius.circular(
-                              12,
-                            ), // Rounded corners
+                            ),
+                            borderRadius: BorderRadius.circular(12),
                             border: Border.all(
                               color: colorScheme.primary.withValues(
                                 alpha: 0.3,
-                              ), // Primary color border
+                              ),
                             ),
                           ),
                           child: Text(
@@ -114,12 +136,11 @@ class _AccountStatementPageState extends State<AccountStatementPage> {
                             style: TextStyle(
                               fontWeight: FontWeight.w700,
                               color: balanceColor,
-                              fontSize: 16, // Slightly larger font
+                              fontSize: 16,
                             ),
                           ),
                         ),
                       ],
-                      isDense: isCompact,
                     ),
                     const SizedBox(height: 8),
                     FutureBuilder<List<AccountLookup>>(

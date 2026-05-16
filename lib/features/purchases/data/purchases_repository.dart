@@ -1,4 +1,5 @@
 import 'package:clothes_inventory/core/utils/number_utils.dart';
+import 'package:clothes_inventory/core/utils/invoice_number_display.dart';
 import 'package:clothes_inventory/core/utils/return_rules.dart';
 import 'package:clothes_inventory/core/utils/sql_like_escape.dart';
 import 'package:clothes_inventory/features/invoices/domain/invoice_suggestion.dart';
@@ -8,6 +9,7 @@ import 'package:clothes_inventory/services/auth/session_service.dart';
 import 'package:clothes_inventory/services/database/app_database.dart';
 import 'package:clothes_inventory/services/database/db_transaction_runner.dart';
 import 'package:clothes_inventory/services/database/invoice_sequence_allocator.dart';
+import 'package:sqflite/sqlite_api.dart';
 
 class PurchaseInvoiceSummary {
   const PurchaseInvoiceSummary({
@@ -20,6 +22,7 @@ class PurchaseInvoiceSummary {
     required this.paidAmount,
     required this.outstandingAmount,
     required this.createdAt,
+    this.paymentMethod,
   });
 
   final int id;
@@ -31,11 +34,14 @@ class PurchaseInvoiceSummary {
   final double paidAmount;
   final double outstandingAmount;
   final DateTime createdAt;
+  /// Distinct payment methods from SQL `GROUP_CONCAT`, or one method. Display via `invoicePaymentMethodsDisplayLabel`.
+  final String? paymentMethod;
 }
 
 class PurchaseInvoiceLine {
   const PurchaseInvoiceLine({
     required this.id,
+    required this.productId,
     required this.productName,
     required this.quantity,
     required this.returnedQuantity,
@@ -45,6 +51,7 @@ class PurchaseInvoiceLine {
   });
 
   final int id;
+  final int productId;
   final String productName;
   final double quantity;
   final double returnedQuantity;
@@ -149,6 +156,14 @@ class PurchasesRepository {
           FROM payments pay
           WHERE pay.invoice_type = 'purchase' AND pay.invoice_id = p.id
         ), 0) AS paid_amount,
+        (
+          SELECT GROUP_CONCAT(DISTINCT payment_method)
+          FROM payments
+          WHERE invoice_type = 'purchase'
+            AND invoice_id = p.id
+            AND reversal_for_id IS NULL
+            AND is_refund = 0
+        ) AS last_payment_method,
         p.created_at
       FROM purchases p
       JOIN accounts a ON a.id = p.account_id
@@ -173,6 +188,13 @@ class PurchasesRepository {
                         .clamp(0, double.infinity))
                     .toDouble(),
             createdAt: DateTime.parse(row['created_at'] as String),
+            paymentMethod: () {
+              final raw = row['last_payment_method'] as String?;
+              if (raw == null || raw.trim().isEmpty) {
+                return null;
+              }
+              return raw.trim();
+            }(),
           ),
         )
         .toList();
@@ -205,9 +227,12 @@ class PurchasesRepository {
 
     if (rows.isEmpty) return null;
     final row = rows.first;
+    final id = (row['id'] as num).toInt();
+    final rawNo = (row['invoice_number'] as String?) ?? '-';
     return InvoiceSuggestion(
-      id: (row['id'] as num).toInt(),
-      invoiceNumber: (row['invoice_number'] as String?) ?? '-',
+      id: id,
+      invoiceNumber:
+          displayPurchaseInvoiceNumber(id: id, rawInvoiceNumber: rawNo),
       accountLabel: (row['account_name'] as String?) ?? '-',
     );
   }
@@ -252,11 +277,16 @@ class PurchasesRepository {
 
     return rows
         .map(
-          (row) => InvoiceSuggestion(
-            id: (row['id'] as num).toInt(),
-            invoiceNumber: (row['invoice_number'] as String?) ?? '-',
-            accountLabel: (row['account_name'] as String?) ?? '-',
-          ),
+          (row) {
+            final id = (row['id'] as num).toInt();
+            final rawNo = (row['invoice_number'] as String?) ?? '-';
+            return InvoiceSuggestion(
+              id: id,
+              invoiceNumber:
+                  displayPurchaseInvoiceNumber(id: id, rawInvoiceNumber: rawNo),
+              accountLabel: (row['account_name'] as String?) ?? '-',
+            );
+          },
         )
         .toList();
   }
@@ -322,6 +352,7 @@ class PurchasesRepository {
       '''
       SELECT
         pi.id,
+        pi.product_id,
         p.name AS product_name,
         pi.quantity,
         COALESCE(r.returned_qty, 0) AS returned_qty,
@@ -350,6 +381,7 @@ class PurchasesRepository {
         .map(
           (row) => PurchaseInvoiceLine(
             id: (row['id'] as num).toInt(),
+            productId: (row['product_id'] as num).toInt(),
             productName: (row['product_name'] as String?) ?? 'Unknown',
             quantity: ((row['quantity'] ?? 0) as num).toDouble(),
             returnedQuantity: ((row['returned_qty'] ?? 0) as num).toDouble(),
@@ -461,6 +493,484 @@ class PurchasesRepository {
       }
 
       return purchaseId;
+    });
+  }
+
+  Future<Map<int, double>> getCurrentStocksForProducts(
+    List<int> productIds,
+  ) async {
+    if (productIds.isEmpty) return const <int, double>{};
+
+    final db = await _appDatabase.database;
+    final placeholders = List.filled(productIds.length, '?').join(',');
+    final rows = await db.rawQuery('''
+      SELECT
+        p.id,
+        MAX(
+          0,
+          COALESCE(
+            SUM(
+              CASE
+                WHEN sm.movement_type = 'in' THEN sm.quantity
+                WHEN sm.movement_type = 'out' THEN -sm.quantity
+                ELSE 0
+              END
+            ),
+            0
+          )
+        ) AS current_stock
+      FROM products p
+      LEFT JOIN stock_movements sm ON sm.product_id = p.id
+      WHERE p.id IN ($placeholders)
+      GROUP BY p.id
+      ''', productIds);
+
+    final map = <int, double>{};
+    for (final row in rows) {
+      map[(row['id'] as num).toInt()] = ((row['current_stock'] ?? 0) as num)
+          .toDouble();
+    }
+    return map;
+  }
+
+  Future<bool> purchaseInvoiceHasReturns(int purchaseId) async {
+    final db = await _appDatabase.database;
+    final rows = await db.rawQuery(
+      '''
+      SELECT COUNT(*) AS c
+      FROM returns
+      WHERE invoice_type = ? AND invoice_id = ?
+      ''',
+      ['purchase', purchaseId],
+    );
+    return (((rows.first['c'] ?? 0) as num).toInt() > 0);
+  }
+
+  Future<bool> canAmendPurchaseInvoice(int purchaseId) async {
+    final db = await _appDatabase.database;
+    final rows = await db.rawQuery(
+      '''
+      SELECT p.status FROM purchases p WHERE p.id = ? LIMIT 1
+      ''',
+      [purchaseId],
+    );
+    if (rows.isEmpty) return false;
+    final status = ((rows.first['status'] as String?) ?? '').trim().toLowerCase();
+    if (status == 'cancelled') return false;
+    if (status != 'completed' && status != 'partial') return false;
+    return !(await purchaseInvoiceHasReturns(purchaseId));
+  }
+
+  void _rejectIfPurchaseNotEligibleForAmend({required String? status}) {
+    final normalized = (status ?? '').trim().toLowerCase();
+    if (normalized == 'cancelled') {
+      throw StateError('This invoice cannot be amended.');
+    }
+    if (normalized != 'completed' && normalized != 'partial') {
+      throw StateError('This invoice cannot be amended.');
+    }
+  }
+
+  Future<void> _assertNoPurchaseReturns(
+    DatabaseExecutor executor,
+    int purchaseId,
+  ) async {
+    final rows = await executor.rawQuery(
+      '''
+      SELECT COUNT(*) AS c
+      FROM returns
+      WHERE invoice_type = ? AND invoice_id = ?
+      ''',
+      ['purchase', purchaseId],
+    );
+    if ((((rows.first['c'] ?? 0) as num).toInt() > 0)) {
+      throw StateError('Cannot amend a purchase that has returns.');
+    }
+  }
+
+  Future<PurchaseAmendmentPaymentSnapshot> _loadPurchaseAmendmentPaymentSnapshot(
+    DatabaseExecutor executor,
+    int purchaseId,
+  ) async {
+    final rows = await executor.rawQuery(
+      '''
+      SELECT payment_method AS m,
+             SUM(amount) AS net_amount
+      FROM payments
+      WHERE invoice_type = 'purchase'
+        AND invoice_id = ?
+        AND reversal_for_id IS NULL
+      GROUP BY payment_method
+      ''',
+      [purchaseId],
+    );
+
+    var cashNet = 0.0;
+    var walletNet = 0.0;
+    var visaNet = 0.0;
+    for (final row in rows) {
+      final method = (row['m'] as String?) ?? '';
+      final amt = ((row['net_amount'] ?? 0) as num).toDouble();
+      if (method == 'cash') {
+        cashNet += amt;
+      } else if (method == 'vodafone_cash') {
+        walletNet += amt;
+      } else if (method == 'visa') {
+        visaNet += amt;
+      }
+    }
+    final cash = roundCurrency(cashNet.clamp(0, double.infinity));
+    final wallet = roundCurrency(walletNet.clamp(0, double.infinity));
+    final visa = roundCurrency(visaNet.clamp(0, double.infinity));
+
+    final PaymentMethod method;
+    if (cash > 0.000001 && wallet > 0.000001 && visa < 0.000001) {
+      method = PaymentMethod.cashAndWallet;
+      return PurchaseAmendmentPaymentSnapshot(
+        paidCash: cash,
+        paidWallet: wallet,
+        method: method,
+      );
+    }
+    if (visa > 0.000001 && cash < 0.000001 && wallet < 0.000001) {
+      method = PaymentMethod.visa;
+      return PurchaseAmendmentPaymentSnapshot(
+        paidCash: visa,
+        paidWallet: 0,
+        method: method,
+      );
+    }
+    if (wallet > 0.000001 && cash < 0.000001 && visa < 0.000001) {
+      method = PaymentMethod.vodafoneCash;
+      return PurchaseAmendmentPaymentSnapshot(
+        paidCash: wallet,
+        paidWallet: 0,
+        method: method,
+      );
+    }
+
+    method = PaymentMethod.cash;
+    return PurchaseAmendmentPaymentSnapshot(
+      paidCash: cash,
+      paidWallet: 0,
+      method: method,
+    );
+  }
+
+  Future<PendingPurchaseDraft> loadPurchaseDraftForAmendment(
+    int purchaseId,
+  ) async {
+    final db = await _appDatabase.database;
+
+    final purchaseRows = await db.rawQuery(
+      '''
+      SELECT p.id, p.account_id, p.status, p.total_amount
+      FROM purchases p
+      WHERE p.id = ?
+      LIMIT 1
+      ''',
+      [purchaseId],
+    );
+    if (purchaseRows.isEmpty) {
+      throw StateError('Purchase not found.');
+    }
+    final purchase = purchaseRows.first;
+    _rejectIfPurchaseNotEligibleForAmend(status: purchase['status'] as String?);
+    await _assertNoPurchaseReturns(db, purchaseId);
+
+    final supplierId = (purchase['account_id'] as num?)?.toInt();
+    if (supplierId == null) {
+      throw StateError('Purchase has no supplier.');
+    }
+
+    final itemRows = await db.rawQuery(
+      '''
+      SELECT
+        pi.product_id,
+        p.name AS product_name,
+        p.unit_type,
+        pi.quantity,
+        pi.unit_price,
+        pi.discount_amount,
+        pi.line_total
+      FROM purchase_items pi
+      JOIN products p ON p.id = pi.product_id
+      WHERE pi.purchase_id = ?
+      ORDER BY pi.id ASC
+      ''',
+      [purchaseId],
+    );
+    if (itemRows.isEmpty) {
+      throw StateError('Invoice has no items to amend.');
+    }
+
+    final qtyOnInvoiceByProduct = <int, double>{};
+    for (final row in itemRows) {
+      final productId = (row['product_id'] as num).toInt();
+      final q = ((row['quantity'] ?? 0) as num).toDouble();
+      qtyOnInvoiceByProduct[productId] =
+          roundQuantity((qtyOnInvoiceByProduct[productId] ?? 0) + q);
+    }
+
+    final items = itemRows
+        .map(
+          (row) => PurchaseDraftItem(
+            productId: (row['product_id'] as num).toInt(),
+            productName: (row['product_name'] as String?) ?? 'Product',
+            unitType: (row['unit_type'] as String?) ?? 'piece',
+            quantity: ((row['quantity'] ?? 0) as num).toDouble(),
+            unitPrice: ((row['unit_price'] ?? 0) as num).toDouble(),
+            discount: ((row['discount_amount'] ?? 0) as num).toDouble(),
+          ),
+        )
+        .toList(growable: false);
+
+    final subtotal = roundCurrency(
+      items.fold<double>(0, (sum, item) => sum + item.lineTotal),
+    );
+    final total = ((purchase['total_amount'] ?? 0) as num).toDouble();
+    final InvoiceHeaderDiscountKind headerKind;
+    final double headerValue;
+    if (total <= subtotal + 0.000001) {
+      headerKind = InvoiceHeaderDiscountKind.fixed;
+      headerValue = roundCurrency((subtotal - total).clamp(0, double.infinity));
+    } else {
+      headerKind = InvoiceHeaderDiscountKind.percent;
+      headerValue = 0;
+    }
+
+    final amendmentPayments =
+        await _loadPurchaseAmendmentPaymentSnapshot(db, purchaseId);
+
+    return PendingPurchaseDraft(
+      purchaseId: (purchase['id'] as num).toInt(),
+      supplierId: supplierId,
+      headerDiscountKind: headerKind,
+      headerDiscountValue: headerValue,
+      items: items,
+      amendmentPayments: amendmentPayments,
+      amendmentStockCreditByProduct: Map<int, double>.from(qtyOnInvoiceByProduct),
+    );
+  }
+
+  Future<Map<int, double>> _rawStockBalanceByProduct(
+    DatabaseExecutor executor,
+    List<int> productIds,
+  ) async {
+    if (productIds.isEmpty) return const <int, double>{};
+    final placeholders = List.filled(productIds.length, '?').join(',');
+    final rows = await executor.rawQuery(
+      '''
+      SELECT
+        p.id,
+        COALESCE(SUM(
+          CASE
+            WHEN sm.movement_type = 'in' THEN sm.quantity
+            WHEN sm.movement_type = 'out' THEN -sm.quantity
+            ELSE 0
+          END
+        ), 0) AS balance
+      FROM products p
+      LEFT JOIN stock_movements sm ON sm.product_id = p.id
+      WHERE p.id IN ($placeholders)
+      GROUP BY p.id
+      ''',
+      productIds,
+    );
+    return {
+      for (final r in rows)
+        (r['id'] as num).toInt(): ((r['balance'] ?? 0) as num).toDouble(),
+    };
+  }
+
+  Future<void> amendPurchase(PurchaseAmendRequest request) async {
+    if (request.items.isEmpty) {
+      throw StateError('Purchase must have at least one item.');
+    }
+
+    await _transactionRunner.run((txn) async {
+      _sessionService.requireUserId();
+
+      final purchaseRows = await txn.rawQuery(
+        '''
+        SELECT p.id, p.account_id, p.status, p.invoice_number, p.total_amount
+        FROM purchases p
+        WHERE p.id = ?
+        LIMIT 1
+        ''',
+        [request.purchaseId],
+      );
+      if (purchaseRows.isEmpty) {
+        throw StateError('Purchase not found.');
+      }
+      final purchaseRow = purchaseRows.first;
+      final purchaseId = request.purchaseId;
+      _rejectIfPurchaseNotEligibleForAmend(
+        status: purchaseRow['status'] as String?,
+      );
+      await _assertNoPurchaseReturns(txn, purchaseId);
+
+      final oldItemRows = await txn.rawQuery(
+        '''
+        SELECT product_id, quantity
+        FROM purchase_items
+        WHERE purchase_id = ?
+        ''',
+        [purchaseId],
+      );
+      final oldQtyByProduct = <int, double>{};
+      for (final row in oldItemRows) {
+        final pid = (row['product_id'] as num).toInt();
+        final q = ((row['quantity'] ?? 0) as num).toDouble();
+        oldQtyByProduct[pid] = roundQuantity((oldQtyByProduct[pid] ?? 0) + q);
+      }
+
+      await txn.delete(
+        'stock_movements',
+        where:
+            'invoice_type = ? AND invoice_id = ? AND movement_type = ?',
+        whereArgs: ['purchase', purchaseId, 'in'],
+      );
+
+      await txn.delete(
+        'purchase_items',
+        where: 'purchase_id = ?',
+        whereArgs: [purchaseId],
+      );
+
+      final requestedByProduct = <int, double>{};
+      for (final item in request.items) {
+        final quantity = roundQuantity(item.quantity);
+        if (quantity <= 0) {
+          throw StateError('Quantity must be greater than zero.');
+        }
+        requestedByProduct[item.productId] =
+            roundQuantity((requestedByProduct[item.productId] ?? 0) + quantity);
+      }
+
+      for (final entry in oldQtyByProduct.entries) {
+        requestedByProduct.putIfAbsent(entry.key, () => 0);
+      }
+
+      final productIds = requestedByProduct.keys.toList(growable: false);
+      final balances = await _rawStockBalanceByProduct(txn, productIds);
+
+      for (final entry in requestedByProduct.entries) {
+        final pid = entry.key;
+        final newTotal = roundQuantity(entry.value);
+        final bal = balances[pid] ?? 0;
+        if (bal + newTotal < -0.000001) {
+          final nameRows = await txn.rawQuery(
+            'SELECT name FROM products WHERE id = ? LIMIT 1',
+            [pid],
+          );
+          final name = nameRows.isEmpty
+              ? 'Product'
+              : ((nameRows.first['name'] as String?) ?? 'Product');
+          throw StateError(
+            'Insufficient stock for $name to reduce this purchase. Current balance '
+            '${bal.toStringAsFixed(2)}; purchased quantity would be '
+            '${newTotal.toStringAsFixed(2)}.',
+          );
+        }
+      }
+
+      final invoiceNo =
+          (purchaseRow['invoice_number'] as String?) ?? 'P-$purchaseId';
+      final supplierId = (purchaseRow['account_id'] as num).toInt();
+
+      final subtotalAmount = roundCurrency(
+        request.items.fold<double>(0, (sum, item) => sum + item.lineTotal),
+      );
+      final totalAmount = roundCurrency(
+        subtotalAmount -
+            computeInvoiceHeaderDiscountAmount(
+              subtotal: subtotalAmount,
+              kind: request.headerDiscountKind,
+              value: request.headerDiscountValue,
+            ),
+      );
+
+      final paidRows = await txn.rawQuery(
+        '''
+        SELECT COALESCE(SUM(amount), 0) AS paid_amount
+        FROM payments
+        WHERE invoice_type = 'purchase'
+          AND invoice_id = ?
+          AND reversal_for_id IS NULL
+        ''',
+        [purchaseId],
+      );
+      final netPaidAmount =
+          ((paidRows.first['paid_amount'] ?? 0) as num).toDouble();
+
+      final nextStatus = netPaidAmount + 0.000001 >= totalAmount
+          ? 'completed'
+          : 'partial';
+
+      final now = DateTime.now().toIso8601String();
+
+      for (final item in request.items) {
+        final quantity = roundQuantity(item.quantity);
+        if (item.unitType == 'piece' && !isIntegerLike(quantity)) {
+          throw StateError('Piece products require integer quantity.');
+        }
+
+        final lineTotal = roundCurrency(item.lineTotal);
+        await txn.insert('purchase_items', {
+          'purchase_id': purchaseId,
+          'product_id': item.productId,
+          'quantity': quantity,
+          'unit_price': roundCurrency(item.unitPrice),
+          'discount_amount': roundCurrency(item.discount),
+          'line_total': lineTotal,
+          'created_at': now,
+        });
+
+        await txn.insert('stock_movements', {
+          'product_id': item.productId,
+          'invoice_type': 'purchase',
+          'invoice_id': purchaseId,
+          'movement_type': 'in',
+          'quantity': quantity,
+          'unit_type': item.unitType,
+          'created_at': now,
+        });
+      }
+
+      await txn.update(
+        'purchases',
+        {
+          'total_amount': totalAmount,
+          'status': nextStatus,
+        },
+        where: 'id = ?',
+        whereArgs: [purchaseId],
+      );
+
+      final ledgerRows = await txn.query(
+        'ledger_transactions',
+        columns: ['id'],
+        where:
+            'account_id = ? AND source_type = ? AND source_id = ? AND entry_kind = ?',
+        whereArgs: [supplierId, 'purchase', purchaseId, 'credit'],
+      );
+      if (ledgerRows.isEmpty) {
+        throw StateError(
+          'Purchase ledger credit entry missing for supplier account.',
+        );
+      }
+      for (final row in ledgerRows) {
+        await txn.update(
+          'ledger_transactions',
+          {
+            'amount': totalAmount,
+            'description': 'Purchase invoice $invoiceNo',
+          },
+          where: 'id = ?',
+          whereArgs: [row['id']],
+        );
+      }
     });
   }
 
@@ -760,6 +1270,7 @@ class PurchasesRepository {
     return switch (method) {
       PaymentMethod.cash => 'cash',
       PaymentMethod.vodafoneCash => 'vodafone_cash',
+      PaymentMethod.visa => 'visa',
       PaymentMethod.cashAndWallet =>
         throw StateError('Purchases cannot use split cash+wallet payment.'),
     };

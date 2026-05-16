@@ -14,6 +14,8 @@ import 'package:clothes_inventory/services/database/migrations/migration_v5.dart
 import 'package:clothes_inventory/services/database/migrations/migration_v6.dart';
 import 'package:clothes_inventory/services/database/migrations/migration_v7.dart';
 import 'package:clothes_inventory/services/database/migrations/migration_v8.dart';
+import 'package:clothes_inventory/services/database/migrations/migration_v9.dart';
+import 'package:clothes_inventory/services/database/migrations/migration_v10.dart';
 
 class AppDatabase {
   AppDatabase._();
@@ -21,7 +23,7 @@ class AppDatabase {
   static final AppDatabase instance = AppDatabase._();
 
   static const _legacyDbName = 'inventory_pos.db';
-  static const _dbVersion = 8;
+  static const _dbVersion = 10;
 
   Database? _db;
 
@@ -71,6 +73,8 @@ class AppDatabase {
         await MigrationV6().up(db);
         await MigrationV7().up(db);
         await MigrationV8().up(db);
+        await MigrationV9().up(db);
+        await MigrationV10().up(db);
         await _ensureProductSalePriceColumns(db);
         await _ensureStockGuards(db);
         await _normalizeStandaloneSettlementPayments(db);
@@ -96,6 +100,12 @@ class AppDatabase {
         }
         if (oldVersion < 8) {
           await MigrationV8().up(db);
+        }
+        if (oldVersion < 9) {
+          await MigrationV9().up(db);
+        }
+        if (oldVersion < 10) {
+          await MigrationV10().up(db);
         }
       },
       onOpen: (db) async {

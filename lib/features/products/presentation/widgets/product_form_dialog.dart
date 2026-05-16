@@ -1,7 +1,10 @@
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:clothes_inventory/features/products/domain/duplicate_product_barcode_exception.dart';
 import 'package:clothes_inventory/features/products/domain/product.dart';
+import 'package:clothes_inventory/services/printing/product_barcode_label_printer.dart';
+import 'package:printing/printing.dart';
 
 class ProductFormDialog extends StatefulWidget {
   const ProductFormDialog({
@@ -10,16 +13,18 @@ class ProductFormDialog extends StatefulWidget {
     this.product,
     this.onGenerateBarcode,
     this.onPrintBarcode,
+    this.barcodeLabelPrinter,
   });
 
   final Product? product;
   final Future<void> Function(Product payload) onSave;
-  final Future<String> Function(String prefix)? onGenerateBarcode;
+  final Future<String> Function()? onGenerateBarcode;
   final Future<void> Function({
     required String productName,
     required String barcode,
   })?
   onPrintBarcode;
+  final ProductBarcodeLabelPrinter? barcodeLabelPrinter;
   @override
   State<ProductFormDialog> createState() => _ProductFormDialogState();
 }
@@ -64,11 +69,36 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     );
     _barcodeFocus = FocusNode();
     _unit = product?.unitType ?? UnitType.piece;
-    _barcodeFocus.addListener(() {
-      if (!_barcodeFocus.hasFocus) {
-        _tryAutoGenerateBarcode();
-      }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _autoFillShortBarcodeIfNew();
     });
+  }
+
+  Future<void> _autoFillShortBarcodeIfNew() async {
+    if (widget.product != null || widget.onGenerateBarcode == null) return;
+    if (_barcode.text.trim().isNotEmpty) return;
+    await _generateShortBarcode();
+  }
+
+  Future<void> _generateShortBarcode() async {
+    if (widget.onGenerateBarcode == null) return;
+    if (_generatingBarcode) return;
+    setState(() => _generatingBarcode = true);
+    try {
+      final generated = await widget.onGenerateBarcode!();
+      if (!mounted) return;
+      setState(() {
+        _barcode.text = generated;
+        _barcode.selection = TextSelection.collapsed(offset: generated.length);
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${'Failed to generate barcode'.tr()}: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _generatingBarcode = false);
+    }
   }
 
   @override
@@ -104,43 +134,20 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     return normalized;
   }
 
-  Future<void> _tryAutoGenerateBarcode() async {
-    if (widget.product != null || widget.onGenerateBarcode == null) {
-      return;
+  String _normalizeBarcodeForSave(String raw) {
+    final t = _normalizeDigits(raw).trim();
+    if (t.isEmpty) return '';
+    if (t.length == 5 && RegExp(r'^[A-Za-z]\d{4}$').hasMatch(t)) {
+      return '${t[0].toUpperCase()}${t.substring(1)}';
     }
-
-    final prefix = _normalizeDigits(_barcode.text).trim();
-    if (!RegExp(r'^\d{4}$').hasMatch(prefix)) {
-      return;
-    }
-
-    if (_generatingBarcode) return;
-
-    setState(() => _generatingBarcode = true);
-    try {
-      final generated = await widget.onGenerateBarcode!(prefix);
-      if (!mounted) return;
-      setState(() {
-        _barcode.text = generated;
-        _barcode.selection = TextSelection.collapsed(offset: generated.length);
-      });
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${'Failed to generate barcode'.tr()}: $e')),
-      );
-    } finally {
-      if (mounted) {
-        setState(() => _generatingBarcode = false);
-      }
-    }
+    return t;
   }
 
   Future<void> _printBarcode() async {
     if (widget.onPrintBarcode == null) return;
 
     final name = _name.text.trim();
-    final code = _normalizeDigits(_barcode.text).trim();
+    final code = _normalizeBarcodeForSave(_barcode.text);
     if (name.isEmpty || code.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Enter product name and barcode first'.tr())),
@@ -149,6 +156,79 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     }
 
     await widget.onPrintBarcode!(productName: name, barcode: code);
+  }
+
+  Future<void> _previewBarcode() async {
+    final printer = widget.barcodeLabelPrinter;
+    if (printer == null) return;
+
+    final name = _name.text.trim();
+    final code = _normalizeBarcodeForSave(_barcode.text);
+    if (name.isEmpty || code.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Enter product name and barcode first'.tr())),
+      );
+      return;
+    }
+
+    try {
+      final bytes = await printer.buildLabelPdfBytes(
+        productName: name,
+        barcodeValue: code,
+        copies: 1,
+      );
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => Dialog(
+          insetPadding: const EdgeInsets.all(16),
+          child: SizedBox(
+            width: 420,
+            height: 560,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 10, 8, 8),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Preview'.tr(),
+                          style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.w800,
+                              ),
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.of(ctx).pop(),
+                        icon: const Icon(Icons.close),
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1),
+                Expanded(
+                  child: PdfPreview(
+                    padding: EdgeInsets.zero,
+                    build: (format) async => bytes,
+                    canChangeOrientation: false,
+                    canChangePageFormat: false,
+                    canDebug: false,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${'Preview failed'.tr()}: $e')),
+      );
+    }
   }
 
   double? _parseFlexibleNumber(String raw) {
@@ -242,43 +322,58 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                           : null,
                     ),
                     SizedBox(height: fieldGap),
-                    Focus(
-                      onKeyEvent: (node, event) {
-                        if (event is KeyDownEvent &&
-                            event.logicalKey == LogicalKeyboardKey.tab) {
-                          _tryAutoGenerateBarcode();
-                        }
-                        return KeyEventResult.ignored;
-                      },
-                      child: TextFormField(
-                        controller: _barcode,
-                        focusNode: _barcodeFocus,
-                        textInputAction: TextInputAction.next,
-                        inputFormatters: [
-                          FilteringTextInputFormatter.allow(
-                            RegExp(r'[0-9٠-٩]'),
-                          ),
-                        ],
-                        onEditingComplete: () {
-                          _tryAutoGenerateBarcode();
-                          FocusScope.of(context).nextFocus();
-                        },
-                        decoration: InputDecoration(
-                          labelText: 'Barcode (optional)'.tr(),
-                          helperText: 'Enter 4 digits then press Tab'.tr(),
-                          suffixIcon: _generatingBarcode
-                              ? const Padding(
-                                  padding: EdgeInsets.all(10),
-                                  child: SizedBox(
-                                    width: 16,
-                                    height: 16,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  ),
-                                )
-                              : const Icon(Icons.qr_code_2_outlined),
+                    TextFormField(
+                      controller: _barcode,
+                      focusNode: _barcodeFocus,
+                      textInputAction: TextInputAction.next,
+                      maxLength: widget.product == null ? 5 : null,
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(
+                          RegExp(r'[A-Za-z0-9٠-٩]'),
                         ),
+                      ],
+                      onEditingComplete: () {
+                        FocusScope.of(context).nextFocus();
+                      },
+                      validator: (value) {
+                        final t = _normalizeBarcodeForSave(value ?? '');
+                        if (t.isEmpty) return null;
+                        if (widget.product == null &&
+                            !RegExp(r'^[A-Za-z]\d{4}$').hasMatch(t)) {
+                          return 'products.barcode_short_invalid'.tr();
+                        }
+                        return null;
+                      },
+                      buildCounter: widget.product == null
+                          ? (_, {required currentLength,
+                              required isFocused,
+                              required maxLength}) =>
+                              null
+                          : null,
+                      decoration: InputDecoration(
+                        labelText: 'Barcode (optional)'.tr(),
+                        helperText: widget.product == null
+                            ? 'products.barcode_short_helper'.tr()
+                            : null,
+                        suffixIcon: _generatingBarcode
+                            ? const Padding(
+                                padding: EdgeInsets.all(10),
+                                child: SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                ),
+                              )
+                            : (widget.product == null &&
+                                    widget.onGenerateBarcode != null
+                                ? IconButton(
+                                    tooltip: 'Regenerate'.tr(),
+                                    icon: const Icon(Icons.refresh_rounded),
+                                    onPressed: _generateShortBarcode,
+                                  )
+                                : const Icon(Icons.qr_code_2_outlined)),
                       ),
                     ),
                     SizedBox(height: fieldGap),
@@ -494,6 +589,12 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
         },
       ),
       actions: [
+        if (widget.barcodeLabelPrinter != null)
+          OutlinedButton.icon(
+            onPressed: _generatingBarcode ? null : _previewBarcode,
+            icon: const Icon(Icons.visibility_outlined),
+            label: Text('Preview'.tr()),
+          ),
         if (widget.onPrintBarcode != null)
           OutlinedButton.icon(
             onPressed: _generatingBarcode ? null : _printBarcode,
@@ -542,13 +643,11 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                       : () async {
                           if (!_formKey.currentState!.validate()) return;
 
+                          final bc = _normalizeBarcodeForSave(_barcode.text);
                           final payload = Product(
                             id: widget.product?.id,
                             name: _name.text.trim(),
-                            barcode:
-                                _normalizeDigits(_barcode.text).trim().isEmpty
-                                ? null
-                                : _normalizeDigits(_barcode.text).trim(),
+                            barcode: bc.isEmpty ? null : bc,
                             categoryId: widget.product?.categoryId,
                             unitType: _unit,
                             salePrice: parsedSalePrice ?? 0,
@@ -559,10 +658,26 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                                 _parseFlexibleNumber(_lowStock.text) ?? 0,
                           );
 
-                          await widget.onSave(payload);
+                          try {
+                            await widget.onSave(payload);
 
-                          if (context.mounted) {
-                            Navigator.of(context).pop();
+                            if (context.mounted) {
+                              Navigator.of(context).pop();
+                            }
+                          } on DuplicateProductBarcodeException {
+                            if (!context.mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  'products.duplicate_barcode'.tr(),
+                                ),
+                              ),
+                            );
+                          } catch (e) {
+                            if (!context.mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text(e.toString())),
+                            );
                           }
                         },
                   icon: const Icon(Icons.check_circle_outline),

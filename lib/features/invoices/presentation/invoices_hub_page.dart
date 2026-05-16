@@ -888,8 +888,8 @@ class _InvoicesHubPageState extends State<InvoicesHubPage>
           _buildHeader(context),
           const SizedBox(height: 12),
           Expanded(
-            child: TabBarView(
-              controller: _tabController,
+            child: IndexedStack(
+              index: _tabController.index,
               children: [_buildSalesTab(), _buildPurchasesTab()],
             ),
           ),

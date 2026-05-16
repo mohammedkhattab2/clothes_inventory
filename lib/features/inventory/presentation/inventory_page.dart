@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 
@@ -5,7 +6,7 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:clothes_inventory/core/widgets/app_brand_header.dart';
+import 'package:clothes_inventory/core/barcode/barcode_pos_input.dart';
 import 'package:clothes_inventory/core/widgets/app_empty_state.dart';
 import 'package:clothes_inventory/core/widgets/app_loading_indicator.dart';
 import 'package:clothes_inventory/core/utils/translation_utils.dart';
@@ -17,6 +18,7 @@ import 'package:clothes_inventory/features/inventory/presentation/widgets/invent
 import 'package:clothes_inventory/features/inventory/presentation/widgets/inventory_summary_section.dart';
 import 'package:clothes_inventory/features/products/data/products_import_service.dart';
 import 'package:clothes_inventory/features/products/data/product_repository.dart';
+import 'package:clothes_inventory/features/products/domain/duplicate_product_barcode_exception.dart';
 import 'package:clothes_inventory/features/products/domain/product.dart';
 import 'package:clothes_inventory/services/di/service_locator.dart';
 import 'package:clothes_inventory/services/printing/product_barcode_label_printer.dart';
@@ -60,6 +62,13 @@ class _InventoryViewState extends State<_InventoryView> {
   final ScrollController _gridScrollController = ScrollController();
   int _visibleGridCount = _lazyChunkSize;
   int _totalFilteredCount = 0;
+  final _inventoryBarcodeController = TextEditingController();
+  final _inventoryBarcodeFocusNode = FocusNode();
+  Timer? _inventoryBarcodeDebounce;
+  int _inventoryBarcodeLookupGeneration = 0;
+  final GlobalKey _highlightedInventoryCardKey = GlobalKey();
+  int? _highlightedProductId;
+  Timer? _highlightClearTimer;
 
   void _disposeControllersSafely(List<TextEditingController> controllers) {
     // Defer disposal to avoid using disposed controllers during route pop frames.
@@ -92,13 +101,17 @@ class _InventoryViewState extends State<_InventoryView> {
 
   @override
   void dispose() {
+    _highlightClearTimer?.cancel();
+    _inventoryBarcodeDebounce?.cancel();
     _productRepository.productsRevisionListenable.removeListener(
       _handleProductsRevisionChanged,
     );
     _gridScrollController
-      ..removeListener(_handleGridScroll)
-      ..dispose();
+        ..removeListener(_handleGridScroll)
+        ..dispose();
     _searchController.dispose();
+    _inventoryBarcodeController.dispose();
+    _inventoryBarcodeFocusNode.dispose();
     super.dispose();
   }
 
@@ -153,6 +166,94 @@ class _InventoryViewState extends State<_InventoryView> {
     messenger.showSnackBar(SnackBar(content: Text(message)));
   }
 
+  Future<void> _lookupInventoryBarcodeAndHighlight(
+    String raw, {
+    required bool notifyOnNoMatch,
+  }) async {
+    final trimmed =
+        _normalizeDigits(normalizePosBarcodeInput(raw)).trim();
+    if (trimmed.isEmpty) return;
+
+    final gen = ++_inventoryBarcodeLookupGeneration;
+    final matches = await _productRepository.listProducts(
+      barcode: trimmed,
+      limit: 2,
+    );
+    if (!mounted || gen != _inventoryBarcodeLookupGeneration) return;
+
+    if (matches.isEmpty) {
+      if (notifyOnNoMatch) {
+        _showLatestSnackBar('inventory.barcode_not_found'.tr());
+        refocusBarcodeForNextScan(
+          focus: _inventoryBarcodeFocusNode,
+          controller: _inventoryBarcodeController,
+        );
+      }
+      return;
+    }
+    final id = matches.first.id;
+    if (id == null) {
+      return;
+    }
+
+    _highlightClearTimer?.cancel();
+    setState(() {
+      _searchController.clear();
+      _searchQuery = '';
+      _inventoryBarcodeController.clear();
+      _filter = InventoryFilterOption.all;
+      _highlightedProductId = id;
+      _visibleGridCount = 100000;
+    });
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      final ctx = _highlightedInventoryCardKey.currentContext;
+      if (ctx != null) {
+        Scrollable.ensureVisible(
+          ctx,
+          alignment: 0.12,
+          duration: const Duration(milliseconds: 260),
+          curve: Curves.easeOutCubic,
+        );
+      }
+      refocusBarcodeForNextScan(
+        focus: _inventoryBarcodeFocusNode,
+        controller: _inventoryBarcodeController,
+      );
+      _highlightClearTimer = Timer(const Duration(seconds: 3), () {
+        if (mounted) {
+          setState(() => _highlightedProductId = null);
+        }
+      });
+    });
+  }
+
+  void _onInventoryBarcodeFieldChanged(String _) {
+    _inventoryBarcodeDebounce?.cancel();
+    _inventoryBarcodeDebounce = Timer(kPosBarcodeDebounce, () {
+      if (!mounted) return;
+      unawaited(
+        _lookupInventoryBarcodeAndHighlight(
+          _inventoryBarcodeController.text,
+          notifyOnNoMatch: false,
+        ),
+      );
+    });
+  }
+
+  void _onInventoryBarcodeFieldSubmitted(String value) {
+    _inventoryBarcodeDebounce?.cancel();
+    unawaited(
+      _lookupInventoryBarcodeAndHighlight(
+        value,
+        notifyOnNoMatch: true,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
@@ -180,12 +281,25 @@ class _InventoryViewState extends State<_InventoryView> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              AppBrandHeader(
-                pageTitle: 'Inventory'.tr(),
-                description:
-                    'Stock is computed as SUM(IN) - SUM(OUT) from stock movements only.'
-                        .tr(),
-                actions: [
+              Text(
+                'Inventory'.tr(),
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Stock is computed as SUM(IN) - SUM(OUT) from stock movements only.'
+                    .tr(),
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+              SizedBox(height: isDenseViewport ? 8 : 10),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
                   OutlinedButton.icon(
                     onPressed: _savingImportTemplate
                         ? null
@@ -271,9 +385,7 @@ class _InventoryViewState extends State<_InventoryView> {
                     tooltip: 'Refresh'.tr(),
                   ),
                 ],
-                isDense: isCompact,
               ),
-              SizedBox(height: isDenseViewport ? 4 : 6),
               SizedBox(height: isUltraDense ? 4 : (isDenseViewport ? 8 : 10)),
               Expanded(
                 child: FutureBuilder<List<InventoryStockRow>>(
@@ -419,9 +531,18 @@ class _InventoryViewState extends State<_InventoryView> {
                                     final row = visibleRows[index];
                                     final outOfStock = _isOutOfStock(row);
                                     return InventoryStockCard(
+                                      key:
+                                          row.productId == _highlightedProductId
+                                          ? _highlightedInventoryCardKey
+                                          : ValueKey(
+                                              'inv_stock_${row.productId}',
+                                            ),
                                       row: row,
                                       outOfStock: outOfStock,
                                       isUltraDense: isUltraDense,
+                                      emphasizeBarcodeMatch:
+                                          row.productId ==
+                                          _highlightedProductId,
                                       formattedLowThreshold: _formatStock(
                                         row.lowThreshold,
                                       ),
@@ -494,6 +615,10 @@ class _InventoryViewState extends State<_InventoryView> {
         setState(() => _searchQuery = '');
         _resetGridLazyWindow();
       },
+      barcodeController: _inventoryBarcodeController,
+      barcodeFocusNode: _inventoryBarcodeFocusNode,
+      onBarcodeChanged: _onInventoryBarcodeFieldChanged,
+      onBarcodeSubmitted: _onInventoryBarcodeFieldSubmitted,
       filter: _filter,
       onFilterChanged: (value) {
         setState(() => _filter = value);
@@ -538,6 +663,15 @@ class _InventoryViewState extends State<_InventoryView> {
     return normalized;
   }
 
+  String _normalizeBarcodeForSave(String raw) {
+    final t = _normalizeDigits(raw).trim();
+    if (t.isEmpty) return '';
+    if (t.length == 5 && RegExp(r'^[A-Za-z]\d{4}$').hasMatch(t)) {
+      return '${t[0].toUpperCase()}${t.substring(1)}';
+    }
+    return t;
+  }
+
   double? _parseFlexibleNumber(String raw) {
     final trimmed = raw.trim();
     if (trimmed.isEmpty) return null;
@@ -552,8 +686,8 @@ class _InventoryViewState extends State<_InventoryView> {
     return double.tryParse(normalized);
   }
 
-  Future<String> _generateBarcodeFromPrefix(String prefix) {
-    return _productRepository.generateNextBarcodeFromPrefix(prefix: prefix);
+  Future<String> _generateShortBarcode() {
+    return _productRepository.generateNextShortBarcode();
   }
 
   Future<void> _printProductBarcodeLabel({
@@ -589,16 +723,14 @@ class _InventoryViewState extends State<_InventoryView> {
     final barcodeFocus = FocusNode();
     var unit = UnitType.piece;
     var generatingBarcode = false;
+    final autoBarcodeOnce = <bool>[false];
 
     Future<void> tryAutoGenerateBarcode(StateSetter setDialogState) async {
-      final prefix = _normalizeDigits(barcode.text).trim();
-      if (!RegExp(r'^\d{4}$').hasMatch(prefix) || generatingBarcode) {
-        return;
-      }
+      if (generatingBarcode) return;
 
       setDialogState(() => generatingBarcode = true);
       try {
-        final generated = await _generateBarcodeFromPrefix(prefix);
+        final generated = await _generateShortBarcode();
         barcode.text = generated;
         barcode.selection = TextSelection.collapsed(offset: generated.length);
       } catch (e) {
@@ -622,26 +754,34 @@ class _InventoryViewState extends State<_InventoryView> {
           String? submitError;
 
           return StatefulBuilder(
-            builder: (dialogContext, setDialogState) => Dialog(
-              insetPadding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 16,
-              ),
-              child: ConstrainedBox(
-                constraints: BoxConstraints(
-                  maxWidth: maxWidth,
-                  maxHeight: maxHeight,
+            builder: (dialogContext, setDialogState) {
+              if (!autoBarcodeOnce[0] && barcode.text.trim().isEmpty) {
+                autoBarcodeOnce[0] = true;
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (!dialogContext.mounted) return;
+                  tryAutoGenerateBarcode(setDialogState);
+                });
+              }
+              return Dialog(
+                insetPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 16,
                 ),
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Add Product'.tr(),
-                        style: Theme.of(dialogContext).textTheme.titleLarge,
-                      ),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxWidth: maxWidth,
+                    maxHeight: maxHeight,
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Add Product'.tr(),
+                          style: Theme.of(dialogContext).textTheme.titleLarge,
+                        ),
                       if (submitError != null) ...[
                         const SizedBox(height: 8),
                         Text(
@@ -673,48 +813,61 @@ class _InventoryViewState extends State<_InventoryView> {
                                       : null,
                                 ),
                                 const SizedBox(height: 10),
-                                Focus(
-                                  onKeyEvent: (node, event) {
-                                    if (event is KeyDownEvent &&
-                                        event.logicalKey ==
-                                            LogicalKeyboardKey.tab) {
-                                      tryAutoGenerateBarcode(setDialogState);
-                                    }
-                                    return KeyEventResult.ignored;
-                                  },
-                                  child: TextFormField(
-                                    controller: barcode,
-                                    focusNode: barcodeFocus,
-                                    textInputAction: TextInputAction.next,
-                                    inputFormatters: [
-                                      FilteringTextInputFormatter.allow(
-                                        RegExp(r'[0-9٠-٩]'),
-                                      ),
-                                    ],
-                                    onEditingComplete: () {
-                                      tryAutoGenerateBarcode(setDialogState);
-                                      FocusScope.of(dialogContext).nextFocus();
-                                    },
-                                    decoration: InputDecoration(
-                                      labelText: 'Barcode (optional)'.tr(),
-                                      helperText:
-                                          'Enter 4 digits then press Tab'.tr(),
-                                      suffixIcon: generatingBarcode
-                                          ? const Padding(
-                                              padding: EdgeInsets.all(10),
-                                              child: SizedBox(
-                                                width: 16,
-                                                height: 16,
-                                                child:
-                                                    CircularProgressIndicator(
-                                                      strokeWidth: 2,
-                                                    ),
-                                              ),
-                                            )
-                                          : const Icon(
-                                              Icons.qr_code_2_outlined,
-                                            ),
+                                TextFormField(
+                                  controller: barcode,
+                                  focusNode: barcodeFocus,
+                                  textInputAction: TextInputAction.next,
+                                  maxLength: 5,
+                                  inputFormatters: [
+                                    FilteringTextInputFormatter.allow(
+                                      RegExp(r'[A-Za-z0-9٠-٩]'),
                                     ),
+                                  ],
+                                  onEditingComplete: () {
+                                    FocusScope.of(dialogContext).nextFocus();
+                                  },
+                                  validator: (value) {
+                                    final t =
+                                        _normalizeBarcodeForSave(value ?? '');
+                                    if (t.isEmpty) return null;
+                                    if (!RegExp(
+                                      r'^[A-Za-z]\d{4}$',
+                                    ).hasMatch(t)) {
+                                      return 'products.barcode_short_invalid'
+                                          .tr();
+                                    }
+                                    return null;
+                                  },
+                                  buildCounter: (_, {required currentLength,
+
+                                      required isFocused,
+                                      required maxLength}) =>
+                                      null,
+                                  decoration: InputDecoration(
+                                    labelText: 'Barcode (optional)'.tr(),
+                                    helperText:
+                                        'products.barcode_short_helper'.tr(),
+                                    suffixIcon: generatingBarcode
+                                        ? const Padding(
+                                            padding: EdgeInsets.all(10),
+                                            child: SizedBox(
+                                              width: 16,
+                                              height: 16,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                              ),
+                                            ),
+                                          )
+                                        : IconButton(
+                                            tooltip: 'Regenerate'.tr(),
+                                            onPressed: () =>
+                                                tryAutoGenerateBarcode(
+                                                  setDialogState,
+                                                ),
+                                            icon: const Icon(
+                                              Icons.refresh_rounded,
+                                            ),
+                                          ),
                                   ),
                                 ),
                                 const SizedBox(height: 10),
@@ -874,9 +1027,9 @@ class _InventoryViewState extends State<_InventoryView> {
                                   ? null
                                   : () async {
                                       final productName = name.text.trim();
-                                      final productBarcode = _normalizeDigits(
+                                      final productBarcode = _normalizeBarcodeForSave(
                                         barcode.text,
-                                      ).trim();
+                                      );
                                       if (productName.isEmpty ||
                                           productBarcode.isEmpty) {
                                         _showLatestSnackBar(
@@ -939,17 +1092,16 @@ class _InventoryViewState extends State<_InventoryView> {
                                         lowStock.text,
                                       );
 
+                                      final normalizedBc =
+                                          _normalizeBarcodeForSave(
+                                            barcode.text,
+                                          );
                                       final product = Product(
                                         id: null,
                                         name: name.text.trim(),
-                                        barcode:
-                                            _normalizeDigits(
-                                              barcode.text,
-                                            ).trim().isEmpty
+                                        barcode: normalizedBc.isEmpty
                                             ? null
-                                            : _normalizeDigits(
-                                                barcode.text,
-                                              ).trim(),
+                                            : normalizedBc,
                                         categoryId: null,
                                         unitType: unit,
                                         salePrice: sale ?? 0,
@@ -972,6 +1124,14 @@ class _InventoryViewState extends State<_InventoryView> {
                                             );
                                         if (!dialogContext.mounted) return;
                                         Navigator.of(dialogContext).pop(true);
+                                      } on DuplicateProductBarcodeException {
+                                        if (!dialogContext.mounted) return;
+                                        setDialogState(() {
+                                          submitError =
+                                              'products.duplicate_barcode'
+                                                  .tr();
+                                          submitting = false;
+                                        });
                                       } catch (e) {
                                         if (!dialogContext.mounted) return;
                                         final errorText = e.toString();
@@ -980,7 +1140,8 @@ class _InventoryViewState extends State<_InventoryView> {
                                               errorText.contains(
                                                 'UNIQUE constraint failed: products.barcode',
                                               )
-                                              ? 'Barcode already exists.'.tr()
+                                              ? 'products.duplicate_barcode'
+                                                    .tr()
                                               : '${'Save failed'.tr()}: $e';
                                           submitting = false;
                                         });
@@ -997,7 +1158,8 @@ class _InventoryViewState extends State<_InventoryView> {
                   ),
                 ),
               ),
-            ),
+            );
+            },
           );
         },
       );
@@ -1008,6 +1170,11 @@ class _InventoryViewState extends State<_InventoryView> {
         _showLatestSnackBar('Product saved'.tr());
       }
     } finally {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          barcodeFocus.dispose();
+        });
+      });
       _disposeControllersSafely(<TextEditingController>[
         name,
         barcode,

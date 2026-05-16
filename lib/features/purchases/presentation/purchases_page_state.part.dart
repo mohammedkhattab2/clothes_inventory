@@ -3,19 +3,19 @@ part of 'purchases_page.dart';
 enum _InvoiceImageInputSource { upload, camera }
 
 class _PurchasesPageState extends State<PurchasesPage> {
-  static const double _compactLayoutBreakpoint = 950;
-
   final _productRepo = getIt<ProductRepository>();
   final _accountsRepo = getIt<AccountsRepository>();
-  final _purchaseItemsImportService = PurchaseItemsImportService();
   final _imagePicker = ImagePicker();
   final _licenseService = getIt<LicenseService>();
   bool _readOnlyMode = false;
   String? _readOnlyMessage;
-  bool _importingItems = false;
-  bool _savingImportTemplate = false;
 
   final _searchController = TextEditingController();
+  final _barcodeController = TextEditingController();
+  final _barcodeFocusNode = FocusNode();
+  final _nameFocusNode = FocusNode();
+  Timer? _barcodeDebounce;
+  int _barcodeLookupGeneration = 0;
   final _paidController = TextEditingController();
   final _headerDiscountValueController = TextEditingController();
   final _paidAmountFocusNode = FocusNode();
@@ -32,12 +32,7 @@ class _PurchasesPageState extends State<PurchasesPage> {
       printerPrefs: const ThermalPrinterPreferences(),
     ),
   );
-  final _barcodeLabelPrinter = const ProductBarcodeLabelPrinter(
-    paperWidthMm: 58,
-    printerPrefs: ThermalPrinterPreferences(),
-  );
 
-  List<Product> _searchResults = const [];
   List<AccountLookup> _suppliers = const [];
   List<PurchaseInvoiceSummary> _invoiceRows = const [];
   // ignore: unused_field
@@ -80,6 +75,10 @@ class _PurchasesPageState extends State<PurchasesPage> {
       case 'Purchase item not found.':
       case 'Cannot cancel purchase with returns. Reverse all returns first.':
       case 'Cannot cancel purchase because current stock is insufficient.':
+      case 'Insufficient stock for one or more products.':
+      case 'purchase.amend_blocked_returns':
+      case 'purchase.amend_blocked_status':
+      case 'purchase.amend_blocked_ledger':
         return raw.tr();
       default:
         return raw;
@@ -115,20 +114,8 @@ class _PurchasesPageState extends State<PurchasesPage> {
         : widget.invoicePageSize;
     _activeInvoiceId = widget.selectedInvoiceId;
     _loadSuppliers();
-    _searchProducts('');
-    _productRepo.productsRevisionListenable.addListener(
-      _handleProductsRevisionChanged,
-    );
     _loadInvoices();
     _refreshWritePermissionStatus();
-  }
-
-  void _handleProductsRevisionChanged() {
-    if (!mounted) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      _searchProducts(_searchController.text);
-    });
   }
 
   Future<void> _loadSuppliers() async {
@@ -209,10 +196,55 @@ class _PurchasesPageState extends State<PurchasesPage> {
     cubit.checkout();
   }
 
-  Future<void> _searchProducts(String query) async {
-    final data = await _productRepo.listProducts(nameQuery: query);
-    if (!mounted) return;
-    setState(() => _searchResults = data);
+  Future<void> _searchBarcodeAndAdd(
+    BuildContext context,
+    String barcode, {
+    bool notifyOnNoMatch = true,
+  }) async {
+    final trimmed = normalizePosBarcodeInput(barcode);
+    if (trimmed.isEmpty) return;
+    final gen = ++_barcodeLookupGeneration;
+    final items = await _productRepo.listProducts(barcode: trimmed);
+    if (!mounted || gen != _barcodeLookupGeneration) return;
+    if (items.isEmpty) {
+      if (notifyOnNoMatch && context.mounted) {
+        _showLatestSnackBar(
+          context,
+          'No product matches this barcode.'.tr(),
+        );
+        refocusBarcodeForNextScan(
+          focus: _barcodeFocusNode,
+          controller: _barcodeController,
+        );
+      }
+      return;
+    }
+    if (!context.mounted) return;
+    context.read<PurchasesCubit>().addProduct(items.first);
+    _barcodeController.clear();
+    refocusBarcodeForNextScan(
+      focus: _barcodeFocusNode,
+      controller: _barcodeController,
+    );
+  }
+
+  void _onBarcodeFieldChanged(BuildContext context, String _) {
+    _barcodeDebounce?.cancel();
+    _barcodeDebounce = Timer(kPosBarcodeDebounce, () {
+      if (!mounted) return;
+      unawaited(
+        _searchBarcodeAndAdd(
+          context,
+          _barcodeController.text,
+          notifyOnNoMatch: false,
+        ),
+      );
+    });
+  }
+
+  void _onBarcodeFieldSubmitted(BuildContext context, String value) {
+    _barcodeDebounce?.cancel();
+    unawaited(_searchBarcodeAndAdd(context, value, notifyOnNoMatch: true));
   }
 
   Future<void> _loadInvoices() async {
@@ -262,705 +294,11 @@ class _PurchasesPageState extends State<PurchasesPage> {
 
     if (savedInvoiceId != null) {
       await _loadInvoices();
-      await _searchProducts(_searchController.text);
       if (!mounted || !context.mounted) return;
       _showLatestSnackBar(
         context,
         '${'Purchase saved'.tr()}: #$savedInvoiceId',
       );
-    }
-  }
-
-  Future<void> _downloadImportTemplate(BuildContext blocContext) async {
-    if (_savingImportTemplate) return;
-    if (!mounted || !blocContext.mounted) return;
-
-    setState(() => _savingImportTemplate = true);
-    try {
-      final targetPath = await FilePicker.platform.saveFile(
-        dialogTitle: 'Download Template'.tr(),
-        fileName: 'purchase_import_template.xlsx',
-        type: FileType.custom,
-        allowedExtensions: const ['xlsx'],
-      );
-
-      if (!mounted || !blocContext.mounted) return;
-      if (targetPath == null || targetPath.trim().isEmpty) {
-        return;
-      }
-
-      await getIt<PurchaseImportTemplateService>().saveArabicTemplate(
-        targetPath: targetPath,
-      );
-
-      if (!mounted || !blocContext.mounted) return;
-      _showLatestSnackBar(blocContext, 'Template saved successfully.'.tr());
-    } catch (e) {
-      if (!mounted || !blocContext.mounted) return;
-      _showLatestSnackBar(blocContext, '${'Template save failed'.tr()}: $e');
-    } finally {
-      if (mounted) {
-        setState(() => _savingImportTemplate = false);
-      }
-    }
-  }
-
-  Future<void> _importItemsFromFile(BuildContext blocContext) async {
-    if (_importingItems) return;
-    final allowed = await _ensurePurchasesWriteAllowed();
-    if (!allowed) return;
-    if (!mounted || !blocContext.mounted) return;
-
-    setState(() => _importingItems = true);
-    try {
-      final fileResult = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: const ['xlsx', 'xls', 'csv'],
-        withData: true,
-        allowMultiple: false,
-      );
-
-      if (!mounted || !blocContext.mounted) return;
-      if (fileResult == null || fileResult.files.isEmpty) {
-        return;
-      }
-
-      final selectedFile = fileResult.files.single;
-      final fileName = selectedFile.name.trim();
-      if (fileName.isEmpty) {
-        _showLatestSnackBar(blocContext, 'Invalid import file.'.tr());
-        return;
-      }
-
-      var bytes = selectedFile.bytes;
-      if (bytes == null || bytes.isEmpty) {
-        final filePath = selectedFile.path;
-        if (filePath == null || filePath.trim().isEmpty) {
-          _showLatestSnackBar(
-            blocContext,
-            'Unable to read selected file.'.tr(),
-          );
-          return;
-        }
-        bytes = await File(filePath).readAsBytes();
-      }
-
-      try {
-        final productParse = ProductsImportService().parse(
-          fileBytes: bytes,
-          fileName: fileName,
-        );
-
-        final hasProductDefinitionData = productParse.rows.any(
-          (row) =>
-              row.purchasePrice > 0 ||
-              row.salePrice > 0 ||
-              row.salePriceHalfWholesale > 0 ||
-              row.salePriceWholesale > 0 ||
-              row.lowStockThreshold > 0 ||
-              row.unitType == UnitType.weight,
-        );
-
-        if (hasProductDefinitionData && productParse.rows.isNotEmpty) {
-          if (!mounted || !blocContext.mounted) return;
-          final reviewedRows = await _showProductsPreApplyDialog(
-            blocContext,
-            productParse.rows,
-          );
-          if (!mounted || !blocContext.mounted) return;
-          if (reviewedRows == null) {
-            return;
-          }
-          if (reviewedRows.isNotEmpty) {
-            await _productRepo.upsertImportedProducts(rows: reviewedRows);
-          }
-        }
-      } catch (_) {
-        // Ignore product-definition parse errors here; line-item import still proceeds.
-      }
-
-      final products = await _productRepo.listProducts();
-      final importResult = _purchaseItemsImportService.parseAndResolve(
-        fileBytes: bytes,
-        fileName: fileName,
-        products: products,
-      );
-
-      if (!mounted || !blocContext.mounted) return;
-
-      if (importResult.lines.isEmpty) {
-        _showLatestSnackBar(blocContext, 'No valid rows to import.'.tr());
-        if (importResult.issues.isNotEmpty ||
-            importResult.warnings.isNotEmpty) {
-          await _showImportSummaryDialog(blocContext, importResult);
-        }
-        return;
-      }
-
-      final shouldApply = await _showImportPreviewDialog(
-        blocContext,
-        importResult,
-      );
-      if (!mounted || !blocContext.mounted || !shouldApply) return;
-
-      final cubit = blocContext.read<PurchasesCubit>();
-      final existingByProductId = {
-        for (final item in cubit.state.cart) item.productId: item,
-      };
-
-      for (final line in importResult.lines) {
-        final productId = line.product.id;
-        if (productId == null) continue;
-
-        final existing = existingByProductId[productId];
-        if (existing == null) {
-          cubit.addProduct(line.product);
-        }
-
-        final base = existingByProductId[productId];
-        final nextQuantity = (base?.quantity ?? 0) + line.quantity;
-        final nextDiscount = (base?.discount ?? 0) + line.discount;
-
-        cubit.updateItem(
-          productId,
-          quantity: nextQuantity,
-          unitPrice: line.unitPrice,
-          discount: nextDiscount,
-        );
-
-        existingByProductId[productId] =
-            (existingByProductId[productId] ??
-                    PurchaseDraftItem(
-                      productId: productId,
-                      productName: line.product.name,
-                      unitType: line.product.unitType.name,
-                      quantity: 0,
-                      unitPrice: line.unitPrice,
-                    ))
-                .copyWith(
-                  quantity: nextQuantity,
-                  unitPrice: line.unitPrice,
-                  discount: nextDiscount,
-                );
-      }
-
-      await _searchProducts(_searchController.text);
-      if (!mounted || !blocContext.mounted) return;
-
-      final summary =
-          '${'Rows added'.tr()}: ${importResult.addedRows}  •  ${'Rows skipped'.tr()}: ${importResult.skippedRows}';
-      _showLatestSnackBar(blocContext, '${'Import completed'.tr()}. $summary');
-
-      if (importResult.issues.isNotEmpty || importResult.warnings.isNotEmpty) {
-        await _showImportSummaryDialog(blocContext, importResult);
-      }
-    } catch (e) {
-      if (!mounted || !blocContext.mounted) return;
-      _showLatestSnackBar(
-        blocContext,
-        '${'Import failed'.tr()}: ${_localizedImportExceptionMessage(e)}',
-      );
-    } finally {
-      if (mounted) {
-        setState(() => _importingItems = false);
-      }
-    }
-  }
-
-  Future<bool> _showImportPreviewDialog(
-    BuildContext context,
-    PurchaseImportResult result,
-  ) async {
-    final width = (MediaQuery.sizeOf(context).width * 0.9).clamp(420.0, 860.0);
-    final previewLines = result.lines
-        .map(
-          (line) =>
-              '${line.product.name}  •  ${'Qty'.tr()}: ${line.quantity.toStringAsFixed(2)}  •  ${'Unit Price'.tr()}: ${line.unitPrice.toStringAsFixed(2)}  •  ${'Discount'.tr()}: ${line.discount.toStringAsFixed(2)}',
-        )
-        .toList(growable: false);
-
-    final approved = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) {
-        return Dialog(
-          child: ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: width, maxHeight: 620),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Import Preview'.tr(),
-                    style: Theme.of(dialogContext).textTheme.titleLarge,
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Review import rows before applying to cart.'.tr(),
-                    style: Theme.of(dialogContext).textTheme.bodyMedium,
-                  ),
-                  const SizedBox(height: 10),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      Chip(
-                        label: Text(
-                          '${'Rows valid'.tr()}: ${result.lines.length}',
-                        ),
-                      ),
-                      Chip(
-                        label: Text(
-                          '${'Rows with issues'.tr()}: ${result.issues.length}',
-                        ),
-                      ),
-                      Chip(
-                        label: Text(
-                          '${'Rows with warnings'.tr()}: ${result.warnings.length}',
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  Expanded(
-                    child: ListView.builder(
-                      itemCount: previewLines.length,
-                      itemBuilder: (context, index) => Padding(
-                        padding: const EdgeInsets.only(bottom: 6),
-                        child: Text('• ${previewLines[index]}'),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      TextButton(
-                        onPressed: () => Navigator.of(dialogContext).pop(false),
-                        child: Text('Cancel Import'.tr()),
-                      ),
-                      const SizedBox(width: 8),
-                      FilledButton(
-                        onPressed: () => Navigator.of(dialogContext).pop(true),
-                        child: Text('Apply Import'.tr()),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
-    );
-
-    return approved ?? false;
-  }
-
-  Future<List<ProductsImportRow>?> _showProductsPreApplyDialog(
-    BuildContext context,
-    List<ProductsImportRow> rows,
-  ) async {
-    if (rows.isEmpty) {
-      return const <ProductsImportRow>[];
-    }
-
-    final width = (MediaQuery.sizeOf(context).width * 0.94).clamp(460.0, 980.0);
-    final drafts = List<ProductsImportRow>.from(rows);
-
-    final approvedRows = await showDialog<List<ProductsImportRow>>(
-      context: context,
-      builder: (dialogContext) {
-        return StatefulBuilder(
-          builder: (dialogContext, setDialogState) {
-            return Dialog(
-              child: ConstrainedBox(
-                constraints: BoxConstraints(maxWidth: width, maxHeight: 680),
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Review product rows before saving.'.tr(),
-                        style: Theme.of(dialogContext).textTheme.titleLarge,
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Edit imported products before they are added to products list.'
-                            .tr(),
-                        style: Theme.of(dialogContext).textTheme.bodyMedium,
-                      ),
-                      const SizedBox(height: 10),
-                      Expanded(
-                        child: SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          child: ConstrainedBox(
-                            constraints: BoxConstraints(minWidth: width - 64),
-                            child: SingleChildScrollView(
-                              child: DataTable(
-                                columnSpacing: 14,
-                                horizontalMargin: 10,
-                                headingRowHeight: 42,
-                                dataRowMinHeight: 44,
-                                dataRowMaxHeight: 56,
-                                columns: [
-                                  DataColumn(label: Text('Name'.tr())),
-                                  DataColumn(
-                                    label: Text('Barcode (optional)'.tr()),
-                                  ),
-                                  DataColumn(label: Text('Unit Type'.tr())),
-                                  DataColumn(
-                                    numeric: true,
-                                    label: Text('Retail Price'.tr()),
-                                  ),
-                                  DataColumn(
-                                    numeric: true,
-                                    label: Text('Half Wholesale Price'.tr()),
-                                  ),
-                                  DataColumn(
-                                    numeric: true,
-                                    label: Text('Wholesale Price'.tr()),
-                                  ),
-                                  DataColumn(
-                                    numeric: true,
-                                    label: Text('Purchase Price'.tr()),
-                                  ),
-                                  DataColumn(
-                                    numeric: true,
-                                    label: Text('Low Stock Threshold'.tr()),
-                                  ),
-                                  DataColumn(label: Text('Actions'.tr())),
-                                ],
-                                rows: [
-                                  for (
-                                    var index = 0;
-                                    index < drafts.length;
-                                    index++
-                                  )
-                                    DataRow(
-                                      cells: [
-                                        DataCell(Text(drafts[index].name)),
-                                        DataCell(
-                                          Text(
-                                            (drafts[index].barcode ?? '')
-                                                    .trim()
-                                                    .isEmpty
-                                                ? '-'
-                                                : drafts[index].barcode!.trim(),
-                                          ),
-                                        ),
-                                        DataCell(
-                                          Text(drafts[index].unitType.name),
-                                        ),
-                                        DataCell(
-                                          Text(
-                                            drafts[index].salePrice
-                                                .toStringAsFixed(2),
-                                          ),
-                                        ),
-                                        DataCell(
-                                          Text(
-                                            drafts[index].salePriceHalfWholesale
-                                                .toStringAsFixed(2),
-                                          ),
-                                        ),
-                                        DataCell(
-                                          Text(
-                                            drafts[index].salePriceWholesale
-                                                .toStringAsFixed(2),
-                                          ),
-                                        ),
-                                        DataCell(
-                                          Text(
-                                            drafts[index].purchasePrice
-                                                .toStringAsFixed(2),
-                                          ),
-                                        ),
-                                        DataCell(
-                                          Text(
-                                            drafts[index].lowStockThreshold
-                                                .toStringAsFixed(0),
-                                          ),
-                                        ),
-                                        DataCell(
-                                          OutlinedButton.icon(
-                                            onPressed: () async {
-                                              final edited =
-                                                  await _editImportedProductDraft(
-                                                    dialogContext,
-                                                    drafts[index],
-                                                  );
-                                              if (edited == null ||
-                                                  !dialogContext.mounted) {
-                                                return;
-                                              }
-                                              setDialogState(
-                                                () => drafts[index] = edited,
-                                              );
-                                            },
-                                            icon: const Icon(
-                                              Icons.edit_outlined,
-                                            ),
-                                            label: Text('Edit Product'.tr()),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          TextButton(
-                            onPressed: () =>
-                                Navigator.of(dialogContext).pop(null),
-                            child: Text('Cancel Import'.tr()),
-                          ),
-                          const SizedBox(width: 8),
-                          FilledButton(
-                            onPressed: () => Navigator.of(
-                              dialogContext,
-                            ).pop(List<ProductsImportRow>.unmodifiable(drafts)),
-                            child: Text('Apply Import'.tr()),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-
-    return approvedRows;
-  }
-
-  Future<ProductsImportRow?> _editImportedProductDraft(
-    BuildContext context,
-    ProductsImportRow row,
-  ) async {
-    Product? editedPayload;
-
-    await PurchasesProductDialog.show(
-      context,
-      initialName: row.name,
-      initialQuantity: 1,
-      initialPurchasePrice: row.purchasePrice,
-      parseFlexibleNumber: parseFlexibleNumber,
-      onGenerateBarcode: _generateBarcodeFromPrefix,
-      onPrintBarcode: _printProductBarcodeLabel,
-      onCreateProduct: (payload) async {
-        editedPayload = payload;
-        return payload;
-      },
-      onUpdateProduct: (payload) async {},
-      onRefreshSearch: () async {},
-      onCreatedAttachToCart: (created, enteredQuantity) {},
-      onUpdatedSyncCart: (productId, unitPrice) {},
-    );
-
-    final payload = editedPayload;
-    if (payload == null) {
-      return null;
-    }
-
-    return ProductsImportRow(
-      name: payload.name,
-      barcode: payload.barcode,
-      unitType: payload.unitType,
-      salePrice: payload.salePrice,
-      salePriceHalfWholesale: payload.salePriceHalfWholesale,
-      salePriceWholesale: payload.salePriceWholesale,
-      purchasePrice: payload.purchasePrice,
-      lowStockThreshold: payload.lowStockThreshold,
-    );
-  }
-
-  Future<void> _showImportSummaryDialog(
-    BuildContext context,
-    PurchaseImportResult result,
-  ) async {
-    final width = (MediaQuery.sizeOf(context).width * 0.9).clamp(360.0, 760.0);
-    final hasReportRows =
-        result.issues.isNotEmpty || result.warnings.isNotEmpty;
-    final issueLines = [
-      for (final issue in result.issues)
-        '• ${'Row'.tr()} ${issue.rowNumber}: ${_localizedImportIssueMessage(issue.message)}',
-    ];
-    final warningLines = [
-      for (final warning in result.warnings)
-        '• ${'Row'.tr()} ${warning.rowNumber}: ${_localizedImportIssueMessage(warning.message)}',
-    ];
-
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) {
-        return Dialog(
-          child: ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: width, maxHeight: 560),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Import Summary'.tr(),
-                    style: Theme.of(dialogContext).textTheme.titleLarge,
-                  ),
-                  const SizedBox(height: 10),
-                  Text('${'Rows read'.tr()}: ${result.totalRows}'),
-                  Text('${'Rows added'.tr()}: ${result.addedRows}'),
-                  Text('${'Rows skipped'.tr()}: ${result.skippedRows}'),
-                  if (warningLines.isNotEmpty) ...[
-                    const SizedBox(height: 10),
-                    Text(
-                      '${'Warnings'.tr()} (${warningLines.length})',
-                      style: Theme.of(dialogContext).textTheme.titleSmall,
-                    ),
-                  ],
-                  if (issueLines.isNotEmpty) ...[
-                    const SizedBox(height: 10),
-                    Text(
-                      '${'Errors'.tr()} (${issueLines.length})',
-                      style: Theme.of(dialogContext).textTheme.titleSmall,
-                    ),
-                  ],
-                  const SizedBox(height: 8),
-                  Expanded(
-                    child: ListView(
-                      children: [
-                        ...warningLines.map((line) => Text(line)),
-                        if (warningLines.isNotEmpty && issueLines.isNotEmpty)
-                          const SizedBox(height: 8),
-                        ...issueLines.map((line) => Text(line)),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      if (hasReportRows)
-                        OutlinedButton.icon(
-                          onPressed: () async {
-                            await _exportImportIssuesReport(context, result);
-                          },
-                          icon: const Icon(Icons.download_outlined),
-                          label: Text('Export Error Report'.tr()),
-                        ),
-                      if (hasReportRows) const SizedBox(width: 8),
-                      FilledButton(
-                        onPressed: () => Navigator.of(dialogContext).pop(),
-                        child: Text('Close'.tr()),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Future<void> _exportImportIssuesReport(
-    BuildContext context,
-    PurchaseImportResult result,
-  ) async {
-    if (result.issues.isEmpty && result.warnings.isEmpty) {
-      _showLatestSnackBar(context, 'No import issues to export.'.tr());
-      return;
-    }
-
-    try {
-      final targetPath = await FilePicker.platform.saveFile(
-        dialogTitle: 'Export Error Report'.tr(),
-        fileName: 'purchase_import_issues_report.csv',
-        type: FileType.custom,
-        allowedExtensions: const ['csv'],
-      );
-
-      if (!mounted) return;
-      if (targetPath == null || targetPath.trim().isEmpty) {
-        return;
-      }
-
-      final rows = <String>[
-        'type,row,message',
-        ...result.warnings.map(
-          (warning) =>
-              'warning,${warning.rowNumber},"${_localizedImportIssueMessage(warning.message).replaceAll('"', '""')}"',
-        ),
-        ...result.issues.map(
-          (issue) =>
-              'error,${issue.rowNumber},"${_localizedImportIssueMessage(issue.message).replaceAll('"', '""')}"',
-        ),
-      ];
-
-      final file = File(targetPath);
-      await file.writeAsString(
-        '\uFEFF${rows.join('\n')}',
-        encoding: utf8,
-        flush: true,
-      );
-
-      if (!mounted || !context.mounted) return;
-      _showLatestSnackBar(context, 'Error report saved successfully.'.tr());
-    } catch (e) {
-      if (!mounted || !context.mounted) return;
-      _showLatestSnackBar(context, '${'Error report export failed'.tr()}: $e');
-    }
-  }
-
-  String _localizedImportIssueMessage(String raw) {
-    switch (raw) {
-      case 'Unknown product (barcode/name not found).':
-      case 'Invalid quantity. Quantity must be a positive number.':
-      case 'Piece products require whole quantity.':
-      case 'Invalid unit price. Unit price must be zero or positive.':
-      case 'Invalid discount. Discount must be zero or positive.':
-      case 'Discount exceeds line total.':
-      case 'Product has no valid ID in local database.':
-      case 'Duplicate product with different price. Last imported price was applied.':
-      case 'Ambiguous product name. Please provide barcode for exact match.':
-        return raw.tr();
-      default:
-        return raw;
-    }
-  }
-
-  String _localizedImportExceptionMessage(Object error) {
-    var message = error.toString();
-    const badStatePrefix = 'Bad state: ';
-    const formatPrefix = 'FormatException: ';
-    if (message.startsWith(badStatePrefix)) {
-      message = message.substring(badStatePrefix.length);
-    }
-    if (message.startsWith(formatPrefix)) {
-      message = message.substring(formatPrefix.length);
-    }
-
-    if (message.startsWith('Unsupported file type:')) {
-      return 'Unsupported file type.'.tr();
-    }
-
-    switch (message.trim()) {
-      case 'The selected file is empty.':
-      case 'The selected file does not contain headers.':
-      case 'Missing required columns. Expected Quantity and Name. Barcode is optional.':
-        return message.trim().tr();
-      default:
-        return message;
     }
   }
 
@@ -1106,123 +444,13 @@ class _PurchasesPageState extends State<PurchasesPage> {
     await _loadSuppliers();
   }
 
-  Future<String> _generateBarcodeFromPrefix(String prefix) {
-    return _productRepo.generateNextBarcodeFromPrefix(prefix: prefix);
-  }
-
-  Future<void> _printProductBarcodeLabel({
-    required String productName,
-    required String barcode,
-    required int quantity,
-  }) async {
-    final copies = quantity < 1 ? 1 : quantity;
-    try {
-      await _barcodeLabelPrinter.printLabel(
-        productName: productName,
-        barcodeValue: barcode,
-        copies: copies,
-      );
-      if (!mounted) return;
-      _showLatestSnackBar(context, 'Barcode label sent to printer'.tr());
-    } catch (e) {
-      if (!mounted) return;
-      _showLatestSnackBar(context, '${'Failed to print barcode'.tr()}: $e');
-    }
-  }
-
-  Future<void> _createProductDialog(
-    BuildContext blocContext, [
-    Product? existingProduct,
-  ]) async {
-    final allowed = await _ensurePurchasesWriteAllowed();
-    if (!allowed) return;
-    if (!mounted || !blocContext.mounted) return;
-
-    await PurchasesProductDialog.show(
-      blocContext,
-      existingProduct: existingProduct,
-      parseFlexibleNumber: parseFlexibleNumber,
-      onGenerateBarcode: _generateBarcodeFromPrefix,
-      onPrintBarcode: _printProductBarcodeLabel,
-      onCreateProduct: _productRepo.createProduct,
-      onUpdateProduct: _productRepo.updateProduct,
-      onRefreshSearch: () => _searchProducts(_searchController.text),
-      onCreatedAttachToCart: (created, enteredQuantity) {
-        if (!mounted || !blocContext.mounted) return;
-        blocContext.read<PurchasesCubit>().addProduct(created);
-        final createdId = created.id;
-        if (createdId != null) {
-          blocContext.read<PurchasesCubit>().updateItem(
-            createdId,
-            quantity: enteredQuantity,
-          );
-        }
-      },
-      onUpdatedSyncCart: (productId, unitPrice) {
-        if (!mounted || !blocContext.mounted) return;
-        blocContext.read<PurchasesCubit>().updateItem(
-          productId,
-          unitPrice: unitPrice,
-        );
-      },
-    );
-  }
-
-  Future<void> _deleteProductFromEntryList(
-    BuildContext blocContext,
-    Product product,
-  ) async {
-    final allowed = await _ensurePurchasesWriteAllowed();
-    if (!allowed) return;
-    if (!mounted || !blocContext.mounted) return;
-
-    final productId = product.id;
-    if (productId == null) return;
-
-    final confirmed = await showDialog<bool>(
-      context: blocContext,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: Text('Delete Product'.tr()),
-          content: Text('Are you sure you want to delete this product?'.tr()),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: Text('Cancel'.tr()),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-              style: FilledButton.styleFrom(
-                backgroundColor: Colors.red.shade700,
-              ),
-              child: Text('Delete'.tr()),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (confirmed != true) return;
-
-    try {
-      await _productRepo.deleteProduct(productId);
-      if (!mounted || !blocContext.mounted) return;
-      blocContext.read<PurchasesCubit>().removeItem(productId);
-      await _searchProducts(_searchController.text);
-      if (!mounted || !blocContext.mounted) return;
-      _showLatestSnackBar(blocContext, 'Product deleted successfully'.tr());
-    } catch (e) {
-      if (!mounted || !blocContext.mounted) return;
-      _showLatestSnackBar(blocContext, _presentPurchaseError(e.toString()));
-    }
-  }
-
   @override
   void dispose() {
-    _productRepo.productsRevisionListenable.removeListener(
-      _handleProductsRevisionChanged,
-    );
+    _barcodeDebounce?.cancel();
     _searchController.dispose();
+    _barcodeController.dispose();
+    _barcodeFocusNode.dispose();
+    _nameFocusNode.dispose();
     _paidController.dispose();
     _headerDiscountValueController.dispose();
     _paidAmountFocusNode.dispose();
@@ -1351,18 +579,73 @@ class _PurchasesPageState extends State<PurchasesPage> {
       create: (_) => getIt<PurchasesCubit>(),
       child: BlocConsumer<PurchasesCubit, PurchasesState>(
         listener: (context, state) {
-          if (state.successInvoiceId != null) {
+          var shouldClearTransient = false;
+          var shouldClearError = false;
+
+          if (state.successEvent == 'invoice_amendment_loaded') {
+            _headerDiscountValueController.text =
+                state.headerDiscountValue == 0
+                    ? ''
+                    : state.headerDiscountValue.toStringAsFixed(2);
+            final total = state.total;
+            final paid = state.paidAmount;
+            if (mounted) {
+              setState(() {
+                if (total <= 0.000001) {
+                  _paymentStatus = _PurchasePaymentStatus.deferred;
+                } else if ((paid - total).abs() < 0.000001) {
+                  _paymentStatus = _PurchasePaymentStatus.full;
+                } else if (paid < 0.000001) {
+                  _paymentStatus = _PurchasePaymentStatus.deferred;
+                } else {
+                  _paymentStatus = _PurchasePaymentStatus.partial;
+                }
+              });
+            }
+            if (mounted && state.editingPurchaseId != null) {
+              unawaited(
+                _refreshActiveInvoiceLines(state.editingPurchaseId!),
+              );
+            }
             _showLatestSnackBar(
               context,
-              '${'Purchase saved'.tr()}: #${state.successInvoiceId}',
+              'purchase.invoice_amendment_loaded_hint'.tr(),
             );
+            shouldClearTransient = true;
+          }
+
+          if (state.successInvoiceId != null) {
+            final msg = switch (state.successEvent) {
+              'purchase_amended' => 'purchase.amended_success'.tr(
+                  namedArgs: {'id': '${state.successInvoiceId}'},
+                ),
+              _ =>
+                '${'Purchase saved'.tr()}: #${state.successInvoiceId}',
+            };
+            _showLatestSnackBar(context, msg);
             _paymentStatus = _PurchasePaymentStatus.full;
+            _searchController.clear();
+            _barcodeController.clear();
+            refocusBarcodeForNextScan(
+              focus: _barcodeFocusNode,
+              controller: _barcodeController,
+            );
             _paidController.clear();
             _headerDiscountValueController.clear();
             _loadInvoices();
+            shouldClearTransient = true;
           }
+
           if (state.error != null) {
             _showLatestSnackBar(context, _presentPurchaseError(state.error!));
+            shouldClearTransient = true;
+            shouldClearError = true;
+          }
+
+          if (shouldClearTransient) {
+            context.read<PurchasesCubit>().clearTransientFeedback(
+              clearError: shouldClearError,
+            );
           }
         },
         builder: (context, state) {
@@ -1416,149 +699,144 @@ class _PurchasesPageState extends State<PurchasesPage> {
               isVeryDenseViewport ? 10 : (isShortViewport ? 12 : 24),
             ),
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                PurchasesHeaderSection(
-                  isShortViewport: isShortViewport,
-                  isVeryDenseViewport: isVeryDenseViewport,
-                  readOnlyMode: _readOnlyMode,
-                  readOnlyMessage: _readOnlyMessage,
-                  actions: [
-                    OutlinedButton.icon(
-                      onPressed: state.loading || _readOnlyMode
-                          ? null
-                          : () => _scanInvoice(context),
-                      style: OutlinedButton.styleFrom(
-                        visualDensity: VisualDensity.compact,
-                      ),
-                      icon: const Icon(Icons.document_scanner_outlined),
-                      label: Text('Scan Invoice'.tr()),
+                if (_readOnlyMode) ...[
+                  Container(
+                    width: double.infinity,
+                    padding: EdgeInsets.symmetric(
+                      horizontal: isVeryDenseViewport ? 10 : 12,
+                      vertical: isVeryDenseViewport ? 6 : 8,
                     ),
-                  ],
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(999),
+                      color: Colors.orange.shade100,
+                      border: Border.all(color: Colors.orange.shade300),
+                    ),
+                    child: Text(
+                      _readOnlyMessage ?? 'license.read_only_banner'.tr(),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Colors.orange.shade900,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  SizedBox(height: sectionGap),
+                ],
+                PurchasesCheckoutToolbar(
+                  veryDense: isVeryDenseViewport,
+                  colorScheme: Theme.of(context).colorScheme,
+                  nameFocusNode: _nameFocusNode,
+                  nameSearchController: _searchController,
+                  barcodeController: _barcodeController,
+                  barcodeFocusNode: _barcodeFocusNode,
+                  searchProducts: (q) => _productRepo.listProducts(
+                    nameQuery: q,
+                    limit: 72,
+                  ),
+                  onProductSelected: (item) {
+                    _searchController.clear();
+                    cubit.addProduct(item);
+                  },
+                  onBarcodeChanged: (value) =>
+                      _onBarcodeFieldChanged(context, value),
+                  onBarcodeSubmitted: (value) =>
+                      _onBarcodeFieldSubmitted(context, value),
+                ),
+                SizedBox(height: isVeryDenseViewport ? 4 : 6),
+                Align(
+                  alignment: AlignmentDirectional.centerStart,
+                  child: IconButton.filledTonal(
+                    tooltip: 'Scan Invoice'.tr(),
+                    onPressed: state.loading || _readOnlyMode
+                        ? null
+                        : () => _scanInvoice(context),
+                    icon: const Icon(Icons.document_scanner_outlined),
+                  ),
                 ),
                 SizedBox(height: sectionGap),
                 Expanded(
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      final compact =
-                          constraints.maxWidth < _compactLayoutBreakpoint;
-                      final productsPaneFlex = compact ? 4 : 4;
-                      final cartPaneFlex = compact ? 6 : 6;
-                      final productsPane = Expanded(
-                        flex: productsPaneFlex,
-                        child: PurchasesProductsPane(
-                          compact: compact,
-                          searchController: _searchController,
-                          searchResults: _searchResults,
-                          onSearchChanged: _searchProducts,
-                          onAddProduct: () => _createProductDialog(context),
-                          onImportItems: () => _importItemsFromFile(context),
-                          onDownloadTemplate: () =>
-                              _downloadImportTemplate(context),
-                          onEditProduct: (product) =>
-                              _createProductDialog(context, product),
-                          onDeleteProduct: (product) =>
-                              _deleteProductFromEntryList(context, product),
-                          onAddToCart: cubit.addProduct,
-                          importing: _importingItems,
-                          savingTemplate: _savingImportTemplate,
+                  child: PurchasesCartPane(
+                    veryDense: isVeryDenseViewport,
+                    total: state.total,
+                    loading: state.loading,
+                    paymentStatusIndex: _paymentStatus.index,
+                    paymentStatusItems: [
+                      DropdownMenuItem(
+                        value: _PurchasePaymentStatus.full.index,
+                        child: Text('Full Payment'.tr()),
+                      ),
+                      DropdownMenuItem(
+                        value: _PurchasePaymentStatus.partial.index,
+                        child: Text('Partial Payment'.tr()),
+                      ),
+                      DropdownMenuItem(
+                        value: _PurchasePaymentStatus.deferred.index,
+                        child: Text('Deferred Payment'.tr()),
+                      ),
+                    ],
+                    cartContent: _buildCartTableContent(
+                      context,
+                      state,
+                      cubit,
+                    ),
+                    suppliers: _suppliers,
+                    supplierId: state.supplierId,
+                    headerDiscountKind: state.headerDiscountKind,
+                    headerDiscountValueController:
+                        _headerDiscountValueController,
+                    paidController: _paidController,
+                    paidAmountFocusNode: _paidAmountFocusNode,
+                    headerDiscountAmount: state.headerDiscountAmount,
+                    outstandingAmount: (state.total - state.paidAmount)
+                        .clamp(0, state.total)
+                        .toDouble(),
+                    paymentMethod: state.paymentMethod,
+                    paidFieldEnabled:
+                        _paymentStatus == _PurchasePaymentStatus.partial,
+                    onAddSupplier: () => _createSupplierDialog(context),
+                    onSupplierChanged: cubit.setSupplier,
+                    onPaymentStatusChanged: (value) {
+                      if (value == null) return;
+                      final selectedStatus =
+                          _PurchasePaymentStatus.values[value];
+                      setState(() => _paymentStatus = selectedStatus);
+                      if (selectedStatus == _PurchasePaymentStatus.full) {
+                        cubit.setPaidAmount(state.total);
+                      } else if (selectedStatus ==
+                          _PurchasePaymentStatus.deferred) {
+                        cubit.setPaidAmount(0);
+                      }
+                    },
+                    onHeaderDiscountKindChanged: (kind) => context
+                        .read<PurchasesCubit>()
+                        .setHeaderDiscountKind(kind),
+                    onHeaderDiscountValueChanged: (v) => context
+                        .read<PurchasesCubit>()
+                        .setHeaderDiscountValue(
+                          parseFlexibleNumber(v) ?? 0,
                         ),
-                      );
-                      final cartPane = Expanded(
-                        flex: cartPaneFlex,
-                        child: PurchasesCartPane(
-                          total: state.total,
-                          loading: state.loading,
-                          paymentStatusIndex: _paymentStatus.index,
-                          paymentStatusItems: [
-                            DropdownMenuItem(
-                              value: _PurchasePaymentStatus.full.index,
-                              child: Text('Full Payment'.tr()),
-                            ),
-                            DropdownMenuItem(
-                              value: _PurchasePaymentStatus.partial.index,
-                              child: Text('Partial Payment'.tr()),
-                            ),
-                            DropdownMenuItem(
-                              value: _PurchasePaymentStatus.deferred.index,
-                              child: Text('Deferred Payment'.tr()),
-                            ),
-                          ],
-                          cartContent: _buildCartTableContent(
-                            context,
-                            state,
-                            cubit,
-                          ),
-                          suppliers: _suppliers,
-                          supplierId: state.supplierId,
-                          headerDiscountKind: state.headerDiscountKind,
-                          headerDiscountValueController:
-                              _headerDiscountValueController,
-                          paidController: _paidController,
-                          paidAmountFocusNode: _paidAmountFocusNode,
-                          headerDiscountAmount: state.headerDiscountAmount,
-                          outstandingAmount: (state.total - state.paidAmount)
-                              .clamp(0, state.total)
-                              .toDouble(),
-                          paymentMethod: state.paymentMethod,
-                          paidFieldEnabled:
-                              _paymentStatus == _PurchasePaymentStatus.partial,
-                          onAddSupplier: () => _createSupplierDialog(context),
-                          onSupplierChanged: cubit.setSupplier,
-                          onPaymentStatusChanged: (value) {
-                            if (value == null) return;
-                            final selectedStatus =
-                                _PurchasePaymentStatus.values[value];
-                            setState(() => _paymentStatus = selectedStatus);
-                            if (selectedStatus == _PurchasePaymentStatus.full) {
-                              cubit.setPaidAmount(state.total);
-                            } else if (selectedStatus ==
-                                _PurchasePaymentStatus.deferred) {
+                    onPaidChanged:
+                        _paymentStatus == _PurchasePaymentStatus.partial
+                        ? (value) {
+                            final parsed = parseFlexibleNumber(value);
+                            if (parsed != null) {
+                              cubit.setPaidAmount(parsed);
+                            } else if (value.trim().isEmpty) {
                               cubit.setPaidAmount(0);
                             }
-                          },
-                          onHeaderDiscountKindChanged: (kind) => context
-                              .read<PurchasesCubit>()
-                              .setHeaderDiscountKind(kind),
-                          onHeaderDiscountValueChanged: (v) => context
-                              .read<PurchasesCubit>()
-                              .setHeaderDiscountValue(
-                                parseFlexibleNumber(v) ?? 0,
-                              ),
-                          onPaidChanged:
-                              _paymentStatus == _PurchasePaymentStatus.partial
-                              ? (value) {
-                                  final parsed = parseFlexibleNumber(value);
-                                  if (parsed != null) {
-                                    cubit.setPaidAmount(parsed);
-                                  } else if (value.trim().isEmpty) {
-                                    cubit.setPaidAmount(0);
-                                  }
-                                }
-                              : null,
-                          onPaymentMethodChanged: cubit.setPaymentMethod,
-                          onCompletePurchase: () =>
-                              _attemptCheckout(cubit, state),
-                          onReturnFromInvoice: () => _showReturnDialog(context),
-                          onCancelInvoice: () => _showCancelDialog(context),
-                          readOnlyMode: _readOnlyMode,
-                          readOnlyMessage: _readOnlyMessage,
-                        ),
-                      );
-                      return Flex(
-                        direction: compact ? Axis.vertical : Axis.horizontal,
-                        children: compact
-                            ? <Widget>[
-                                cartPane,
-                                SizedBox(height: sectionGap),
-                                productsPane,
-                              ]
-                            : <Widget>[
-                                productsPane,
-                                SizedBox(width: sectionGap),
-                                cartPane,
-                              ],
-                      );
-                    },
+                          }
+                        : null,
+                    onPaymentMethodChanged: cubit.setPaymentMethod,
+                    onCompletePurchase: () =>
+                        _attemptCheckout(cubit, state),
+                    onReturnFromInvoice: () => _showReturnDialog(context),
+                    onCancelInvoice: () => _showCancelDialog(context),
+                    readOnlyMode: _readOnlyMode,
+                    readOnlyMessage: _readOnlyMessage,
+                    invoiceAmendmentMode: state.editingPurchaseId != null,
+                    onCancelInvoiceAmendment: () =>
+                        context.read<PurchasesCubit>().clearInvoiceAmendment(),
                   ),
                 ),
               ],
@@ -1632,6 +910,24 @@ class _PurchasesPageState extends State<PurchasesPage> {
             return purchasesCubit.state.error;
           },
       onRefreshActiveInvoiceLines: _refreshActiveInvoiceLines,
+      canAmendPurchaseForCart: (id) =>
+          getIt<PurchasesRepository>().canAmendPurchaseInvoice(id),
+      onPurchaseInvoiceAmendedInCart: (id) async {
+        final allowed = await _ensurePurchasesWriteAllowed();
+        if (!allowed) return;
+        await purchasesCubit.loadPurchaseForAmendment(id);
+      },
+      onAddLineToCart: (productId) async {
+        final allowed = await _ensurePurchasesWriteAllowed();
+        if (!allowed) {
+          return;
+        }
+        final products = await _productRepo.listProductsByIds([productId]);
+        if (products.isEmpty || !context.mounted) {
+          return;
+        }
+        purchasesCubit.addProduct(products.first);
+      },
     );
   }
 
@@ -1660,7 +956,6 @@ class _PurchasesPageState extends State<PurchasesPage> {
             });
           }
           await _loadInvoices();
-          await _searchProducts(_searchController.text);
         }
         return !failed;
       },
