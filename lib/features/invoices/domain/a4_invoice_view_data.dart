@@ -23,6 +23,7 @@ class A4InvoiceViewData {
     required this.partyLabel,
     required this.partyName,
     this.issuedBy,
+    this.lastModifiedBy,
     required this.lines,
     required this.total,
     this.currency = '',
@@ -39,6 +40,7 @@ class A4InvoiceViewData {
   final String partyLabel;
   final String partyName;
   final String? issuedBy;
+  final String? lastModifiedBy;
   final List<A4InvoiceLine> lines;
   final String total;
   final String currency;

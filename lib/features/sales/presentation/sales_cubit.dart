@@ -1,9 +1,9 @@
 import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:clothes_inventory/core/utils/number_utils.dart';
-import 'package:clothes_inventory/features/products/domain/product.dart';
-import 'package:clothes_inventory/features/sales/data/sales_repository.dart';
-import 'package:clothes_inventory/features/sales/domain/sale_models.dart';
+import 'package:delta_erp/core/utils/number_utils.dart';
+import 'package:delta_erp/features/products/domain/product.dart';
+import 'package:delta_erp/features/sales/data/sales_repository.dart';
+import 'package:delta_erp/features/sales/domain/sale_models.dart';
 
 class SalesState extends Equatable {
   const SalesState({
@@ -173,6 +173,15 @@ class SalesCubit extends Cubit<SalesState> {
     );
   }
 
+  void selectCustomer(int? accountId, {String? phone}) {
+    emit(
+      state.copyWith(
+        customerId: accountId,
+        customerPhone: accountId == null ? '' : (phone?.trim() ?? ''),
+      ),
+    );
+  }
+
   void setNewCustomerName(String value) {
     emit(state.copyWith(newCustomerName: value));
   }
@@ -238,14 +247,16 @@ class SalesCubit extends Cubit<SalesState> {
 
   void addProduct(Product product, {double? initialUnitPrice}) {
     if (product.currentStock <= 0) {
-      emit(state.copyWith(error: 'Insufficient stock for this product.'));
+      emit(state.copyWith(error: 'Insufficient stock for one or more products.'));
       return;
     }
 
     final idx = state.cart.indexWhere((x) => x.productId == product.id);
     if (idx == -1) {
       if (1 > product.currentStock + 0.000001) {
-        emit(state.copyWith(error: 'Insufficient stock for this product.'));
+        emit(
+          state.copyWith(error: 'Insufficient stock for one or more products.'),
+        );
         return;
       }
 
@@ -309,11 +320,11 @@ class SalesCubit extends Cubit<SalesState> {
     final current = updated[idx];
     final nextQty = roundQuantity(quantity ?? current.quantity);
     if (nextQty <= 0) {
-      emit(state.copyWith(error: 'Quantity must be greater than zero.'));
+      emit(state.copyWith(error: 'Quantity must be greater than zero'));
       return;
     }
     if (current.unitType == UnitType.piece.name && !isIntegerLike(nextQty)) {
-      emit(state.copyWith(error: 'Piece products require whole quantity.'));
+      emit(state.copyWith(error: 'Piece products require integer quantity.'));
       return;
     }
     if (nextQty > current.availableStock + 0.000001) {
@@ -329,10 +340,15 @@ class SalesCubit extends Cubit<SalesState> {
       return;
     }
 
+    final gross = roundCurrency(nextQty * nextUnitPrice);
+    var nextDiscount = roundCurrency(discount ?? current.discount);
+    if (nextDiscount < 0) nextDiscount = 0;
+    if (nextDiscount > gross + 0.000001) nextDiscount = gross;
+
     updated[idx] = current.copyWith(
       quantity: nextQty,
       unitPrice: nextUnitPrice,
-      discount: roundCurrency(discount ?? current.discount),
+      discount: nextDiscount,
     );
     emit(state.copyWith(cart: updated, clearError: true));
   }
@@ -659,7 +675,7 @@ class SalesCubit extends Cubit<SalesState> {
       return 'Insufficient stock for one or more products.';
     }
     if (lower.contains('stock movement quantity must be greater than zero')) {
-      return 'Quantity must be greater than zero.';
+      return 'Quantity must be greater than zero';
     }
     if (lower.contains('sale price cannot be less than purchase price')) {
       return 'Sale price cannot be less than purchase price.';

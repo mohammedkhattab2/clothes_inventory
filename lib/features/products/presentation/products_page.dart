@@ -5,20 +5,23 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:clothes_inventory/features/products/data/product_repository.dart';
-import 'package:clothes_inventory/features/products/data/products_csv_service.dart';
-import 'package:clothes_inventory/features/products/data/products_import_service.dart';
-import 'package:clothes_inventory/features/products/data/products_import_template_service.dart';
-import 'package:clothes_inventory/features/products/data/products_pdf_service.dart';
-import 'package:clothes_inventory/features/products/domain/product.dart';
-import 'package:clothes_inventory/features/products/presentation/products_cubit.dart';
-import 'package:clothes_inventory/features/products/presentation/widgets/product_form_dialog.dart';
-import 'package:clothes_inventory/features/products/presentation/widgets/products_page_layout.dart';
-import 'package:clothes_inventory/features/products/presentation/widgets/products_table_section.dart';
-import 'package:clothes_inventory/services/di/service_locator.dart';
-import 'package:clothes_inventory/services/printing/product_barcode_label_printer.dart';
-import 'package:clothes_inventory/services/printing/thermal_printer_preferences.dart';
-import 'package:clothes_inventory/services/platform/folder_opener_service.dart';
+import 'package:delta_erp/features/products/data/product_repository.dart';
+import 'package:delta_erp/features/products/data/products_csv_service.dart';
+import 'package:delta_erp/features/products/data/products_import_service.dart';
+import 'package:delta_erp/features/products/data/products_import_template_service.dart';
+import 'package:delta_erp/features/products/data/products_pdf_service.dart';
+import 'package:delta_erp/features/products/domain/product.dart';
+import 'package:delta_erp/features/products/presentation/products_cubit.dart';
+import 'package:delta_erp/features/products/presentation/widgets/product_form_dialog.dart';
+import 'package:delta_erp/features/products/presentation/widgets/products_page_layout.dart';
+import 'package:delta_erp/features/products/presentation/widgets/products_table_section.dart';
+import 'package:delta_erp/features/auth/domain/access_policy.dart';
+import 'package:delta_erp/services/auth/session_service.dart';
+import 'package:delta_erp/services/di/service_locator.dart';
+import 'package:delta_erp/services/export/user_export_path_picker.dart';
+import 'package:delta_erp/services/printing/product_barcode_label_printer.dart';
+import 'package:delta_erp/services/printing/thermal_printer_preferences.dart';
+import 'package:delta_erp/services/platform/folder_opener_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ProductsPage extends StatefulWidget {
@@ -151,6 +154,9 @@ class _ProductsPageState extends State<ProductsPage> {
       value: _productsCubit,
       child: BlocBuilder<ProductsCubit, ProductsState>(
         builder: (context, state) {
+          final canManageProducts = roleCanManageProducts(
+            getIt<SessionService>().currentUser?.role,
+          );
           final lowStockCount = state.items.where(_isLowStock).length;
           final outOfStockCount = state.items.where(_isOutOfStock).length;
           final visibleItems = _visibleItems(state.items);
@@ -161,6 +167,7 @@ class _ProductsPageState extends State<ProductsPage> {
             isCompact: isCompact,
             isDenseViewport: isDenseViewport,
             isVeryDenseViewport: isVeryDenseViewport,
+            canManageProducts: canManageProducts,
             nameController: _nameController,
             barcodeController: _barcodeController,
             totalProductsCount: state.items.length,
@@ -176,6 +183,7 @@ class _ProductsPageState extends State<ProductsPage> {
             selectedCount: _selectedProductIds.length,
             tableWidget: ProductsTableSection(
               visibleItems: visibleItems,
+              canManageProducts: canManageProducts,
               isAllStockFilter: _stockFilter == _StockFilter.all,
               sortKeyIndex: _sortKey.index,
               sortAscending: _sortAscending,
@@ -212,7 +220,7 @@ class _ProductsPageState extends State<ProductsPage> {
               onDeleteProduct: (product) {
                 _productsCubit.delete(product.id!);
               },
-              selectionMode: _selectionMode,
+              selectionMode: _selectionMode && canManageProducts,
               selectedProductIds: _selectedProductIds,
               onSelectionChanged: (productId, selected) {
                 setState(() {
@@ -255,6 +263,7 @@ class _ProductsPageState extends State<ProductsPage> {
             onDownloadImportTemplate: () => _downloadImportTemplate(context),
             onOpenFolder: () => _openExportFolder(context),
             onToggleSelectionMode: () {
+              if (!canManageProducts) return;
               setState(() {
                 _selectionMode = !_selectionMode;
                 if (!_selectionMode) {
@@ -322,9 +331,20 @@ class _ProductsPageState extends State<ProductsPage> {
     BuildContext context,
     List<Product> items,
   ) async {
+    final targetPath = await getIt<UserExportPathPicker>().pickSavePath(
+      dialogTitle: 'export.save_dialog_title'.tr(),
+      suggestedFileName:
+          'products_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.csv',
+      extensions: const ['csv'],
+    );
+    if (targetPath == null) return;
+
     setState(() => _exportingCsv = true);
     try {
-      final path = await getIt<ProductsCsvService>().exportToCsv(items: items);
+      final path = await getIt<ProductsCsvService>().exportToCsv(
+        items: items,
+        targetPath: targetPath,
+      );
       if (!context.mounted) return;
       setState(() => _lastExportPath = path);
       ScaffoldMessenger.of(
@@ -346,9 +366,20 @@ class _ProductsPageState extends State<ProductsPage> {
     BuildContext context,
     List<Product> items,
   ) async {
+    final targetPath = await getIt<UserExportPathPicker>().pickSavePath(
+      dialogTitle: 'export.save_dialog_title'.tr(),
+      suggestedFileName:
+          'products_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.pdf',
+      extensions: const ['pdf'],
+    );
+    if (targetPath == null) return;
+
     setState(() => _exportingPdf = true);
     try {
-      final path = await getIt<ProductsPdfService>().exportToPdf(items: items);
+      final path = await getIt<ProductsPdfService>().exportToPdf(
+        items: items,
+        targetPath: targetPath,
+      );
       if (!context.mounted) return;
       setState(() => _lastExportPath = path);
       ScaffoldMessenger.of(

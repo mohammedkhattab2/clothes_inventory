@@ -1,7 +1,7 @@
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/widgets.dart';
-import 'package:clothes_inventory/app/app.dart';
-import 'package:clothes_inventory/services/di/service_locator.dart';
+import 'package:delta_erp/app/app.dart';
+import 'package:delta_erp/services/di/service_locator.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -13,7 +13,7 @@ Future<void> main() async {
       path: 'assets/translations',
       fallbackLocale: const Locale('en'),
       startLocale: const Locale('ar'),
-      child: const InventoryPosApp(),
+      child: const DeltaErpApp(),
     ),
   );
 }

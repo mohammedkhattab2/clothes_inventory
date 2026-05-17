@@ -1,6 +1,7 @@
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 
-import 'package:clothes_inventory/features/purchase_ocr/data/purchase_ocr_service.dart';
+import 'package:delta_erp/features/purchase_ocr/data/purchase_ocr_service.dart';
 
 class PurchaseOcrObservabilityPanel extends StatefulWidget {
   const PurchaseOcrObservabilityPanel({required this.manager, super.key});
@@ -37,15 +38,15 @@ class _PurchaseOcrObservabilityPanelState
           padding: const EdgeInsets.fromLTRB(16, 14, 8, 8),
           child: Row(
             children: [
-              const Expanded(
+              Expanded(
                 child: Text(
-                  'OCR Observability',
+                  'ocr.observability.title'.tr(),
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
                 ),
               ),
               IconButton(
                 onPressed: _refresh,
-                tooltip: 'Refresh',
+                tooltip: 'Refresh'.tr(),
                 icon: const Icon(Icons.refresh_outlined),
               ),
             ],
@@ -58,11 +59,13 @@ class _PurchaseOcrObservabilityPanelState
               ExpansionTile(
                 initiallyExpanded: true,
                 leading: const Icon(Icons.error_outline, color: Colors.red),
-                title: const Text('Unresolved Issues'),
+                title: Text('ocr.observability.unresolved_issues'.tr()),
                 children: _snapshot.unresolvedIssues.isEmpty
-                    ? const [
+                    ? [
                         ListTile(
-                          title: Text('No unresolved fingerprints in session.'),
+                          title: Text(
+                            'ocr.observability.no_unresolved'.tr(),
+                          ),
                         ),
                       ]
                     : _snapshot.unresolvedIssues
@@ -76,11 +79,13 @@ class _PurchaseOcrObservabilityPanelState
                   Icons.check_circle_outline,
                   color: Colors.amber,
                 ),
-                title: const Text('Recently Resolved'),
+                title: Text('ocr.observability.recently_resolved'.tr()),
                 children: _snapshot.recentlyResolved.isEmpty
-                    ? const [
+                    ? [
                         ListTile(
-                          title: Text('No resolved fingerprints in session.'),
+                          title: Text(
+                            'ocr.observability.no_resolved'.tr(),
+                          ),
                         ),
                       ]
                     : _snapshot.recentlyResolved
@@ -94,23 +99,23 @@ class _PurchaseOcrObservabilityPanelState
                   Icons.health_and_safety_outlined,
                   color: Colors.green,
                 ),
-                title: const Text('System Health Summary'),
+                title: Text('ocr.observability.system_health_summary'.tr()),
                 initiallyExpanded: true,
                 children: [
                   ListTile(
-                    title: const Text('Total failures'),
+                    title: Text('ocr.observability.total_failures'.tr()),
                     trailing: Text('${_snapshot.totalFailures}'),
                   ),
                   ListTile(
-                    title: const Text('Total resolved'),
+                    title: Text('ocr.observability.total_resolved'.tr()),
                     trailing: Text('${_snapshot.totalResolved}'),
                   ),
                   ListTile(
-                    title: const Text('Unresolved count'),
+                    title: Text('ocr.observability.unresolved_count'.tr()),
                     trailing: Text('${_snapshot.unresolvedCount}'),
                   ),
                   ListTile(
-                    title: const Text('Most frequent fingerprint'),
+                    title: Text('ocr.observability.most_frequent'.tr()),
                     subtitle: Text(_snapshot.mostFrequentFingerprint),
                   ),
                 ],
@@ -133,8 +138,10 @@ class _PurchaseOcrObservabilityPanelState
         style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
       ),
       subtitle: Text(
-        'count: ${item.occurrenceCount} | code: ${item.lastErrorCode} | '
-        'severity: ${item.severity.name} | status: ${item.resolutionStatus}',
+        '${'ocr.observability.count'.tr()}: ${item.occurrenceCount} | '
+        '${'ocr.observability.code'.tr()}: ${item.lastErrorCode} | '
+        '${'ocr.observability.severity'.tr()}: ${item.severity.name} | '
+        '${'ocr.observability.status'.tr()}: ${item.resolutionStatus}',
       ),
       trailing: Wrap(
         spacing: 8,
@@ -145,14 +152,14 @@ class _PurchaseOcrObservabilityPanelState
                 widget.manager.markResolved(item.fingerprint);
                 _refresh();
               },
-              child: const Text('Mark as resolved'),
+              child: Text('ocr.observability.mark_resolved'.tr()),
             ),
           TextButton(
             onPressed: () {
               widget.manager.resetCount(item.fingerprint);
               _refresh();
             },
-            child: const Text('Reset count'),
+            child: Text('ocr.observability.reset_count'.tr()),
           ),
         ],
       ),

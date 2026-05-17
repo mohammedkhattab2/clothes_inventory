@@ -3,14 +3,14 @@ import 'dart:math' as math;
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:clothes_inventory/core/widgets/app_empty_state.dart';
-import 'package:clothes_inventory/core/widgets/app_loading_indicator.dart';
-import 'package:clothes_inventory/core/widgets/app_page_shell.dart';
-import 'package:clothes_inventory/features/expenses/data/expenses_repository.dart';
-import 'package:clothes_inventory/features/accounts/data/cash_box_repository.dart';
-import 'package:clothes_inventory/features/purchases/data/purchases_repository.dart';
-import 'package:clothes_inventory/features/sales/data/sales_repository.dart';
-import 'package:clothes_inventory/services/di/service_locator.dart';
+import 'package:delta_erp/core/widgets/app_empty_state.dart';
+import 'package:delta_erp/core/widgets/app_loading_indicator.dart';
+import 'package:delta_erp/core/widgets/app_page_shell.dart';
+import 'package:delta_erp/features/expenses/data/expenses_repository.dart';
+import 'package:delta_erp/features/accounts/data/cash_box_repository.dart';
+import 'package:delta_erp/features/purchases/data/purchases_repository.dart';
+import 'package:delta_erp/features/sales/data/sales_repository.dart';
+import 'package:delta_erp/services/di/service_locator.dart';
 
 enum _InvoiceStatusFilter { all, completed, partial }
 

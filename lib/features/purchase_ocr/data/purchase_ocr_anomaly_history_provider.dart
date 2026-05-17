@@ -1,5 +1,5 @@
-import 'package:clothes_inventory/features/purchase_ocr/domain/purchase_ocr_anomaly_detector.dart';
-import 'package:clothes_inventory/features/purchases/data/purchases_repository.dart';
+import 'package:delta_erp/features/purchase_ocr/domain/purchase_ocr_anomaly_detector.dart';
+import 'package:delta_erp/features/purchases/data/purchases_repository.dart';
 
 class PurchasesOcrAnomalyHistoryProvider
     implements PurchaseOcrAnomalyHistoryProvider {

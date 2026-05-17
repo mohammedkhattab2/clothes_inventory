@@ -1,9 +1,10 @@
 import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
-import 'package:clothes_inventory/features/auth/domain/auth_user.dart';
-import 'package:clothes_inventory/features/auth/domain/user_audit_log_entry.dart';
-import 'package:clothes_inventory/services/database/app_database.dart';
+import 'package:delta_erp/features/auth/domain/access_policy.dart';
+import 'package:delta_erp/features/auth/domain/auth_user.dart';
+import 'package:delta_erp/features/auth/domain/user_audit_log_entry.dart';
+import 'package:delta_erp/services/database/app_database.dart';
 
 class AuthRepository {
   AuthRepository(this._appDatabase);
@@ -90,6 +91,11 @@ class AuthRepository {
     }
     if (password.trim().isEmpty) {
       throw ArgumentError('Password is required.');
+    }
+
+    final actorRole = await _roleForUserId(actorUserId);
+    if (actorRole == UserRole.owner && !ownerMayAssignRole(role)) {
+      throw StateError('Owner may only assign owner or cashier roles.');
     }
 
     final existing = await _findUserByUsername(normalizedUsername);
@@ -218,6 +224,11 @@ class AuthRepository {
     final normalizedFullName = fullName.trim();
     if (normalizedFullName.isEmpty) {
       throw ArgumentError('Full name is required.');
+    }
+
+    final actorRole = await _roleForUserId(actorUserId);
+    if (actorRole == UserRole.owner && !ownerMayAssignRole(role)) {
+      throw StateError('Owner may only assign owner or cashier roles.');
     }
 
     final db = await _appDatabase.database;
@@ -375,6 +386,24 @@ class AuthRepository {
           ),
         )
         .toList(growable: false);
+  }
+
+  Future<UserRole?> _roleForUserId(int? userId) async {
+    if (userId == null) {
+      return null;
+    }
+    final db = await _appDatabase.database;
+    final rows = await db.query(
+      'users',
+      columns: const ['role'],
+      where: 'id = ?',
+      whereArgs: <Object?>[userId],
+      limit: 1,
+    );
+    if (rows.isEmpty) {
+      return null;
+    }
+    return userRoleFromDb((rows.first['role'] as String?) ?? 'cashier');
   }
 
   Future<Map<String, Object?>?> _findUserByUsername(String username) async {

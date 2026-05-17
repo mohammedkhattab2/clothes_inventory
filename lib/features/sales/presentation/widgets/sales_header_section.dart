@@ -1,7 +1,7 @@
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
-import 'package:clothes_inventory/core/widgets/app_brand_header.dart';
-import 'package:clothes_inventory/core/widgets/app_page_shell.dart';
+import 'package:delta_erp/core/widgets/app_brand_header.dart';
+import 'package:delta_erp/core/widgets/app_page_shell.dart';
 
 class SalesHeaderSection extends StatelessWidget {
   const SalesHeaderSection({
@@ -47,13 +47,17 @@ class SalesHeaderSection extends StatelessWidget {
                 ),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(999),
-                  color: Colors.orange.shade100,
-                  border: Border.all(color: Colors.orange.shade300),
+                  color: Theme.of(context).colorScheme.tertiaryContainer,
+                  border: Border.all(
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.tertiary.withValues(alpha: 0.5),
+                  ),
                 ),
                 child: Text(
                   readOnlyMessage ?? 'license.read_only_banner'.tr(),
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Colors.orange.shade900,
+                    color: Theme.of(context).colorScheme.onTertiaryContainer,
                     fontWeight: FontWeight.w700,
                   ),
                 ),

@@ -3,7 +3,7 @@ import 'dart:developer' as dev;
 import 'dart:io';
 
 import 'package:intl/intl.dart';
-import 'package:clothes_inventory/features/accounts/data/cash_box_repository.dart';
+import 'package:delta_erp/features/accounts/data/cash_box_repository.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 

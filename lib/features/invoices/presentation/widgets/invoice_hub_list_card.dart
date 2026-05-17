@@ -50,6 +50,8 @@ class InvoiceHubListCard extends StatelessWidget {
     required this.createdAt,
     required this.highlighted,
     required this.onTap,
+    this.createdByLine,
+    this.lastModifiedByLine,
   });
 
   /// Full displayed invoice reference (e.g. formatted number or label).
@@ -64,6 +66,8 @@ class InvoiceHubListCard extends StatelessWidget {
   final DateTime createdAt;
   final bool highlighted;
   final VoidCallback onTap;
+  final String? createdByLine;
+  final String? lastModifiedByLine;
 
   @override
   Widget build(BuildContext context) {
@@ -236,6 +240,54 @@ class InvoiceHubListCard extends StatelessWidget {
                                 ),
                               ],
                             ),
+                            if (createdByLine != null &&
+                                createdByLine!.trim().isNotEmpty) ...[
+                              const SizedBox(height: 5),
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Icon(
+                                    Icons.person_outline,
+                                    size: 14,
+                                    color: scheme.onSurfaceVariant,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Expanded(
+                                    child: Text(
+                                      createdByLine!,
+                                      style: textTheme.bodySmall?.copyWith(
+                                        color: scheme.onSurfaceVariant,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                            if (lastModifiedByLine != null &&
+                                lastModifiedByLine!.trim().isNotEmpty) ...[
+                              const SizedBox(height: 4),
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Icon(
+                                    Icons.edit_note_outlined,
+                                    size: 14,
+                                    color: scheme.onSurfaceVariant,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Expanded(
+                                    child: Text(
+                                      lastModifiedByLine!,
+                                      style: textTheme.bodySmall?.copyWith(
+                                        color: scheme.onSurfaceVariant,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
                             const SizedBox(height: 6),
                             Row(
                               children: [

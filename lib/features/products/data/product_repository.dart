@@ -1,11 +1,11 @@
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 
-import 'package:clothes_inventory/features/products/data/products_import_service.dart';
-import 'package:clothes_inventory/features/products/domain/duplicate_product_barcode_exception.dart';
-import 'package:clothes_inventory/features/products/domain/product.dart';
-import 'package:clothes_inventory/services/database/app_database.dart';
-import 'package:clothes_inventory/services/database/maintenance_coordinator.dart';
+import 'package:delta_erp/features/products/data/products_import_service.dart';
+import 'package:delta_erp/features/products/domain/duplicate_product_barcode_exception.dart';
+import 'package:delta_erp/features/products/domain/product.dart';
+import 'package:delta_erp/services/database/app_database.dart';
+import 'package:delta_erp/services/database/maintenance_coordinator.dart';
 
 class ProductsImportApplyResult {
   const ProductsImportApplyResult({

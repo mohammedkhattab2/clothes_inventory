@@ -1,63 +1,64 @@
-import 'package:clothes_inventory/app/app_startup_coordinator.dart';
-import 'package:clothes_inventory/core/config/first_run_state_store.dart';
+import 'package:delta_erp/app/app_startup_coordinator.dart';
+import 'package:delta_erp/core/config/first_run_state_store.dart';
 import 'package:get_it/get_it.dart';
-import 'package:clothes_inventory/features/accounts/data/cash_box_repository.dart';
-import 'package:clothes_inventory/features/accounts/data/cash_box_csv_service.dart';
-import 'package:clothes_inventory/features/accounts/data/accounts_repository.dart';
-import 'package:clothes_inventory/features/accounts/data/account_statement_repository.dart';
-import 'package:clothes_inventory/features/accounts/data/account_statement_csv_service.dart';
-import 'package:clothes_inventory/features/backup/data/backup_lifecycle_service.dart';
-import 'package:clothes_inventory/features/backup/data/backup_logger.dart';
-import 'package:clothes_inventory/features/backup/data/backup_preferences_store.dart';
-import 'package:clothes_inventory/features/backup/data/backup_repository_impl.dart';
-import 'package:clothes_inventory/features/backup/domain/backup_repository.dart';
-import 'package:clothes_inventory/features/backup/presentation/backup_cubit.dart';
-import 'package:clothes_inventory/core/config/company_settings_service.dart';
-import 'package:clothes_inventory/features/auth/data/auth_repository.dart';
-import 'package:clothes_inventory/features/accounts/presentation/account_statement_cubit.dart';
-import 'package:clothes_inventory/features/dashboard/data/dashboard_repository.dart';
-import 'package:clothes_inventory/features/dashboard/data/dashboard_drilldown_export_service.dart';
-import 'package:clothes_inventory/features/dashboard/presentation/dashboard_cubit.dart';
-import 'package:clothes_inventory/features/expenses/data/expenses_csv_service.dart';
-import 'package:clothes_inventory/features/expenses/data/expenses_repository.dart';
-import 'package:clothes_inventory/features/inventory/data/inventory_repository.dart';
-import 'package:clothes_inventory/features/license/data/license_store.dart';
-import 'package:clothes_inventory/features/license/domain/license_service.dart';
-import 'package:clothes_inventory/features/license/domain/machine_fingerprint_service.dart';
-import 'package:clothes_inventory/features/products/data/product_repository.dart';
-import 'package:clothes_inventory/features/products/data/products_csv_service.dart';
-import 'package:clothes_inventory/features/products/data/products_import_service.dart';
-import 'package:clothes_inventory/features/products/data/products_import_template_service.dart';
-import 'package:clothes_inventory/features/products/data/products_pdf_service.dart';
-import 'package:clothes_inventory/features/products/presentation/products_cubit.dart';
-import 'package:clothes_inventory/features/purchase_ocr/data/purchase_ocr_service.dart';
-import 'package:clothes_inventory/features/purchase_ocr/data/ocr_product_mappings_repository.dart';
-import 'package:clothes_inventory/features/purchase_ocr/data/purchase_ocr_anomaly_history_provider.dart';
-import 'package:clothes_inventory/features/purchase_ocr/data/purchase_ocr_temporal_memory_repository.dart';
-import 'package:clothes_inventory/features/purchase_ocr/domain/purchase_ocr_anomaly_detector.dart';
-import 'package:clothes_inventory/features/purchase_ocr/domain/purchase_ocr_intelligence_engine.dart';
-import 'package:clothes_inventory/features/purchase_ocr/domain/purchase_invoice_parser.dart';
-import 'package:clothes_inventory/features/purchase_ocr/domain/purchase_ocr_product_matcher.dart';
-import 'package:clothes_inventory/features/purchase_ocr/domain/purchase_ocr_temporal_intelligence.dart';
-import 'package:clothes_inventory/features/purchase_ocr/presentation/purchase_ocr_cubit.dart';
-import 'package:clothes_inventory/features/purchases/data/purchase_import_template_service.dart';
-import 'package:clothes_inventory/features/purchases/data/purchases_repository.dart';
-import 'package:clothes_inventory/features/purchases/presentation/purchases_cubit.dart';
-import 'package:clothes_inventory/features/sales/data/sales_repository.dart';
-import 'package:clothes_inventory/features/sales/presentation/sales_cubit.dart';
-import 'package:clothes_inventory/features/settings/data/app_reset_service.dart';
-import 'package:clothes_inventory/core/theme/theme_cubit.dart';
-import 'package:clothes_inventory/services/database/app_database.dart';
-import 'package:clothes_inventory/services/database/db_transaction_runner.dart';
-import 'package:clothes_inventory/services/database/maintenance_coordinator.dart';
-import 'package:clothes_inventory/services/auth/session_service.dart';
-import 'package:clothes_inventory/services/platform/folder_opener_service.dart';
-import 'package:clothes_inventory/services/pdf/account_statement_pdf_service.dart';
-import 'package:clothes_inventory/services/pdf/cash_box_pdf_service.dart';
-import 'package:clothes_inventory/services/pdf/dashboard_pdf_service.dart';
-import 'package:clothes_inventory/services/pdf/expenses_pdf_service.dart';
-import 'package:clothes_inventory/services/pdf/purchase_invoice_pdf_service.dart';
-import 'package:clothes_inventory/services/pdf/sales_invoice_pdf_service.dart';
+import 'package:delta_erp/features/accounts/data/cash_box_repository.dart';
+import 'package:delta_erp/features/accounts/data/cash_box_csv_service.dart';
+import 'package:delta_erp/features/accounts/data/accounts_repository.dart';
+import 'package:delta_erp/features/accounts/data/account_statement_repository.dart';
+import 'package:delta_erp/features/accounts/data/account_statement_csv_service.dart';
+import 'package:delta_erp/features/backup/data/backup_lifecycle_service.dart';
+import 'package:delta_erp/features/backup/data/backup_logger.dart';
+import 'package:delta_erp/features/backup/data/backup_preferences_store.dart';
+import 'package:delta_erp/features/backup/data/backup_repository_impl.dart';
+import 'package:delta_erp/features/backup/domain/backup_repository.dart';
+import 'package:delta_erp/features/backup/presentation/backup_cubit.dart';
+import 'package:delta_erp/core/config/company_settings_service.dart';
+import 'package:delta_erp/features/auth/data/auth_repository.dart';
+import 'package:delta_erp/features/accounts/presentation/account_statement_cubit.dart';
+import 'package:delta_erp/features/dashboard/data/dashboard_repository.dart';
+import 'package:delta_erp/features/dashboard/data/dashboard_drilldown_export_service.dart';
+import 'package:delta_erp/features/dashboard/presentation/dashboard_cubit.dart';
+import 'package:delta_erp/features/expenses/data/expenses_csv_service.dart';
+import 'package:delta_erp/features/expenses/data/expenses_repository.dart';
+import 'package:delta_erp/features/inventory/data/inventory_repository.dart';
+import 'package:delta_erp/features/license/data/license_store.dart';
+import 'package:delta_erp/features/license/domain/license_service.dart';
+import 'package:delta_erp/features/license/domain/machine_fingerprint_service.dart';
+import 'package:delta_erp/features/products/data/product_repository.dart';
+import 'package:delta_erp/features/products/data/products_csv_service.dart';
+import 'package:delta_erp/features/products/data/products_import_service.dart';
+import 'package:delta_erp/features/products/data/products_import_template_service.dart';
+import 'package:delta_erp/features/products/data/products_pdf_service.dart';
+import 'package:delta_erp/features/products/presentation/products_cubit.dart';
+import 'package:delta_erp/features/purchase_ocr/data/purchase_ocr_service.dart';
+import 'package:delta_erp/features/purchase_ocr/data/ocr_product_mappings_repository.dart';
+import 'package:delta_erp/features/purchase_ocr/data/purchase_ocr_anomaly_history_provider.dart';
+import 'package:delta_erp/features/purchase_ocr/data/purchase_ocr_temporal_memory_repository.dart';
+import 'package:delta_erp/features/purchase_ocr/domain/purchase_ocr_anomaly_detector.dart';
+import 'package:delta_erp/features/purchase_ocr/domain/purchase_ocr_intelligence_engine.dart';
+import 'package:delta_erp/features/purchase_ocr/domain/purchase_invoice_parser.dart';
+import 'package:delta_erp/features/purchase_ocr/domain/purchase_ocr_product_matcher.dart';
+import 'package:delta_erp/features/purchase_ocr/domain/purchase_ocr_temporal_intelligence.dart';
+import 'package:delta_erp/features/purchase_ocr/presentation/purchase_ocr_cubit.dart';
+import 'package:delta_erp/features/purchases/data/purchase_import_template_service.dart';
+import 'package:delta_erp/features/purchases/data/purchases_repository.dart';
+import 'package:delta_erp/features/purchases/presentation/purchases_cubit.dart';
+import 'package:delta_erp/features/sales/data/sales_repository.dart';
+import 'package:delta_erp/features/sales/presentation/sales_cubit.dart';
+import 'package:delta_erp/features/settings/data/app_reset_service.dart';
+import 'package:delta_erp/core/theme/theme_cubit.dart';
+import 'package:delta_erp/services/database/app_database.dart';
+import 'package:delta_erp/services/database/db_transaction_runner.dart';
+import 'package:delta_erp/services/database/maintenance_coordinator.dart';
+import 'package:delta_erp/services/auth/session_service.dart';
+import 'package:delta_erp/services/export/user_export_path_picker.dart';
+import 'package:delta_erp/services/platform/folder_opener_service.dart';
+import 'package:delta_erp/services/pdf/account_statement_pdf_service.dart';
+import 'package:delta_erp/services/pdf/cash_box_pdf_service.dart';
+import 'package:delta_erp/services/pdf/dashboard_pdf_service.dart';
+import 'package:delta_erp/services/pdf/expenses_pdf_service.dart';
+import 'package:delta_erp/services/pdf/purchase_invoice_pdf_service.dart';
+import 'package:delta_erp/services/pdf/sales_invoice_pdf_service.dart';
 
 final getIt = GetIt.instance;
 
@@ -234,6 +235,7 @@ Future<void> setupServiceLocator() async {
       () => AccountsRepository(
         getIt<AppDatabase>(),
         getIt<DbTransactionRunner>(),
+        getIt<SessionService>(),
       ),
     );
   }
@@ -425,6 +427,12 @@ Future<void> setupServiceLocator() async {
   if (!getIt.isRegistered<AccountStatementCsvService>()) {
     getIt.registerLazySingleton<AccountStatementCsvService>(
       AccountStatementCsvService.new,
+    );
+  }
+
+  if (!getIt.isRegistered<UserExportPathPicker>()) {
+    getIt.registerLazySingleton<UserExportPathPicker>(
+      () => const UserExportPathPicker(),
     );
   }
 

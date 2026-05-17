@@ -1,6 +1,6 @@
 import 'dart:math' as math;
 
-import 'package:clothes_inventory/features/purchase_ocr/domain/purchase_ocr_models.dart';
+import 'package:delta_erp/features/purchase_ocr/domain/purchase_ocr_models.dart';
 
 abstract class PurchaseOcrAnomalyHistoryProvider {
   Future<double?> averageProductUnitPrice(int productId);

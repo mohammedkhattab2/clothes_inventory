@@ -17,6 +17,7 @@ class _PurchasesPageState extends State<PurchasesPage> {
   Timer? _barcodeDebounce;
   int _barcodeLookupGeneration = 0;
   final _paidController = TextEditingController();
+  final _supplierPhoneController = TextEditingController();
   final _headerDiscountValueController = TextEditingController();
   final _paidAmountFocusNode = FocusNode();
   final _invoiceScrollController = ScrollController();
@@ -31,6 +32,11 @@ class _PurchasesPageState extends State<PurchasesPage> {
       paperWidthMm: 80,
       printerPrefs: const ThermalPrinterPreferences(),
     ),
+  );
+
+  final _barcodeLabelPrinter = const ProductBarcodeLabelPrinter(
+    paperWidthMm: 58,
+    printerPrefs: ThermalPrinterPreferences(),
   );
 
   List<AccountLookup> _suppliers = const [];
@@ -122,6 +128,26 @@ class _PurchasesPageState extends State<PurchasesPage> {
     final data = await _accountsRepo.listByType('supplier');
     if (!mounted) return;
     setState(() => _suppliers = data);
+  }
+
+  String? _phoneForSupplierId(int? supplierId) {
+    if (supplierId == null) return null;
+    for (final s in _suppliers) {
+      if (s.id == supplierId) {
+        return s.phone;
+      }
+    }
+    return null;
+  }
+
+  void _applySupplierPhone(int? supplierId) {
+    _supplierPhoneController.text =
+        _phoneForSupplierId(supplierId)?.trim() ?? '';
+  }
+
+  void _onSupplierChanged(BuildContext blocContext, int? supplierId) {
+    blocContext.read<PurchasesCubit>().setSupplier(supplierId);
+    _applySupplierPhone(supplierId);
   }
 
   Future<bool> _ensurePurchasesWriteAllowed() async {
@@ -274,6 +300,58 @@ class _PurchasesPageState extends State<PurchasesPage> {
       if (!mounted) return;
       setState(() => _loadingInvoices = false);
     }
+  }
+
+  Future<void> _printPurchaseEntryBarcodeLabels({
+    required String productName,
+    required String barcode,
+    required int quantity,
+  }) async {
+    try {
+      await _barcodeLabelPrinter.printLabel(
+        productName: productName,
+        barcodeValue: barcode,
+        copies: quantity,
+      );
+      if (!mounted) return;
+      _showLatestSnackBar(context, 'Barcode label sent to printer'.tr());
+    } catch (e) {
+      if (!mounted) return;
+      _showLatestSnackBar(
+        context,
+        '${'Failed to print barcode'.tr()}: $e',
+      );
+    }
+  }
+
+  Future<void> _showPurchasesEntryProductDialog(BuildContext context) async {
+    final allowed = await _ensurePurchasesWriteAllowed();
+    if (!allowed || !context.mounted) return;
+
+    await PurchasesProductDialog.show(
+      context,
+      parseFlexibleNumber: parseFlexibleNumber,
+      onGenerateBarcode: () => _productRepo.generateNextShortBarcode(),
+      barcodeLabelPrinter: _barcodeLabelPrinter,
+      onPrintBarcode: _printPurchaseEntryBarcodeLabels,
+      onCreateProduct: _productRepo.createProduct,
+      onUpdateProduct: _productRepo.updateProduct,
+      onRefreshSearch: () async {},
+      onCreatedAttachToCart: (created, enteredQuantity) {
+        if (!context.mounted) return;
+        context.read<PurchasesCubit>().addProductWithQuantity(
+          created,
+          enteredQuantity,
+        );
+      },
+      onUpdatedSyncCart: (productId, unitPrice) {
+        if (!context.mounted) return;
+        context.read<PurchasesCubit>().syncCartLinePurchasePrice(
+          productId,
+          unitPrice,
+        );
+      },
+    );
   }
 
   Future<void> _scanInvoice(BuildContext context) async {
@@ -437,11 +515,14 @@ class _PurchasesPageState extends State<PurchasesPage> {
       onReloadSuppliers: _loadSuppliers,
       onSupplierSelected: (supplierId) {
         if (!mounted || !blocContext.mounted) return;
-        blocContext.read<PurchasesCubit>().setSupplier(supplierId);
+        _onSupplierChanged(blocContext, supplierId);
       },
     );
 
     await _loadSuppliers();
+    if (!mounted || !blocContext.mounted) return;
+    final supplierId = blocContext.read<PurchasesCubit>().state.supplierId;
+    _applySupplierPhone(supplierId);
   }
 
   @override
@@ -452,6 +533,7 @@ class _PurchasesPageState extends State<PurchasesPage> {
     _barcodeFocusNode.dispose();
     _nameFocusNode.dispose();
     _paidController.dispose();
+    _supplierPhoneController.dispose();
     _headerDiscountValueController.dispose();
     _paidAmountFocusNode.dispose();
     _invoiceScrollController.dispose();
@@ -583,6 +665,7 @@ class _PurchasesPageState extends State<PurchasesPage> {
           var shouldClearError = false;
 
           if (state.successEvent == 'invoice_amendment_loaded') {
+            _applySupplierPhone(state.supplierId);
             _headerDiscountValueController.text =
                 state.headerDiscountValue == 0
                     ? ''
@@ -710,13 +793,17 @@ class _PurchasesPageState extends State<PurchasesPage> {
                     ),
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(999),
-                      color: Colors.orange.shade100,
-                      border: Border.all(color: Colors.orange.shade300),
+                      color: Theme.of(context).colorScheme.tertiaryContainer,
+                      border: Border.all(
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.tertiary.withValues(alpha: 0.5),
+                      ),
                     ),
                     child: Text(
                       _readOnlyMessage ?? 'license.read_only_banner'.tr(),
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Colors.orange.shade900,
+                        color: Theme.of(context).colorScheme.onTertiaryContainer,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
@@ -742,17 +829,17 @@ class _PurchasesPageState extends State<PurchasesPage> {
                       _onBarcodeFieldChanged(context, value),
                   onBarcodeSubmitted: (value) =>
                       _onBarcodeFieldSubmitted(context, value),
-                ),
-                SizedBox(height: isVeryDenseViewport ? 4 : 6),
-                Align(
-                  alignment: AlignmentDirectional.centerStart,
-                  child: IconButton.filledTonal(
-                    tooltip: 'Scan Invoice'.tr(),
-                    onPressed: state.loading || _readOnlyMode
-                        ? null
-                        : () => _scanInvoice(context),
-                    icon: const Icon(Icons.document_scanner_outlined),
-                  ),
+                  onScanInvoice: () => _scanInvoice(context),
+                  scanInvoiceEnabled: !_readOnlyMode,
+                  loading: state.loading,
+                  onAddProduct: () {
+                    unawaited(_showPurchasesEntryProductDialog(context));
+                  },
+                  addProductEnabled:
+                      roleCanManageProducts(
+                        getIt<SessionService>().currentUser?.role,
+                      ) &&
+                      !_readOnlyMode,
                 ),
                 SizedBox(height: sectionGap),
                 Expanded(
@@ -782,6 +869,7 @@ class _PurchasesPageState extends State<PurchasesPage> {
                     ),
                     suppliers: _suppliers,
                     supplierId: state.supplierId,
+                    supplierPhoneController: _supplierPhoneController,
                     headerDiscountKind: state.headerDiscountKind,
                     headerDiscountValueController:
                         _headerDiscountValueController,
@@ -794,8 +882,11 @@ class _PurchasesPageState extends State<PurchasesPage> {
                     paymentMethod: state.paymentMethod,
                     paidFieldEnabled:
                         _paymentStatus == _PurchasePaymentStatus.partial,
+                    paymentMethodEditable:
+                        _paymentStatus != _PurchasePaymentStatus.deferred,
                     onAddSupplier: () => _createSupplierDialog(context),
-                    onSupplierChanged: cubit.setSupplier,
+                    onSupplierChanged: (supplierId) =>
+                        _onSupplierChanged(context, supplierId),
                     onPaymentStatusChanged: (value) {
                       if (value == null) return;
                       final selectedStatus =

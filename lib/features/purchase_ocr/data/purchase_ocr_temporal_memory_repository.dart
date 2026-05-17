@@ -1,5 +1,5 @@
-import 'package:clothes_inventory/features/purchase_ocr/domain/purchase_ocr_temporal_intelligence.dart';
-import 'package:clothes_inventory/services/database/app_database.dart';
+import 'package:delta_erp/features/purchase_ocr/domain/purchase_ocr_temporal_intelligence.dart';
+import 'package:delta_erp/services/database/app_database.dart';
 
 class PurchaseOcrTemporalMemoryRepository
     implements PurchaseOcrTemporalMemoryStore {

@@ -1,7 +1,7 @@
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:clothes_inventory/features/purchases/domain/purchase_models.dart';
+import 'package:delta_erp/features/purchases/domain/purchase_models.dart';
 
 class PurchasesEditItemDialog {
   const PurchasesEditItemDialog._();

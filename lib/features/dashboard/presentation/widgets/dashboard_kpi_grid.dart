@@ -2,8 +2,8 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart' as intl;
-import 'package:clothes_inventory/features/dashboard/data/dashboard_repository.dart';
-import 'package:clothes_inventory/features/dashboard/presentation/dashboard_cubit.dart';
+import 'package:delta_erp/features/dashboard/data/dashboard_repository.dart';
+import 'package:delta_erp/features/dashboard/presentation/dashboard_cubit.dart';
 
 class DashboardKpiGrid extends StatelessWidget {
   const DashboardKpiGrid({

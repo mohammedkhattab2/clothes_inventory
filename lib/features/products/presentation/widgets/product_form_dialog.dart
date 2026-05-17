@@ -1,9 +1,9 @@
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:clothes_inventory/features/products/domain/duplicate_product_barcode_exception.dart';
-import 'package:clothes_inventory/features/products/domain/product.dart';
-import 'package:clothes_inventory/services/printing/product_barcode_label_printer.dart';
+import 'package:delta_erp/features/products/domain/duplicate_product_barcode_exception.dart';
+import 'package:delta_erp/features/products/domain/product.dart';
+import 'package:delta_erp/services/printing/product_barcode_label_printer.dart';
 import 'package:printing/printing.dart';
 
 class ProductFormDialog extends StatefulWidget {

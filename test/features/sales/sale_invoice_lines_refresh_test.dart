@@ -2,17 +2,17 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:clothes_inventory/features/accounts/data/accounts_repository.dart';
-import 'package:clothes_inventory/features/auth/domain/auth_user.dart';
-import 'package:clothes_inventory/features/products/data/product_repository.dart';
-import 'package:clothes_inventory/features/products/domain/product.dart';
-import 'package:clothes_inventory/features/purchases/data/purchases_repository.dart';
-import 'package:clothes_inventory/features/purchases/domain/purchase_models.dart';
-import 'package:clothes_inventory/features/sales/data/sales_repository.dart';
-import 'package:clothes_inventory/features/sales/domain/sale_models.dart';
-import 'package:clothes_inventory/services/auth/session_service.dart';
-import 'package:clothes_inventory/services/database/app_database.dart';
-import 'package:clothes_inventory/services/di/service_locator.dart';
+import 'package:delta_erp/features/accounts/data/accounts_repository.dart';
+import 'package:delta_erp/features/auth/domain/auth_user.dart';
+import 'package:delta_erp/features/products/data/product_repository.dart';
+import 'package:delta_erp/features/products/domain/product.dart';
+import 'package:delta_erp/features/purchases/data/purchases_repository.dart';
+import 'package:delta_erp/features/purchases/domain/purchase_models.dart';
+import 'package:delta_erp/features/sales/data/sales_repository.dart';
+import 'package:delta_erp/features/sales/domain/sale_models.dart';
+import 'package:delta_erp/services/auth/session_service.dart';
+import 'package:delta_erp/services/database/app_database.dart';
+import 'package:delta_erp/services/di/service_locator.dart';
 
 import '../../support/test_app_isolation.dart';
 
@@ -259,4 +259,108 @@ void main() {
     expect(afterRejectedExtraReturn.first.returnedQuantity, 3);
     expect(afterRejectedExtraReturn.first.remainingQuantity, 0);
   });
+
+  test(
+    'return with header discount reduces total proportionally and refunds overpay',
+    () async {
+      final customerId = await accountsRepository.createAccount(
+        name: 'Header Discount Customer',
+        accountType: 'customer',
+      );
+      final supplierId = await accountsRepository.createAccount(
+        name: 'Header Discount Supplier',
+        accountType: 'supplier',
+      );
+
+      final product = await productRepository.createProduct(
+        const Product(
+          id: null,
+          name: 'Header Discount Product',
+          unitType: UnitType.piece,
+          salePrice: 100,
+          purchasePrice: 50,
+          lowStockThreshold: 0,
+        ),
+      );
+
+      await purchasesRepository.createPurchase(
+        PurchaseCreateRequest(
+          supplierId: supplierId,
+          items: [
+            PurchaseDraftItem(
+              productId: product.id!,
+              productName: product.name,
+              unitType: product.unitType.name,
+              quantity: 20,
+              unitPrice: product.purchasePrice,
+            ),
+          ],
+          paidAmount: 1000,
+          paymentMethod: PaymentMethod.cash,
+        ),
+      );
+
+      final saleId = await salesRepository.createSale(
+        SaleCreateRequest(
+          customerId: customerId,
+          items: [
+            SaleDraftItem(
+              productId: product.id!,
+              productName: product.name,
+              unitType: product.unitType.name,
+              availableStock: 999999,
+              minUnitPrice: product.purchasePrice,
+              quantity: 2,
+              unitPrice: 100,
+            ),
+          ],
+          headerDiscountKind: InvoiceHeaderDiscountKind.percent,
+          headerDiscountValue: 10,
+          paidAmount: 180,
+          paymentMethod: PaymentMethod.cash,
+        ),
+      );
+
+      final db = await getIt<AppDatabase>().database;
+      final saleBefore = await db.query(
+        'sales',
+        columns: ['total_amount'],
+        where: 'id = ?',
+        whereArgs: [saleId],
+        limit: 1,
+      );
+      expect((saleBefore.first['total_amount'] as num).toDouble(), 180);
+
+      final stockBefore = await productRepository.getCurrentStock(product.id!);
+      final lines = await salesRepository.listInvoiceLines(saleId);
+
+      await salesRepository.returnSaleItem(
+        saleId: saleId,
+        saleItemId: lines.first.id,
+        quantity: 1,
+        paymentMethod: PaymentMethod.cash,
+      );
+
+      final saleAfter = await db.query(
+        'sales',
+        columns: ['total_amount', 'status'],
+        where: 'id = ?',
+        whereArgs: [saleId],
+        limit: 1,
+      );
+      expect((saleAfter.first['total_amount'] as num).toDouble(), 90);
+      expect(saleAfter.first['status'], 'completed');
+
+      final stockAfter = await productRepository.getCurrentStock(product.id!);
+      expect(stockAfter, stockBefore + 1);
+
+      final refundRows = await db.query(
+        'payments',
+        where: 'invoice_type = ? AND invoice_id = ? AND is_refund = 1',
+        whereArgs: ['sale', saleId],
+      );
+      expect(refundRows, isNotEmpty);
+      expect((refundRows.first['amount'] as num).toDouble(), lessThan(0));
+    },
+  );
 }

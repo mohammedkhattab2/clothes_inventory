@@ -7,21 +7,21 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:path/path.dart' as path;
-import 'package:clothes_inventory/core/widgets/app_empty_state.dart';
-import 'package:clothes_inventory/core/widgets/app_error_banner.dart';
-import 'package:clothes_inventory/core/widgets/app_inline_loading_indicator.dart';
-import 'package:clothes_inventory/core/widgets/app_loading_indicator.dart';
-import 'package:clothes_inventory/features/products/domain/product.dart';
-import 'package:clothes_inventory/features/products/data/product_repository.dart';
-import 'package:clothes_inventory/features/purchase_ocr/data/purchase_ocr_service.dart';
-import 'package:clothes_inventory/features/purchase_ocr/domain/purchase_invoice_parser.dart';
-import 'package:clothes_inventory/features/purchase_ocr/domain/purchase_ocr_models.dart';
-import 'package:clothes_inventory/features/purchase_ocr/presentation/purchase_ocr_cubit.dart';
-import 'package:clothes_inventory/features/purchase_ocr/presentation/widgets/purchase_ocr_observability_panel.dart';
-import 'package:clothes_inventory/features/purchase_ocr/presentation/widgets/purchase_ocr_intelligence_panel.dart';
-import 'package:clothes_inventory/features/purchases/presentation/widgets/purchases_product_dialog.dart';
-import 'package:clothes_inventory/features/purchases/presentation/utils/purchases_formatters.dart';
-import 'package:clothes_inventory/services/di/service_locator.dart';
+import 'package:delta_erp/core/widgets/app_empty_state.dart';
+import 'package:delta_erp/core/widgets/app_error_banner.dart';
+import 'package:delta_erp/core/widgets/app_inline_loading_indicator.dart';
+import 'package:delta_erp/core/widgets/app_loading_indicator.dart';
+import 'package:delta_erp/features/products/domain/product.dart';
+import 'package:delta_erp/features/products/data/product_repository.dart';
+import 'package:delta_erp/features/purchase_ocr/data/purchase_ocr_service.dart';
+import 'package:delta_erp/features/purchase_ocr/domain/purchase_invoice_parser.dart';
+import 'package:delta_erp/features/purchase_ocr/domain/purchase_ocr_models.dart';
+import 'package:delta_erp/features/purchase_ocr/presentation/purchase_ocr_cubit.dart';
+import 'package:delta_erp/features/purchase_ocr/presentation/widgets/purchase_ocr_observability_panel.dart';
+import 'package:delta_erp/features/purchase_ocr/presentation/widgets/purchase_ocr_intelligence_panel.dart';
+import 'package:delta_erp/features/purchases/presentation/widgets/purchases_product_dialog.dart';
+import 'package:delta_erp/features/purchases/presentation/utils/purchases_formatters.dart';
+import 'package:delta_erp/services/di/service_locator.dart';
 
 class PurchaseOcrReviewPage extends StatelessWidget {
   const PurchaseOcrReviewPage({required this.imagePath, super.key});
@@ -87,7 +87,7 @@ class _PurchaseOcrReviewViewState extends State<_PurchaseOcrReviewView> {
         if (state.error != null && state.error!.trim().isNotEmpty) {
           ScaffoldMessenger.of(
             context,
-          ).showSnackBar(SnackBar(content: Text(state.error!)));
+          ).showSnackBar(SnackBar(content: Text(state.error!.tr())));
         }
       },
       builder: (context, state) {
@@ -120,13 +120,13 @@ class _PurchaseOcrReviewViewState extends State<_PurchaseOcrReviewView> {
                 TextButton.icon(
                   onPressed: _showObservabilityPanel,
                   icon: const Icon(Icons.analytics_outlined),
-                  label: const Text('OCR Stats'),
+                  label: Text('ocr.review.stats'.tr()),
                 ),
               if (kDebugMode)
                 TextButton.icon(
                   onPressed: _showOcrHealthCheck,
                   icon: const Icon(Icons.monitor_heart_outlined),
-                  label: const Text('OCR Health Check'),
+                  label: Text('ocr.review.health_check'.tr()),
                 ),
               TextButton.icon(
                 onPressed: state.status == PurchaseOcrStatus.processing
@@ -182,7 +182,7 @@ class _PurchaseOcrReviewViewState extends State<_PurchaseOcrReviewView> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              AppErrorBanner(message: state.error!),
+              AppErrorBanner(message: state.error!.tr()),
               const SizedBox(height: 12),
               Wrap(
                 spacing: 8,
@@ -511,9 +511,13 @@ class _PurchaseOcrReviewViewState extends State<_PurchaseOcrReviewView> {
         context: context,
         builder: (dialogContext) {
           return AlertDialog(
-            title: const Text('OCR Health Check'),
+            title: Text('ocr.review.health_check'.tr()),
             content: SingleChildScrollView(
-              child: Text('Health: $health\n\nVersion:\n$version'),
+              child: Text(
+                'ocr.review.health_dialog'.tr(
+                  namedArgs: {'health': '$health', 'version': version},
+                ),
+              ),
             ),
             actions: [
               TextButton(
@@ -524,7 +528,7 @@ class _PurchaseOcrReviewViewState extends State<_PurchaseOcrReviewView> {
                     );
                     if (!mounted) return;
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Diagnostics copied')),
+                      SnackBar(content: Text('Diagnostics copied'.tr())),
                     );
                   } catch (error, stackTrace) {
                     if (kDebugMode) {
@@ -534,7 +538,7 @@ class _PurchaseOcrReviewViewState extends State<_PurchaseOcrReviewView> {
                     }
                   }
                 },
-                child: const Text('Copy Diagnostics'),
+                child: Text('Copy Diagnostics'.tr()),
               ),
               TextButton(
                 onPressed: () => Navigator.of(dialogContext).pop(),

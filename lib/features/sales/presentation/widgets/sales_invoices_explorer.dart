@@ -1,10 +1,10 @@
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
-import 'package:clothes_inventory/core/widgets/app_loading_indicator.dart';
-import 'package:clothes_inventory/core/utils/invoice_number_display.dart';
-import 'package:clothes_inventory/features/invoices/presentation/invoice_payment_display.dart';
-import 'package:clothes_inventory/features/invoices/presentation/widgets/invoice_hub_list_card.dart';
-import 'package:clothes_inventory/features/sales/data/sales_repository.dart';
+import 'package:delta_erp/core/widgets/app_loading_indicator.dart';
+import 'package:delta_erp/core/utils/invoice_number_display.dart';
+import 'package:delta_erp/features/invoices/presentation/invoice_payment_display.dart';
+import 'package:delta_erp/features/invoices/presentation/widgets/invoice_hub_list_card.dart';
+import 'package:delta_erp/features/sales/data/sales_repository.dart';
 
 enum SalesInvoiceTypeFilter { all, completed, credit, pending }
 
@@ -174,6 +174,17 @@ class SalesInvoicesExplorer extends StatelessWidget {
                             createdAt: row.createdAt,
                             highlighted: highlighted,
                             onTap: () => onSelectInvoice(row),
+                            createdByLine: 'invoices.hub.created_by'.tr(
+                              namedArgs: {'name': row.createdByDisplay},
+                            ),
+                            lastModifiedByLine:
+                                row.lastModifiedByDisplay == null
+                                ? null
+                                : 'invoices.hub.last_modified_by'.tr(
+                                    namedArgs: {
+                                      'name': row.lastModifiedByDisplay!,
+                                    },
+                                  ),
                           ),
                         );
                       },

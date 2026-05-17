@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:clothes_inventory/features/backup/data/backup_logger.dart';
-import 'package:clothes_inventory/features/backup/domain/backup_models.dart';
+import 'package:delta_erp/features/backup/data/backup_logger.dart';
+import 'package:delta_erp/features/backup/domain/backup_models.dart';
 
 class FileOperationExecutor {
   const FileOperationExecutor({

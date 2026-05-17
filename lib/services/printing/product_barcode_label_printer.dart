@@ -1,7 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:barcode/barcode.dart' as bc;
-import 'package:clothes_inventory/services/printing/thermal_printer_preferences.dart';
+import 'package:delta_erp/services/printing/thermal_printer_preferences.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
@@ -91,7 +91,7 @@ class ProductBarcodeLabelPrinter {
     final pageWidthPt = paperWidthMm * PdfPageFormat.mm;
     final pageFormat = PdfPageFormat(
       pageWidthPt,
-      50 * PdfPageFormat.mm,
+      54 * PdfPageFormat.mm,
       marginAll: 2.5 * PdfPageFormat.mm,
     );
 
@@ -112,7 +112,7 @@ class ProductBarcodeLabelPrinter {
                       textAlign: pw.TextAlign.center,
                       maxLines: 1,
                       style: pw.TextStyle(
-                        fontSize: 9,
+                        fontSize: 12,
                         fontWeight: pw.FontWeight.bold,
                       ),
                     ),
@@ -120,14 +120,14 @@ class ProductBarcodeLabelPrinter {
                   pw.BarcodeWidget(
                     barcode: bc.Barcode.code128(),
                     data: barcodeValue,
-                    height: 16 * PdfPageFormat.mm,
+                    height: 18 * PdfPageFormat.mm,
                     drawText: false,
                   ),
                   pw.SizedBox(height: 2),
                   pw.Text(
                     barcodeValue,
                     textAlign: pw.TextAlign.center,
-                    style: const pw.TextStyle(fontSize: 8),
+                    style: const pw.TextStyle(fontSize: 11),
                   ),
                 ],
               ),

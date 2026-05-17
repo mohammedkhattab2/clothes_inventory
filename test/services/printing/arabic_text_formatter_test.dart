@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:clothes_inventory/services/printing/arabic_print_mode_resolver.dart';
-import 'package:clothes_inventory/services/printing/arabic_text_formatter.dart';
+import 'package:delta_erp/services/printing/arabic_print_mode_resolver.dart';
+import 'package:delta_erp/services/printing/arabic_text_formatter.dart';
 
 void main() {
   const formatter = ArabicTextFormatter();

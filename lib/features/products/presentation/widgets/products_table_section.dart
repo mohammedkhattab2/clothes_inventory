@@ -2,14 +2,15 @@ import 'dart:math' as math;
 
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
-import 'package:clothes_inventory/core/widgets/app_data_table.dart';
-import 'package:clothes_inventory/core/widgets/app_empty_state.dart';
-import 'package:clothes_inventory/features/products/domain/product.dart';
+import 'package:delta_erp/core/widgets/app_data_table.dart';
+import 'package:delta_erp/core/widgets/app_empty_state.dart';
+import 'package:delta_erp/features/products/domain/product.dart';
 
 class ProductsTableSection extends StatefulWidget {
   const ProductsTableSection({
     super.key,
     required this.visibleItems,
+    required this.canManageProducts,
     required this.isAllStockFilter,
     required this.sortKeyIndex,
     required this.sortAscending,
@@ -37,6 +38,7 @@ class ProductsTableSection extends StatefulWidget {
   static const int lazyChunkSize = 150;
 
   final List<Product> visibleItems;
+  final bool canManageProducts;
   final bool isAllStockFilter;
   final int sortKeyIndex;
   final bool sortAscending;
@@ -680,29 +682,31 @@ class _ProductsTableSectionState extends State<ProductsTableSection> {
             ),
             DataCell(
               Center(
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(
-                      visualDensity: VisualDensity.compact,
-                      constraints: const BoxConstraints(
-                        minWidth: 30,
-                        minHeight: 30,
-                      ),
-                      icon: const Icon(Icons.edit_outlined),
-                      onPressed: () => widget.onEditProduct(product),
-                    ),
-                    IconButton(
-                      visualDensity: VisualDensity.compact,
-                      constraints: const BoxConstraints(
-                        minWidth: 30,
-                        minHeight: 30,
-                      ),
-                      icon: const Icon(Icons.delete_outline),
-                      onPressed: () => widget.onDeleteProduct(product),
-                    ),
-                  ],
-                ),
+                child: widget.canManageProducts
+                    ? Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            visualDensity: VisualDensity.compact,
+                            constraints: const BoxConstraints(
+                              minWidth: 30,
+                              minHeight: 30,
+                            ),
+                            icon: const Icon(Icons.edit_outlined),
+                            onPressed: () => widget.onEditProduct(product),
+                          ),
+                          IconButton(
+                            visualDensity: VisualDensity.compact,
+                            constraints: const BoxConstraints(
+                              minWidth: 30,
+                              minHeight: 30,
+                            ),
+                            icon: const Icon(Icons.delete_outline),
+                            onPressed: () => widget.onDeleteProduct(product),
+                          ),
+                        ],
+                      )
+                    : const SizedBox.shrink(),
               ),
             ),
           ],

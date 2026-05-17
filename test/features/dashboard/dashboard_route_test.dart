@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:clothes_inventory/features/dashboard/presentation/dashboard_cubit.dart';
+import 'package:delta_erp/features/dashboard/presentation/dashboard_cubit.dart';
 
 void main() {
   test('buildDashboardDrillDownRoute preserves filters in query string', () {

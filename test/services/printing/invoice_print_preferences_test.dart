@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:clothes_inventory/features/invoices/domain/invoice_print_model.dart';
-import 'package:clothes_inventory/services/printing/invoice_print_preferences.dart';
-import 'package:clothes_inventory/services/printing/invoice_printer.dart';
+import 'package:delta_erp/features/invoices/domain/invoice_print_model.dart';
+import 'package:delta_erp/services/printing/invoice_print_preferences.dart';
+import 'package:delta_erp/services/printing/invoice_printer.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {

@@ -3,8 +3,8 @@ import 'package:flutter/foundation.dart';
 
 import 'package:path/path.dart' as path;
 
-import 'package:clothes_inventory/core/utils/app_paths.dart';
-import 'package:clothes_inventory/features/purchase_ocr/data/purchase_ocr_service.dart';
+import 'package:delta_erp/core/utils/app_paths.dart';
+import 'package:delta_erp/features/purchase_ocr/data/purchase_ocr_service.dart';
 
 class OcrLogger {
   const OcrLogger();

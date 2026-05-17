@@ -2,10 +2,10 @@ import 'dart:typed_data';
 import 'dart:io';
 
 import 'package:easy_localization/easy_localization.dart';
-import 'package:clothes_inventory/core/config/company_settings_service.dart';
-import 'package:clothes_inventory/features/invoices/domain/a4_invoice_view_data.dart';
-import 'package:clothes_inventory/services/database/app_database.dart';
-import 'package:clothes_inventory/services/pdf/a4_invoice_rtl_pdf_builder.dart';
+import 'package:delta_erp/core/config/company_settings_service.dart';
+import 'package:delta_erp/features/invoices/domain/a4_invoice_view_data.dart';
+import 'package:delta_erp/services/database/app_database.dart';
+import 'package:delta_erp/services/pdf/a4_invoice_rtl_pdf_builder.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -25,10 +25,13 @@ class SalesInvoicePdfService {
       SELECT s.id, s.invoice_number, s.total_amount, s.created_at,
             a.name AS customer_name,
             u.full_name AS seller_name,
-            u.username AS seller_username
+            u.username AS seller_username,
+            um.full_name AS modifier_name,
+            um.username AS modifier_username
       FROM sales s
       LEFT JOIN accounts a ON a.id = s.account_id
-          LEFT JOIN users u ON u.id = s.created_by_user_id
+      LEFT JOIN users u ON u.id = s.created_by_user_id
+      LEFT JOIN users um ON um.id = s.last_modified_by_user_id
       WHERE s.id = ?
       LIMIT 1
       ''',
@@ -56,6 +59,11 @@ class SalesInvoicePdfService {
     final issuedBy = sellerName.isNotEmpty
         ? sellerName
         : (sellerUsername.isNotEmpty ? sellerUsername : null);
+    final modName = (sale['modifier_name']?.toString() ?? '').trim();
+    final modUser = (sale['modifier_username']?.toString() ?? '').trim();
+    final lastModifiedBy = modName.isNotEmpty
+        ? modName
+        : (modUser.isNotEmpty ? modUser : null);
     final company = _companySettingsService.settings;
     final invoiceData = A4InvoiceViewData(
       companyName: company.name,
@@ -69,6 +77,7 @@ class SalesInvoicePdfService {
       partyLabel: 'Customer'.tr(),
       partyName: sale['customer_name']?.toString() ?? 'Walk-in'.tr(),
       issuedBy: issuedBy,
+      lastModifiedBy: lastModifiedBy,
       lines: items
           .map(
             (row) => A4InvoiceLine(

@@ -1,13 +1,13 @@
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:clothes_inventory/core/config/company_settings_service.dart';
-import 'package:clothes_inventory/core/widgets/app_empty_state.dart';
-import 'package:clothes_inventory/features/invoices/domain/invoice_print_model.dart';
-import 'package:clothes_inventory/features/invoices/presentation/invoice_details_dialog_constraints.dart';
-import 'package:clothes_inventory/features/invoices/presentation/invoice_payment_display.dart';
-import 'package:clothes_inventory/features/purchases/data/purchases_repository.dart';
-import 'package:clothes_inventory/services/di/service_locator.dart';
+import 'package:delta_erp/core/config/company_settings_service.dart';
+import 'package:delta_erp/core/widgets/app_empty_state.dart';
+import 'package:delta_erp/features/invoices/domain/invoice_print_model.dart';
+import 'package:delta_erp/features/invoices/presentation/invoice_details_dialog_constraints.dart';
+import 'package:delta_erp/features/invoices/presentation/invoice_payment_display.dart';
+import 'package:delta_erp/features/purchases/data/purchases_repository.dart';
+import 'package:delta_erp/services/di/service_locator.dart';
 
 class PurchasesInvoiceDetailsDialog extends StatefulWidget {
   const PurchasesInvoiceDetailsDialog({
@@ -91,13 +91,30 @@ class _PurchasesInvoiceDetailsDialogState
   @override
   void initState() {
     super.initState();
+    _refreshInvoiceSummary();
+    _loadLines();
+  }
+
+  @override
+  void didUpdateWidget(covariant PurchasesInvoiceDetailsDialog oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _refreshInvoiceSummary();
+    if (oldWidget.invoiceRows != widget.invoiceRows) {
+      _loadLines();
+    }
+  }
+
+  void _refreshInvoiceSummary() {
+    PurchaseInvoiceSummary? next;
     for (final row in widget.invoiceRows) {
       if (row.id == widget.invoiceId) {
-        _selectedInvoice = row;
+        next = row;
         break;
       }
     }
-    _loadLines();
+    if (next != null && next != _selectedInvoice) {
+      setState(() => _selectedInvoice = next);
+    }
   }
 
   Future<void> _loadLines() async {
@@ -304,177 +321,249 @@ class _PurchasesInvoiceDetailsDialogState
 
     return widget.animateDialogEntrance(
       Dialog(
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
         child: ConstrainedBox(
           constraints: invoiceDetailsDialogConstraints(context),
           child: Padding(
-            padding: EdgeInsets.all(veryDense ? 12 : 16),
+            padding: EdgeInsets.all(veryDense ? 14 : 20),
             child: Column(
               mainAxisSize: MainAxisSize.max,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        colorScheme.primaryContainer.withValues(alpha: 0.9),
-                        colorScheme.secondaryContainer.withValues(alpha: 0.72),
-                      ],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: colorScheme.outlineVariant),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.receipt_long_outlined,
-                        color: colorScheme.onPrimaryContainer,
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
+                Expanded(
+                  child: CustomScrollView(
+                    controller: _dialogListController,
+                    slivers: [
+                      SliverToBoxAdapter(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              'Invoice Details'.tr(),
-                              style: Theme.of(context).textTheme.titleMedium
-                                  ?.copyWith(
-                                    fontWeight: FontWeight.w800,
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: [
+                                    colorScheme.primaryContainer.withValues(
+                                      alpha: 0.9,
+                                    ),
+                                    colorScheme.secondaryContainer.withValues(
+                                      alpha: 0.72,
+                                    ),
+                                  ],
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                ),
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(
+                                  color: colorScheme.outlineVariant,
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.receipt_long_outlined,
                                     color: colorScheme.onPrimaryContainer,
                                   ),
-                            ),
-                            Text(
-                              '${widget.purchaseInvoiceLabel(id: widget.invoiceId, rawInvoiceNumber: widget.activeInvoiceNumber)} • ${_selectedInvoice?.accountName ?? '-'}',
-                              style: Theme.of(context).textTheme.bodySmall
-                                  ?.copyWith(
-                                    color: colorScheme.onPrimaryContainer
-                                        .withValues(alpha: 0.88),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'Invoice Details'.tr(),
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .titleMedium
+                                              ?.copyWith(
+                                                fontWeight: FontWeight.w800,
+                                                color:
+                                                    colorScheme
+                                                        .onPrimaryContainer,
+                                              ),
+                                        ),
+                                        Text(
+                                          '${widget.purchaseInvoiceLabel(id: widget.invoiceId, rawInvoiceNumber: widget.activeInvoiceNumber)} • ${_selectedInvoice?.accountName ?? '-'}',
+                                          style:
+                                              Theme.of(context)
+                                                  .textTheme
+                                                  .bodySmall
+                                                  ?.copyWith(
+                                                    color:
+                                                        colorScheme
+                                                            .onPrimaryContainer
+                                                            .withValues(
+                                                              alpha: 0.88,
+                                                            ),
+                                                  ),
+                                        ),
+                                        if (_selectedInvoice != null) ...[
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            'invoices.hub.created_by'.tr(
+                                              namedArgs: {
+                                                'name': _selectedInvoice!
+                                                    .createdByDisplay,
+                                              },
+                                            ),
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .labelSmall
+                                                ?.copyWith(
+                                                  color:
+                                                      colorScheme
+                                                          .onPrimaryContainer
+                                                          .withValues(
+                                                            alpha: 0.82,
+                                                          ),
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                          ),
+                                          if (_selectedInvoice!
+                                                  .lastModifiedByDisplay !=
+                                              null) ...[
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              'invoices.hub.last_modified_by'.tr(
+                                                namedArgs: {
+                                                  'name': _selectedInvoice!
+                                                      .lastModifiedByDisplay!,
+                                                },
+                                              ),
+                                              style: Theme.of(context)
+                                                  .textTheme
+                                                  .labelSmall
+                                                  ?.copyWith(
+                                                    color:
+                                                        colorScheme
+                                                            .onPrimaryContainer
+                                                            .withValues(
+                                                              alpha: 0.82,
+                                                            ),
+                                                    fontWeight:
+                                                        FontWeight.w600,
+                                                  ),
+                                            ),
+                                          ],
+                                        ],
+                                      ],
+                                    ),
                                   ),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 4,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: paymentStatusColor.withValues(
+                                        alpha: 0.14,
+                                      ),
+                                      borderRadius: BorderRadius.circular(999),
+                                      border: Border.all(
+                                        color: paymentStatusColor.withValues(
+                                          alpha: 0.35,
+                                        ),
+                                      ),
+                                    ),
+                                    child: Text(
+                                      paymentStatusLabel,
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: paymentStatusColor,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
-                          ],
-                        ),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: paymentStatusColor.withValues(alpha: 0.14),
-                          borderRadius: BorderRadius.circular(999),
-                          border: Border.all(
-                            color: paymentStatusColor.withValues(alpha: 0.35),
-                          ),
-                        ),
-                        child: Text(
-                          paymentStatusLabel,
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: paymentStatusColor,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                SizedBox(height: veryDense ? 8 : 10),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    _summaryCard(
-                      context: context,
-                      label: 'Total'.tr(),
-                      value: totalAmount.toStringAsFixed(2),
-                      icon: Icons.account_balance_wallet_outlined,
-                    ),
-                    _summaryCard(
-                      context: context,
-                      label: 'Paid amount'.tr(),
-                      value: paidAmount.toStringAsFixed(2),
-                      icon: Icons.payments_outlined,
-                      tint: colorScheme.tertiary,
-                    ),
-                    _summaryCard(
-                      context: context,
-                      label: 'Outstanding'.tr(),
-                      value: outstandingAmount.toStringAsFixed(2),
-                      icon: Icons.pending_actions_outlined,
-                      tint: colorScheme.primary,
-                    ),
-                    _summaryCard(
-                      context: context,
-                      label: 'Items Count'.tr(),
-                      value: _sortedLines.length.toString(),
-                      icon: Icons.inventory_2_outlined,
-                      tint: colorScheme.secondary,
-                    ),
-                  ],
-                ),
-                SizedBox(height: veryDense ? 6 : 8),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 6,
-                  children: [
-                    Text(
-                      '${'Payment method'.tr()}: ${invoicePaymentMethodsDisplayLabel(_selectedInvoice?.paymentMethod)}',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    Text(
-                      '${'Date'.tr()}: ${_selectedInvoice == null ? '-' : widget.dateFormat.format(_selectedInvoice!.createdAt)}',
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                    Text(
-                      '${'Status'.tr()}: ${_selectedInvoice?.status ?? '-'}',
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                    Text(
-                      '${'Payment Progress'.tr()}: ${(paymentRatio * 100).toStringAsFixed(0)}%',
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  ],
-                ),
-                SizedBox(height: veryDense ? 10 : 12),
-                Expanded(
-                  child: SizedBox(
-                    width: double.infinity,
-                    child: _sortedLines.isEmpty
-                        ? AppEmptyState(
-                            icon: Icons.receipt_long_outlined,
-                            title: 'No line items found.'.tr(),
-                            compact: true,
-                          )
-                        : Column(
-                            mainAxisSize: MainAxisSize.max,
-                            children: [
+                            SizedBox(height: veryDense ? 8 : 10),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                _summaryCard(
+                                  context: context,
+                                  label: 'Total'.tr(),
+                                  value: totalAmount.toStringAsFixed(2),
+                                  icon: Icons.account_balance_wallet_outlined,
+                                ),
+                                _summaryCard(
+                                  context: context,
+                                  label: 'Paid amount'.tr(),
+                                  value: paidAmount.toStringAsFixed(2),
+                                  icon: Icons.payments_outlined,
+                                  tint: colorScheme.tertiary,
+                                ),
+                                _summaryCard(
+                                  context: context,
+                                  label: 'Outstanding'.tr(),
+                                  value:
+                                      outstandingAmount.toStringAsFixed(2),
+                                  icon: Icons.pending_actions_outlined,
+                                  tint: colorScheme.primary,
+                                ),
+                                _summaryCard(
+                                  context: context,
+                                  label: 'Items Count'.tr(),
+                                  value: _sortedLines.length.toString(),
+                                  icon: Icons.inventory_2_outlined,
+                                  tint: colorScheme.secondary,
+                                ),
+                              ],
+                            ),
+                            SizedBox(height: veryDense ? 6 : 8),
+                            Wrap(
+                              spacing: 10,
+                              runSpacing: 6,
+                              children: [
+                                Text(
+                                  '${'Payment method'.tr()}: ${invoicePaymentMethodsDisplayLabel(_selectedInvoice?.paymentMethod)}',
+                                  style:
+                                      Theme.of(context).textTheme.bodySmall?.copyWith(
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                ),
+                                Text(
+                                  '${'Date'.tr()}: ${_selectedInvoice == null ? '-' : widget.dateFormat.format(_selectedInvoice!.createdAt)}',
+                                  style:
+                                      Theme.of(context).textTheme.bodySmall,
+                                ),
+                                Text(
+                                  '${'Status'.tr()}: ${_selectedInvoice?.status ?? '-'}',
+                                  style:
+                                      Theme.of(context).textTheme.bodySmall,
+                                ),
+                                Text(
+                                  '${'Payment Progress'.tr()}: ${(paymentRatio * 100).toStringAsFixed(0)}%',
+                                  style:
+                                      Theme.of(context).textTheme.bodySmall,
+                                ),
+                              ],
+                            ),
+                            if (_sortedLines.isNotEmpty) ...[
+                              SizedBox(height: veryDense ? 10 : 12),
                               Wrap(
                                 spacing: 8,
                                 runSpacing: 6,
                                 children: [
                                   Text(
                                     '${'Purchased Quantity'.tr()}: ${widget.formatInvoiceQuantity(totalPurchasedQty)}',
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.bodySmall,
+                                    style:
+                                        Theme.of(context).textTheme.bodySmall,
                                   ),
                                   Text(
                                     '${'Return'.tr()}: ${widget.formatInvoiceQuantity(totalReturnedQty)}',
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.bodySmall,
+                                    style:
+                                        Theme.of(context).textTheme.bodySmall,
                                   ),
                                   Text(
                                     '${'Outstanding'.tr()}: ${widget.formatInvoiceQuantity(totalRemainingQty)}',
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.bodySmall,
+                                    style:
+                                        Theme.of(context).textTheme.bodySmall,
                                   ),
                                 ],
                               ),
@@ -485,9 +574,8 @@ class _PurchasesInvoiceDetailsDialogState
                                 children: [
                                   Text(
                                     'Returnable $returnableCount/${_sortedLines.length}',
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.bodySmall,
+                                    style:
+                                        Theme.of(context).textTheme.bodySmall,
                                   ),
                                   FilterChip(
                                     selected: !_showReturnableOnly,
@@ -506,97 +594,104 @@ class _PurchasesInvoiceDetailsDialogState
                                 ],
                               ),
                               const SizedBox(height: 6),
-                              Expanded(
-                                child: ListView.separated(
-                                  controller: _dialogListController,
-                                  itemCount: filteredLines.length,
-                                  separatorBuilder: (_, _) =>
-                                      const Divider(height: 1),
-                                  itemBuilder: (context, i) {
-                                    final line = filteredLines[i];
-                                    final chosen = _selected?.id == line.id;
-
-                                    final statusColor =
-                                        line.remainingQuantity <= 0
-                                        ? colorScheme.onSurfaceVariant
-                                        : (line.returnedQuantity > 0
-                                              ? colorScheme.primary
-                                              : colorScheme.tertiary);
-                                    final statusLabel =
-                                        line.remainingQuantity <= 0
-                                        ? 'Fully Returned'.tr()
-                                        : (line.returnedQuantity > 0
-                                              ? 'Partial Return'.tr()
-                                              : 'Open'.tr());
-                                    final statusIcon =
-                                        line.remainingQuantity <= 0
-                                        ? Icons.block_outlined
-                                        : (line.returnedQuantity > 0
-                                              ? Icons.change_circle_outlined
-                                              : Icons.check_circle_outline);
-
-                                    return ListTile(
-                                      selected: chosen,
-                                      selectedTileColor: Theme.of(context)
-                                          .colorScheme
-                                          .primaryContainer
-                                          .withValues(alpha: 0.45),
-                                      leading: Icon(
-                                        chosen
-                                            ? Icons.radio_button_checked
-                                            : statusIcon,
-                                        size: 18,
-                                        color: chosen
-                                            ? Theme.of(
-                                                context,
-                                              ).colorScheme.primary
-                                            : statusColor,
-                                      ),
-                                      title: Text(line.productName),
-                                      subtitle: Text(
-                                        '${'Item'.tr()} ${line.id}\n'
-                                        '${'Purchased Quantity'.tr()}: ${widget.formatInvoiceQuantity(line.quantity)} • '
-                                        '${'Return'.tr()}: ${widget.formatInvoiceQuantity(line.returnedQuantity)} • '
-                                        '${'Outstanding'.tr()}: ${widget.formatInvoiceQuantity(line.remainingQuantity)}\n'
-                                        '${'Line Total'.tr()}: ${line.lineTotal.toStringAsFixed(2)}',
-                                      ),
-                                      trailing: Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 8,
-                                          vertical: 2,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: statusColor.withValues(
-                                            alpha: 0.12,
-                                          ),
-                                          borderRadius: BorderRadius.circular(
-                                            999,
-                                          ),
-                                          border: Border.all(
-                                            color: statusColor.withValues(
-                                              alpha: 0.35,
-                                            ),
-                                          ),
-                                        ),
-                                        child: Text(
-                                          statusLabel,
-                                          style: TextStyle(
-                                            fontSize: 11,
-                                            color: statusColor,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                      ),
-                                      onTap: () {
-                                        setState(() => _selected = line);
-                                        scrollSelectionIntoView(visibleLines());
-                                      },
-                                    );
-                                  },
-                                ),
-                              ),
                             ],
+                          ],
+                        ),
+                      ),
+                      if (_sortedLines.isEmpty)
+                        SliverFillRemaining(
+                          hasScrollBody: false,
+                          child: AppEmptyState(
+                            icon: Icons.receipt_long_outlined,
+                            title: 'No line items found.'.tr(),
+                            compact: true,
                           ),
+                        )
+                      else
+                        SliverToBoxAdapter(
+                          child: ListView.separated(
+                            shrinkWrap: true,
+                            primary: false,
+                            physics: const NeverScrollableScrollPhysics(),
+                            itemCount: filteredLines.length,
+                            separatorBuilder: (_, _) =>
+                                const Divider(height: 1),
+                            itemBuilder: (context, i) {
+                              final line = filteredLines[i];
+                              final chosen = _selected?.id == line.id;
+
+                              final statusColor =
+                                  line.remainingQuantity <= 0
+                                  ? colorScheme.onSurfaceVariant
+                                  : (line.returnedQuantity > 0
+                                        ? colorScheme.primary
+                                        : colorScheme.tertiary);
+                              final statusLabel =
+                                  line.remainingQuantity <= 0
+                                  ? 'Fully Returned'.tr()
+                                  : (line.returnedQuantity > 0
+                                        ? 'Partial Return'.tr()
+                                        : 'Open'.tr());
+                              final statusIcon =
+                                  line.remainingQuantity <= 0
+                                  ? Icons.block_outlined
+                                  : (line.returnedQuantity > 0
+                                        ? Icons.change_circle_outlined
+                                        : Icons.check_circle_outline);
+
+                              return ListTile(
+                                selected: chosen,
+                                selectedTileColor:
+                                    Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.45),
+                                leading: Icon(
+                                  chosen
+                                      ? Icons.radio_button_checked
+                                      : statusIcon,
+                                  size: 18,
+                                  color: chosen
+                                      ? Theme.of(context).colorScheme.primary
+                                      : statusColor,
+                                ),
+                                title: Text(line.productName),
+                                subtitle: Text(
+                                  '${'Item'.tr()} ${line.id}\n'
+                                  '${'Purchased Quantity'.tr()}: ${widget.formatInvoiceQuantity(line.quantity)} • '
+                                  '${'Return'.tr()}: ${widget.formatInvoiceQuantity(line.returnedQuantity)} • '
+                                  '${'Outstanding'.tr()}: ${widget.formatInvoiceQuantity(line.remainingQuantity)}\n'
+                                  '${'Line Total'.tr()}: ${line.lineTotal.toStringAsFixed(2)}',
+                                ),
+                                trailing: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: statusColor.withValues(alpha: 0.12),
+                                    borderRadius: BorderRadius.circular(999),
+                                    border: Border.all(
+                                      color: statusColor.withValues(
+                                        alpha: 0.35,
+                                      ),
+                                    ),
+                                  ),
+                                  child: Text(
+                                    statusLabel,
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: statusColor,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                                onTap: () {
+                                  setState(() => _selected = line);
+                                  scrollSelectionIntoView(visibleLines());
+                                },
+                              );
+                            },
+                          ),
+                        ),
+                    ],
                   ),
                 ),
                 SizedBox(height: veryDense ? 10 : 12),

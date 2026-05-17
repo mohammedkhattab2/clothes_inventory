@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
-import 'package:clothes_inventory/services/database/migrations/migration_v2.dart';
+import 'package:delta_erp/services/database/migrations/migration_v2.dart';
 
 Future<void> _createLegacyV1Schema(Database db) async {
   await db.execute('''

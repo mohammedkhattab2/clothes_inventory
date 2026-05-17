@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:clothes_inventory/features/invoices/domain/invoice_print_model.dart';
-import 'package:clothes_inventory/features/invoices/presentation/invoice_print_model_mapper.dart';
+import 'package:delta_erp/features/invoices/domain/invoice_print_model.dart';
+import 'package:delta_erp/features/invoices/presentation/invoice_print_model_mapper.dart';
 
 void main() {
   test('maps unified invoice model into A4 view data', () {

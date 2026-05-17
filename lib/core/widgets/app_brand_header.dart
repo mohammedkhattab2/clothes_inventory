@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:clothes_inventory/core/config/company_settings.dart';
-import 'package:clothes_inventory/core/config/company_settings_service.dart';
-import 'package:clothes_inventory/services/di/service_locator.dart';
+import 'package:delta_erp/core/config/company_settings.dart';
+import 'package:delta_erp/core/config/company_settings_service.dart';
+import 'package:delta_erp/services/di/service_locator.dart';
 
 class AppBrandHeader extends StatelessWidget {
   const AppBrandHeader({

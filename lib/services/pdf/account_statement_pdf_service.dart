@@ -3,12 +3,10 @@ import 'dart:typed_data';
 import 'dart:developer' as dev;
 
 import 'package:easy_localization/easy_localization.dart';
-import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
-import 'package:clothes_inventory/features/accounts/data/account_statement_repository.dart';
+import 'package:delta_erp/features/accounts/data/account_statement_repository.dart';
 
 class AccountStatementPdfService {
   const AccountStatementPdfService();
@@ -18,6 +16,7 @@ class AccountStatementPdfService {
     required String accountType,
     required List<AccountStatementTransaction> transactions,
     required double finalBalance,
+    required String targetPath,
     DateTime? fromDate,
     DateTime? toDate,
   }) async {
@@ -31,13 +30,8 @@ class AccountStatementPdfService {
         toDate: toDate,
       );
 
-      final docsDir = await getApplicationDocumentsDirectory();
-      final exportDir = Directory(p.join(docsDir.path, 'exports'));
-      await exportDir.create(recursive: true);
-
-      final fileName =
-          'account_statement_${accountName.replaceAll(RegExp(r'[^A-Za-z0-9_]'), '_')}_${DateTime.now().millisecondsSinceEpoch}.pdf';
-      final file = File(p.join(exportDir.path, fileName));
+      final file = File(targetPath);
+      await file.parent.create(recursive: true);
       await file.writeAsBytes(bytes, flush: true);
       return file.path;
     } catch (e, st) {

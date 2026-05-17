@@ -1,7 +1,7 @@
 import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:clothes_inventory/features/products/data/product_repository.dart';
-import 'package:clothes_inventory/features/products/domain/product.dart';
+import 'package:delta_erp/features/products/data/product_repository.dart';
+import 'package:delta_erp/features/products/domain/product.dart';
 
 class ProductsState extends Equatable {
   const ProductsState({

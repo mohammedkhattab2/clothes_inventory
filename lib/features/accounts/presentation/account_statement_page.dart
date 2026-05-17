@@ -5,17 +5,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:path/path.dart' as p;
-import 'package:clothes_inventory/core/widgets/app_data_table.dart';
-import 'package:clothes_inventory/core/widgets/app_error_banner.dart';
-import 'package:clothes_inventory/core/widgets/app_loading_indicator.dart';
-import 'package:clothes_inventory/features/accounts/data/account_statement_csv_service.dart';
-import 'package:clothes_inventory/features/accounts/data/account_statement_repository.dart';
-import 'package:clothes_inventory/features/accounts/data/accounts_repository.dart';
-import 'package:clothes_inventory/features/accounts/presentation/account_statement_cubit.dart';
-import 'package:clothes_inventory/features/dashboard/presentation/dashboard_cubit.dart';
-import 'package:clothes_inventory/services/di/service_locator.dart';
-import 'package:clothes_inventory/services/platform/folder_opener_service.dart';
-import 'package:clothes_inventory/services/pdf/account_statement_pdf_service.dart';
+import 'package:delta_erp/core/widgets/app_data_table.dart';
+import 'package:delta_erp/core/widgets/app_error_banner.dart';
+import 'package:delta_erp/core/widgets/app_loading_indicator.dart';
+import 'package:delta_erp/features/accounts/data/account_statement_csv_service.dart';
+import 'package:delta_erp/features/accounts/data/account_statement_repository.dart';
+import 'package:delta_erp/features/accounts/data/accounts_repository.dart';
+import 'package:delta_erp/features/accounts/presentation/account_statement_cubit.dart';
+import 'package:delta_erp/features/dashboard/presentation/dashboard_cubit.dart';
+import 'package:delta_erp/services/di/service_locator.dart';
+import 'package:delta_erp/services/export/user_export_path_picker.dart';
+import 'package:delta_erp/services/platform/folder_opener_service.dart';
+import 'package:delta_erp/services/pdf/account_statement_pdf_service.dart';
 
 class AccountStatementPage extends StatefulWidget {
   const AccountStatementPage({required this.initialAccountId, super.key});
@@ -601,6 +602,19 @@ class _AccountStatementPageState extends State<AccountStatementPage> {
   ) async {
     final accountId = state.accountId;
     if (accountId == null || selectedAccount == null) return;
+
+    final safeName = selectedAccount.name.replaceAll(
+      RegExp(r'[^A-Za-z0-9_]'),
+      '_',
+    );
+    final targetPath = await getIt<UserExportPathPicker>().pickSavePath(
+      dialogTitle: 'export.save_dialog_title'.tr(),
+      suggestedFileName:
+          'account_statement_${safeName}_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.pdf',
+      extensions: const ['pdf'],
+    );
+    if (targetPath == null) return;
+
     setState(() => _exportingPdf = true);
     try {
       final allRows = await getIt<AccountStatementRepository>()
@@ -615,6 +629,7 @@ class _AccountStatementPageState extends State<AccountStatementPage> {
         accountType: selectedAccount.accountType,
         transactions: allRows,
         finalBalance: state.currentBalance,
+        targetPath: targetPath,
         fromDate: state.fromDate,
         toDate: state.toDate,
       );
@@ -642,6 +657,19 @@ class _AccountStatementPageState extends State<AccountStatementPage> {
   ) async {
     final accountId = state.accountId;
     if (accountId == null || selectedAccount == null) return;
+
+    final safeName = selectedAccount.name.replaceAll(
+      RegExp(r'[^A-Za-z0-9_]'),
+      '_',
+    );
+    final targetPath = await getIt<UserExportPathPicker>().pickSavePath(
+      dialogTitle: 'export.save_dialog_title'.tr(),
+      suggestedFileName:
+          'account_statement_${safeName}_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.csv',
+      extensions: const ['csv'],
+    );
+    if (targetPath == null) return;
+
     setState(() => _exportingCsv = true);
     try {
       final allRows = await getIt<AccountStatementRepository>()
@@ -656,6 +684,7 @@ class _AccountStatementPageState extends State<AccountStatementPage> {
         accountType: selectedAccount.accountType,
         transactions: allRows,
         finalBalance: state.currentBalance,
+        targetPath: targetPath,
         fromDate: state.fromDate,
         toDate: state.toDate,
       );

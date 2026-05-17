@@ -1,14 +1,15 @@
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
-import 'package:clothes_inventory/features/accounts/data/accounts_repository.dart';
-import 'package:clothes_inventory/features/expenses/data/expenses_csv_service.dart';
-import 'package:clothes_inventory/features/expenses/data/expenses_repository.dart';
-import 'package:clothes_inventory/features/expenses/presentation/widgets/expense_delete_dialog.dart';
-import 'package:clothes_inventory/features/expenses/presentation/widgets/expense_edit_dialog.dart';
-import 'package:clothes_inventory/features/expenses/presentation/widgets/expenses_page_layout.dart';
-import 'package:clothes_inventory/services/di/service_locator.dart';
-import 'package:clothes_inventory/services/platform/folder_opener_service.dart';
-import 'package:clothes_inventory/services/pdf/expenses_pdf_service.dart';
+import 'package:delta_erp/features/accounts/data/accounts_repository.dart';
+import 'package:delta_erp/features/expenses/data/expenses_csv_service.dart';
+import 'package:delta_erp/features/expenses/data/expenses_repository.dart';
+import 'package:delta_erp/features/expenses/presentation/widgets/expense_delete_dialog.dart';
+import 'package:delta_erp/features/expenses/presentation/widgets/expense_edit_dialog.dart';
+import 'package:delta_erp/features/expenses/presentation/widgets/expenses_page_layout.dart';
+import 'package:delta_erp/services/di/service_locator.dart';
+import 'package:delta_erp/services/export/user_export_path_picker.dart';
+import 'package:delta_erp/services/platform/folder_opener_service.dart';
+import 'package:delta_erp/services/pdf/expenses_pdf_service.dart';
 
 class ExpensesPage extends StatefulWidget {
   const ExpensesPage({super.key});
@@ -290,6 +291,14 @@ class _ExpensesPageState extends State<ExpensesPage> {
   }
 
   Future<void> _exportCsv() async {
+    final targetPath = await getIt<UserExportPathPicker>().pickSavePath(
+      dialogTitle: 'export.save_dialog_title'.tr(),
+      suggestedFileName:
+          'expenses_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.csv',
+      extensions: const ['csv'],
+    );
+    if (targetPath == null) return;
+
     setState(() => _exportingCsv = true);
     try {
       final rows = await _repo.listExpenses(
@@ -307,6 +316,7 @@ class _ExpensesPageState extends State<ExpensesPage> {
         grossExpenses: _grossTotal,
         netExpenses: _netTotal,
         includeReversals: _showReversals,
+        targetPath: targetPath,
         fromDate: _fromDate,
         toDate: _toDate,
         accountId: _selectedFilterExpenseAccountId,
@@ -330,6 +340,14 @@ class _ExpensesPageState extends State<ExpensesPage> {
   }
 
   Future<void> _exportPdf() async {
+    final targetPath = await getIt<UserExportPathPicker>().pickSavePath(
+      dialogTitle: 'export.save_dialog_title'.tr(),
+      suggestedFileName:
+          'expenses_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.pdf',
+      extensions: const ['pdf'],
+    );
+    if (targetPath == null) return;
+
     setState(() => _exportingPdf = true);
     try {
       final rows = await _repo.listExpenses(
@@ -348,6 +366,7 @@ class _ExpensesPageState extends State<ExpensesPage> {
         grossExpenses: _grossTotal,
         netExpenses: _netTotal,
         includeReversals: _showReversals,
+        targetPath: targetPath,
         fromDate: _fromDate,
         toDate: _toDate,
         accountId: _selectedFilterExpenseAccountId,

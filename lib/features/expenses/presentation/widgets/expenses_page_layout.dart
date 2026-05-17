@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:clothes_inventory/core/widgets/app_page_shell.dart';
-import 'package:clothes_inventory/features/accounts/data/accounts_repository.dart';
-import 'package:clothes_inventory/features/expenses/data/expenses_repository.dart';
-import 'package:clothes_inventory/features/expenses/presentation/widgets/expenses_entry_section.dart';
-import 'package:clothes_inventory/features/expenses/presentation/widgets/expenses_filters_section.dart';
-import 'package:clothes_inventory/features/expenses/presentation/widgets/expenses_header_section.dart';
-import 'package:clothes_inventory/features/expenses/presentation/widgets/expenses_pagination_section.dart';
-import 'package:clothes_inventory/features/expenses/presentation/widgets/expenses_records_section.dart';
+import 'package:delta_erp/core/widgets/app_page_shell.dart';
+import 'package:delta_erp/features/accounts/data/accounts_repository.dart';
+import 'package:delta_erp/features/expenses/data/expenses_repository.dart';
+import 'package:delta_erp/features/expenses/presentation/widgets/expenses_entry_section.dart';
+import 'package:delta_erp/features/expenses/presentation/widgets/expenses_filters_section.dart';
+import 'package:delta_erp/features/expenses/presentation/widgets/expenses_header_section.dart';
+import 'package:delta_erp/features/expenses/presentation/widgets/expenses_pagination_section.dart';
+import 'package:delta_erp/features/expenses/presentation/widgets/expenses_records_section.dart';
 
 class ExpensesPageLayout extends StatelessWidget {
   const ExpensesPageLayout({

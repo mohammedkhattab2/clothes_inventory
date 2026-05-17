@@ -2,10 +2,28 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
-import 'package:clothes_inventory/core/theme/theme_cubit.dart';
-import 'package:clothes_inventory/features/auth/domain/auth_user.dart';
-import 'package:clothes_inventory/services/auth/session_service.dart';
-import 'package:clothes_inventory/services/di/service_locator.dart';
+import 'package:delta_erp/core/theme/theme_cubit.dart';
+import 'package:delta_erp/features/auth/domain/auth_user.dart';
+import 'package:delta_erp/services/auth/session_service.dart';
+import 'package:delta_erp/services/di/service_locator.dart';
+
+class _NavSpec {
+  const _NavSpec({
+    required this.label,
+    required this.icon,
+    required this.selectedIcon,
+    required this.matches,
+    required this.go,
+    this.cashierHidden = false,
+  });
+
+  final String label;
+  final IconData icon;
+  final IconData selectedIcon;
+  final bool Function(String path) matches;
+  final void Function(BuildContext context) go;
+  final bool cashierHidden;
+}
 
 class AppShell extends StatefulWidget {
   const AppShell({required this.child, super.key});
@@ -27,8 +45,20 @@ class _AppShellState extends State<AppShell> {
 
   @override
   Widget build(BuildContext context) {
-    final location = GoRouterState.of(context).uri.toString();
-    final selectedIndex = _selectedIndex(location);
+    final path = GoRouterState.of(context).uri.path;
+    final role = getIt<SessionService>().currentUser?.role;
+    final allSpecs = _allNavSpecs();
+    final navVisible = allSpecs
+        .where((s) => !(s.cashierHidden && role == UserRole.cashier))
+        .toList(growable: false);
+
+    var selectedIndex = 0;
+    for (var i = 0; i < navVisible.length; i++) {
+      if (navVisible[i].matches(path)) {
+        selectedIndex = i;
+        break;
+      }
+    }
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final isDarkMode = theme.brightness == Brightness.dark;
@@ -49,68 +79,7 @@ class _AppShellState extends State<AppShell> {
       colorScheme.surface,
     ];
 
-    final destinations = <_NavDestination>[
-      _NavDestination(
-        label: 'Dashboard'.tr(),
-        icon: Icons.space_dashboard_outlined,
-        selectedIcon: Icons.space_dashboard,
-      ),
-      _NavDestination(
-        label: 'Products'.tr(),
-        icon: Icons.inventory_2_outlined,
-        selectedIcon: Icons.inventory_2,
-      ),
-      _NavDestination(
-        label: 'Sales'.tr(),
-        icon: Icons.point_of_sale_outlined,
-        selectedIcon: Icons.point_of_sale,
-      ),
-      _NavDestination(
-        label: 'Purchases'.tr(),
-        icon: Icons.local_shipping_outlined,
-        selectedIcon: Icons.local_shipping,
-      ),
-      _NavDestination(
-        label: 'Invoices'.tr(),
-        icon: Icons.receipt_long_outlined,
-        selectedIcon: Icons.receipt_long,
-      ),
-      _NavDestination(
-        label: 'Inventory'.tr(),
-        icon: Icons.warehouse_outlined,
-        selectedIcon: Icons.warehouse,
-      ),
-      _NavDestination(
-        label: 'contacts.nav_label'.tr(),
-        icon: Icons.contacts_outlined,
-        selectedIcon: Icons.contacts,
-      ),
-      _NavDestination(
-        label: 'Accounts'.tr(),
-        icon: Icons.account_balance_wallet_outlined,
-        selectedIcon: Icons.account_balance_wallet,
-      ),
-      _NavDestination(
-        label: 'Expenses'.tr(),
-        icon: Icons.receipt_outlined,
-        selectedIcon: Icons.receipt,
-      ),
-      _NavDestination(
-        label: 'Statement'.tr(),
-        icon: Icons.receipt_long_outlined,
-        selectedIcon: Icons.receipt_long,
-      ),
-      _NavDestination(
-        label: 'Settings'.tr(),
-        icon: Icons.settings_outlined,
-        selectedIcon: Icons.settings,
-      ),
-      _NavDestination(
-        label: 'Users'.tr(),
-        icon: Icons.manage_accounts_outlined,
-        selectedIcon: Icons.manage_accounts,
-      ),
-    ];
+    final destinations = navVisible;
 
     return Scaffold(
       body: Row(
@@ -267,7 +236,7 @@ class _AppShellState extends State<AppShell> {
                                             mainAxisSize: MainAxisSize.min,
                                             children: [
                                               Text(
-                                                'Clothes Inventory POS',
+                                                'DeltaErp',
                                                 maxLines: 1,
                                                 softWrap: false,
                                                 overflow:
@@ -373,15 +342,14 @@ class _AppShellState extends State<AppShell> {
                                             );
                                           },
                                           itemBuilder: (context, index) {
-                                            final destination =
-                                                destinations[index];
+                                            final spec = destinations[index];
                                             final selected =
                                                 selectedIndex == index;
                                             return _SidebarNavTile(
-                                              label: destination.label,
+                                              label: spec.label,
                                               icon: selected
-                                                  ? destination.selectedIcon
-                                                  : destination.icon,
+                                                  ? spec.selectedIcon
+                                                  : spec.icon,
                                               selected: selected,
                                               colorScheme: colorScheme,
                                               selectedGradient:
@@ -392,7 +360,7 @@ class _AppShellState extends State<AppShell> {
                                                   ),
                                               index: index,
                                               onTap: () =>
-                                                  _goToIndex(context, index),
+                                                  destinations[index].go(context),
                                             );
                                           },
                                         )
@@ -428,10 +396,8 @@ class _AppShellState extends State<AppShell> {
                                                         isDarkMode,
                                                       ),
                                                   index: index,
-                                                  onTap: () => _goToIndex(
-                                                    context,
-                                                    index,
-                                                  ),
+                                                  onTap: () => destinations[index]
+                                                      .go(context),
                                                 ),
                                                 if (index <
                                                     destinations.length - 1)
@@ -605,21 +571,6 @@ class _AppShellState extends State<AppShell> {
     );
   }
 
-  int _selectedIndex(String location) {
-    if (location.startsWith('/products')) return 1;
-    if (location.startsWith('/sales')) return 2;
-    if (location.startsWith('/purchases')) return 3;
-    if (location.startsWith('/invoices')) return 4;
-    if (location.startsWith('/inventory')) return 5;
-    if (location.startsWith('/contacts')) return 6;
-    if (location.startsWith('/accounts')) return 7;
-    if (location.startsWith('/expenses')) return 8;
-    if (location.startsWith('/statement')) return 9;
-    if (location.startsWith('/settings')) return 10;
-    if (location.startsWith('/users')) return 11;
-    return 0;
-  }
-
   List<Color> _beamGradientForIndex(
     int index,
     ColorScheme colorScheme,
@@ -641,57 +592,113 @@ class _AppShellState extends State<AppShell> {
     return [start, end];
   }
 
-  void _goToIndex(BuildContext context, int index) {
-    switch (index) {
-      case 0:
-        context.go('/dashboard');
-        return;
-      case 1:
-        context.go('/products');
-        return;
-      case 2:
-        context.go('/sales');
-        return;
-      case 3:
-        context.go('/purchases');
-        return;
-      case 4:
-        final path = GoRouterState.of(context).uri.path;
-        if (path.startsWith('/invoices')) {
-          return;
-        }
-        if (path.startsWith('/purchases')) {
-          context.go('/invoices?tab=purchases');
-          return;
-        }
-        if (path.startsWith('/sales')) {
-          context.go('/invoices?tab=sales');
-          return;
-        }
-        context.go('/invoices');
-        return;
-      case 5:
-        context.go('/inventory');
-        return;
-      case 6:
-        context.go('/contacts');
-        return;
-      case 7:
-        context.go('/accounts');
-        return;
-      case 8:
-        context.go('/expenses');
-        return;
-      case 9:
-        context.go('/statement');
-        return;
-      case 10:
-        context.go('/settings');
-        return;
-      case 11:
-        context.go('/users');
-        return;
+  void _goInvoicesFromSidebar(BuildContext context) {
+    final currentPath = GoRouterState.of(context).uri.path;
+    if (currentPath.startsWith('/invoices')) {
+      return;
     }
+    if (currentPath.startsWith('/purchases')) {
+      context.go('/invoices?tab=purchases');
+      return;
+    }
+    if (currentPath.startsWith('/sales')) {
+      context.go('/invoices?tab=sales');
+      return;
+    }
+    context.go('/invoices');
+  }
+
+  List<_NavSpec> _allNavSpecs() {
+    return <_NavSpec>[
+      _NavSpec(
+        label: 'Dashboard'.tr(),
+        icon: Icons.space_dashboard_outlined,
+        selectedIcon: Icons.space_dashboard,
+        matches: (p) => p.isEmpty || p == '/' || p.startsWith('/dashboard'),
+        go: (c) => c.go('/dashboard'),
+      ),
+      _NavSpec(
+        label: 'Products'.tr(),
+        icon: Icons.inventory_2_outlined,
+        selectedIcon: Icons.inventory_2,
+        matches: (p) => p.startsWith('/products'),
+        go: (c) => c.go('/products'),
+      ),
+      _NavSpec(
+        label: 'Sales'.tr(),
+        icon: Icons.point_of_sale_outlined,
+        selectedIcon: Icons.point_of_sale,
+        matches: (p) => p.startsWith('/sales'),
+        go: (c) => c.go('/sales'),
+      ),
+      _NavSpec(
+        label: 'Purchases'.tr(),
+        icon: Icons.local_shipping_outlined,
+        selectedIcon: Icons.local_shipping,
+        matches: (p) => p.startsWith('/purchases'),
+        go: (c) => c.go('/purchases'),
+        cashierHidden: true,
+      ),
+      _NavSpec(
+        label: 'Invoices'.tr(),
+        icon: Icons.receipt_long_outlined,
+        selectedIcon: Icons.receipt_long,
+        matches: (p) => p.startsWith('/invoices'),
+        go: _goInvoicesFromSidebar,
+      ),
+      _NavSpec(
+        label: 'Inventory'.tr(),
+        icon: Icons.warehouse_outlined,
+        selectedIcon: Icons.warehouse,
+        matches: (p) => p.startsWith('/inventory'),
+        go: (c) => c.go('/inventory'),
+        cashierHidden: true,
+      ),
+      _NavSpec(
+        label: 'contacts.nav_label'.tr(),
+        icon: Icons.contacts_outlined,
+        selectedIcon: Icons.contacts,
+        matches: (p) => p.startsWith('/contacts'),
+        go: (c) => c.go('/contacts'),
+      ),
+      _NavSpec(
+        label: 'Accounts'.tr(),
+        icon: Icons.account_balance_wallet_outlined,
+        selectedIcon: Icons.account_balance_wallet,
+        matches: (p) => p.startsWith('/accounts'),
+        go: (c) => c.go('/accounts'),
+      ),
+      _NavSpec(
+        label: 'Expenses'.tr(),
+        icon: Icons.receipt_outlined,
+        selectedIcon: Icons.receipt,
+        matches: (p) => p.startsWith('/expenses'),
+        go: (c) => c.go('/expenses'),
+      ),
+      _NavSpec(
+        label: 'Statement'.tr(),
+        icon: Icons.receipt_long_outlined,
+        selectedIcon: Icons.receipt_long,
+        matches: (p) => p.startsWith('/statement'),
+        go: (c) => c.go('/statement'),
+      ),
+      _NavSpec(
+        label: 'Settings'.tr(),
+        icon: Icons.settings_outlined,
+        selectedIcon: Icons.settings,
+        matches: (p) => p.startsWith('/settings'),
+        go: (c) => c.go('/settings'),
+        cashierHidden: true,
+      ),
+      _NavSpec(
+        label: 'Users'.tr(),
+        icon: Icons.manage_accounts_outlined,
+        selectedIcon: Icons.manage_accounts,
+        matches: (p) => p.startsWith('/users'),
+        go: (c) => c.go('/users'),
+        cashierHidden: true,
+      ),
+    ];
   }
 
   String _roleLabel(UserRole role) {
@@ -706,18 +713,6 @@ class _AppShellState extends State<AppShell> {
         return 'Purchaser'.tr();
     }
   }
-}
-
-class _NavDestination {
-  const _NavDestination({
-    required this.label,
-    required this.icon,
-    required this.selectedIcon,
-  });
-
-  final String label;
-  final IconData icon;
-  final IconData selectedIcon;
 }
 
 class _SidebarNavTile extends StatefulWidget {

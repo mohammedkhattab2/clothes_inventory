@@ -2,7 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' as intl;
-import 'package:clothes_inventory/features/invoices/domain/a4_invoice_view_data.dart';
+import 'package:delta_erp/features/invoices/domain/a4_invoice_view_data.dart';
 
 class A4InvoiceRtlWidget extends StatelessWidget {
   const A4InvoiceRtlWidget({super.key, required this.data, this.logoBytes});

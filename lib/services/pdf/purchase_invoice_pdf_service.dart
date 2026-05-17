@@ -2,10 +2,10 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:easy_localization/easy_localization.dart';
-import 'package:clothes_inventory/core/config/company_settings_service.dart';
-import 'package:clothes_inventory/features/invoices/domain/a4_invoice_view_data.dart';
-import 'package:clothes_inventory/services/database/app_database.dart';
-import 'package:clothes_inventory/services/pdf/a4_invoice_rtl_pdf_builder.dart';
+import 'package:delta_erp/core/config/company_settings_service.dart';
+import 'package:delta_erp/features/invoices/domain/a4_invoice_view_data.dart';
+import 'package:delta_erp/services/database/app_database.dart';
+import 'package:delta_erp/services/pdf/a4_invoice_rtl_pdf_builder.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -28,10 +28,13 @@ class PurchaseInvoicePdfService {
       SELECT p.id, p.invoice_number, p.total_amount, p.created_at,
             a.name AS supplier_name,
             u.full_name AS seller_name,
-            u.username AS seller_username
+            u.username AS seller_username,
+            um.full_name AS modifier_name,
+            um.username AS modifier_username
       FROM purchases p
       LEFT JOIN accounts a ON a.id = p.account_id
-          LEFT JOIN users u ON u.id = p.created_by_user_id
+      LEFT JOIN users u ON u.id = p.created_by_user_id
+      LEFT JOIN users um ON um.id = p.last_modified_by_user_id
       WHERE p.id = ?
       LIMIT 1
       ''',
@@ -60,6 +63,11 @@ class PurchaseInvoicePdfService {
     final issuedBy = sellerName.isNotEmpty
         ? sellerName
         : (sellerUsername.isNotEmpty ? sellerUsername : null);
+    final modName = (purchase['modifier_name']?.toString() ?? '').trim();
+    final modUser = (purchase['modifier_username']?.toString() ?? '').trim();
+    final lastModifiedBy = modName.isNotEmpty
+        ? modName
+        : (modUser.isNotEmpty ? modUser : null);
     final company = _companySettingsService.settings;
     final invoiceData = A4InvoiceViewData(
       companyName: company.name,
@@ -73,6 +81,7 @@ class PurchaseInvoicePdfService {
       partyLabel: 'Supplier'.tr(),
       partyName: purchase['supplier_name']?.toString() ?? '-',
       issuedBy: issuedBy,
+      lastModifiedBy: lastModifiedBy,
       lines: items
           .map(
             (row) => A4InvoiceLine(

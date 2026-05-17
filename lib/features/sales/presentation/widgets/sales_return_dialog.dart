@@ -1,13 +1,13 @@
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
-import 'package:clothes_inventory/core/utils/translation_utils.dart';
-import 'package:clothes_inventory/features/invoices/domain/invoice_suggestion.dart';
-import 'package:clothes_inventory/features/sales/data/sales_repository.dart';
-import 'package:clothes_inventory/features/sales/domain/sale_models.dart';
-import 'package:clothes_inventory/features/sales/presentation/widgets/sales_return_dialog_actions.dart';
-import 'package:clothes_inventory/features/sales/presentation/widgets/sales_return_dialog_header.dart';
-import 'package:clothes_inventory/features/sales/presentation/widgets/sales_return_line_picker_card.dart';
-import 'package:clothes_inventory/features/sales/presentation/widgets/sales_return_sale_id_section.dart';
+import 'package:delta_erp/core/utils/translation_utils.dart';
+import 'package:delta_erp/features/invoices/domain/invoice_suggestion.dart';
+import 'package:delta_erp/features/sales/data/sales_repository.dart';
+import 'package:delta_erp/features/sales/domain/sale_models.dart';
+import 'package:delta_erp/features/sales/presentation/widgets/sales_return_dialog_actions.dart';
+import 'package:delta_erp/features/sales/presentation/widgets/sales_return_dialog_header.dart';
+import 'package:delta_erp/features/sales/presentation/widgets/sales_return_line_picker_card.dart';
+import 'package:delta_erp/features/sales/presentation/widgets/sales_return_sale_id_section.dart';
 
 class SalesReturnDialog extends StatefulWidget {
   const SalesReturnDialog({
@@ -135,20 +135,36 @@ class _SalesReturnDialogState extends State<SalesReturnDialog> {
   bool _resolvingAmendEligibility = false;
 
   InvoiceSuggestion? _lockedSuggestion;
+  bool _pinnedToActiveInvoice = false;
 
-  int? _resolveSaleIdFromField() {
+  Future<int?> _resolveSaleIdForLoad() async {
     final locked = _lockedSuggestion;
     final t = _saleIdController.text.trim();
+    if (t.isEmpty) return null;
+
     if (locked != null) {
       if (t == locked.invoiceNumber.trim()) {
         return locked.id;
       }
-      final parsed = widget.parseFlexibleInt(t);
-      if (parsed == locked.id) {
+      final parsedLocked = widget.parseFlexibleInt(t);
+      if (parsedLocked == locked.id) {
         return locked.id;
       }
     }
-    return widget.parseFlexibleInt(t);
+
+    final parsed = widget.parseFlexibleInt(t);
+    if (parsed != null) {
+      return parsed;
+    }
+
+    final hits = await widget.searchSaleInvoicesForReturn(t);
+    final lower = t.toLowerCase();
+    for (final hit in hits) {
+      if (hit.invoiceNumber.trim().toLowerCase() == lower) {
+        return hit.id;
+      }
+    }
+    return null;
   }
 
   void _invalidateLockIfNeeded() {
@@ -221,6 +237,7 @@ class _SalesReturnDialogState extends State<SalesReturnDialog> {
     if (resolvedInitialSaleId == null) return;
 
     if (resolvedInitialSaleId == widget.activeInvoiceId) {
+      _pinnedToActiveInvoice = true;
       _loadedInvoiceLines = widget.activeInvoiceLines;
       _loadedForSaleId = resolvedInitialSaleId;
       _syncSelectionForLines(_loadedInvoiceLines);
@@ -285,6 +302,25 @@ class _SalesReturnDialogState extends State<SalesReturnDialog> {
     }
   }
 
+  Future<void> _onLoadSaleItemsPressed() async {
+    final id = await _resolveSaleIdForLoad();
+    if (!mounted) return;
+    if (id == null) {
+      setState(() {
+        _attemptedInvoiceItemsLoad = true;
+        _invoiceItemsLoadError =
+            'invoice_return.invoice_not_found'.tr();
+        _loadedInvoiceLines = const [];
+        _loadedForSaleId = null;
+        _selectedSaleItemIds.clear();
+        _selectedQtyByItemId.clear();
+        _canAmendInCartCheck = false;
+      });
+      return;
+    }
+    await _loadItemsForSale(id);
+  }
+
   Future<void> _loadItemsForSale(int id) async {
     setState(() {
       _loadingInvoiceItems = true;
@@ -346,13 +382,14 @@ class _SalesReturnDialogState extends State<SalesReturnDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final saleId = _resolveSaleIdFromField();
-    final canUseInvoicePicker =
-        saleId != null && saleId == widget.activeInvoiceId;
+    final loadedSaleId = _loadedForSaleId;
+    final canUseInvoicePicker = _pinnedToActiveInvoice &&
+        loadedSaleId != null &&
+        loadedSaleId == widget.activeInvoiceId;
 
     final invoiceLinesForPicker = canUseInvoicePicker
         ? widget.activeInvoiceLines
-        : ((saleId != null && saleId == _loadedForSaleId)
+        : (loadedSaleId != null
               ? _loadedInvoiceLines
               : const <SalesInvoiceLine>[]);
 
@@ -365,8 +402,10 @@ class _SalesReturnDialogState extends State<SalesReturnDialog> {
       (line) => _itemErrorFor(line.id, line.remainingQuantity) != null,
     );
 
+    final canLoadItems = _saleIdController.text.trim().isNotEmpty;
+
     final canSubmit =
-        saleId != null &&
+        loadedSaleId != null &&
         selectedLines.isNotEmpty &&
         !_loadingInvoiceItems &&
         !_submittingReturns &&
@@ -379,7 +418,7 @@ class _SalesReturnDialogState extends State<SalesReturnDialog> {
         !_loadingInvoiceItems;
 
     final canAmendLoaded =
-        saleId != null &&
+        loadedSaleId != null &&
         invoiceLinesForPicker.isNotEmpty &&
         _canAmendInCartCheck;
 
@@ -415,27 +454,36 @@ class _SalesReturnDialogState extends State<SalesReturnDialog> {
                           canUseInvoicePicker: canUseInvoicePicker,
                           activeInvoiceNumber:
                               widget.activeInvoiceDisplayNumber,
-                          resolvedSaleId: saleId,
+                          activeInvoiceId: widget.activeInvoiceId,
+                          canLoadItems: canLoadItems,
                           saleIdController: _saleIdController,
                           loadingInvoiceItems: _loadingInvoiceItems,
                           searchSuggestions: widget.searchSaleInvoicesForReturn,
                           onInvoiceQueryActivity: () {
                             _invalidateLockIfNeeded();
                             setState(() {
+                              _pinnedToActiveInvoice = false;
+                              _loadedForSaleId = null;
+                              _loadedInvoiceLines = const [];
                               _selectedSaleItemIds.clear();
                               _selectedQtyByItemId.clear();
                               _invoiceItemsLoadError = null;
+                              _canAmendInCartCheck = false;
                             });
                           },
                           onSuggestionChosen: (suggestion) {
                             setState(() {
                               _lockedSuggestion = suggestion;
+                              _pinnedToActiveInvoice = false;
+                              _loadedForSaleId = null;
+                              _loadedInvoiceLines = const [];
                               _selectedSaleItemIds.clear();
                               _selectedQtyByItemId.clear();
                               _invoiceItemsLoadError = null;
+                              _canAmendInCartCheck = false;
                             });
                           },
-                          onLoadSaleItems: () => _loadItemsForSale(saleId!),
+                          onLoadSaleItems: _onLoadSaleItemsPressed,
                         ),
                         if (invoiceLinesForPicker.isNotEmpty)
                           Column(
@@ -550,7 +598,7 @@ class _SalesReturnDialogState extends State<SalesReturnDialog> {
                   onAmendInCart:
                       amendAvailable
                       ? () async {
-                          final sid = saleId!;
+                          final sid = loadedSaleId!;
                           Navigator.of(context).pop();
                           await widget.onInvoiceAmendedInCart?.call(sid);
                         }
@@ -569,7 +617,7 @@ class _SalesReturnDialogState extends State<SalesReturnDialog> {
                         continue;
                       }
                       final error = await widget.onReturnSaleItem(
-                        saleId: saleId!,
+                        saleId: loadedSaleId!,
                         saleItemId: line.id,
                         quantity: qty,
                         paymentMethod: _method,
@@ -589,7 +637,7 @@ class _SalesReturnDialogState extends State<SalesReturnDialog> {
                       }
                     }
                     await widget.onRefreshInvoiceLines(
-                      saleId!,
+                      loadedSaleId!,
                       preferredItemId: selected.first.id,
                     );
                     if (context.mounted) {

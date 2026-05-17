@@ -1,19 +1,19 @@
 import 'package:equatable/equatable.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:clothes_inventory/core/utils/number_utils.dart';
-import 'package:clothes_inventory/features/accounts/data/accounts_repository.dart';
-import 'package:clothes_inventory/features/products/data/product_repository.dart';
-import 'package:clothes_inventory/features/products/domain/product.dart';
-import 'package:clothes_inventory/features/purchase_ocr/data/purchase_ocr_service.dart';
-import 'package:clothes_inventory/features/purchase_ocr/domain/purchase_ocr_anomaly_detector.dart';
-import 'package:clothes_inventory/features/purchase_ocr/domain/purchase_ocr_intelligence_engine.dart';
-import 'package:clothes_inventory/features/purchase_ocr/domain/purchase_invoice_parser.dart';
-import 'package:clothes_inventory/features/purchase_ocr/domain/purchase_ocr_models.dart';
-import 'package:clothes_inventory/features/purchase_ocr/domain/purchase_ocr_product_matcher.dart';
-import 'package:clothes_inventory/features/purchase_ocr/domain/purchase_ocr_temporal_intelligence.dart';
-import 'package:clothes_inventory/features/purchases/data/purchases_repository.dart';
-import 'package:clothes_inventory/features/purchases/domain/purchase_models.dart';
+import 'package:delta_erp/core/utils/number_utils.dart';
+import 'package:delta_erp/features/accounts/data/accounts_repository.dart';
+import 'package:delta_erp/features/products/data/product_repository.dart';
+import 'package:delta_erp/features/products/domain/product.dart';
+import 'package:delta_erp/features/purchase_ocr/data/purchase_ocr_service.dart';
+import 'package:delta_erp/features/purchase_ocr/domain/purchase_ocr_anomaly_detector.dart';
+import 'package:delta_erp/features/purchase_ocr/domain/purchase_ocr_intelligence_engine.dart';
+import 'package:delta_erp/features/purchase_ocr/domain/purchase_invoice_parser.dart';
+import 'package:delta_erp/features/purchase_ocr/domain/purchase_ocr_models.dart';
+import 'package:delta_erp/features/purchase_ocr/domain/purchase_ocr_product_matcher.dart';
+import 'package:delta_erp/features/purchase_ocr/domain/purchase_ocr_temporal_intelligence.dart';
+import 'package:delta_erp/features/purchases/data/purchases_repository.dart';
+import 'package:delta_erp/features/purchases/domain/purchase_models.dart';
 
 enum PurchaseOcrStatus { idle, processing, ready, saving, success, failure }
 
@@ -390,7 +390,7 @@ class PurchaseOcrCubit extends Cubit<PurchaseOcrState> {
       emit(
         state.copyWith(
           status: PurchaseOcrStatus.failure,
-          error: 'Add at least one item.',
+          error: 'Add at least one product.',
         ),
       );
       return;
@@ -410,7 +410,7 @@ class PurchaseOcrCubit extends Cubit<PurchaseOcrState> {
         emit(
           state.copyWith(
             status: PurchaseOcrStatus.failure,
-            error: 'Quantity must be greater than zero.',
+            error: 'Quantity must be greater than zero',
           ),
         );
         return;

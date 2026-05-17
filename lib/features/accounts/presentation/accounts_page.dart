@@ -2,11 +2,11 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
-import 'package:clothes_inventory/core/widgets/app_error_banner.dart';
-import 'package:clothes_inventory/core/widgets/app_inline_loading_indicator.dart';
-import 'package:clothes_inventory/features/accounts/data/accounts_repository.dart';
-import 'package:clothes_inventory/features/accounts/presentation/widgets/accounts_page_content.dart';
-import 'package:clothes_inventory/services/di/service_locator.dart';
+import 'package:delta_erp/core/widgets/app_error_banner.dart';
+import 'package:delta_erp/core/widgets/app_inline_loading_indicator.dart';
+import 'package:delta_erp/features/accounts/data/accounts_repository.dart';
+import 'package:delta_erp/features/accounts/presentation/widgets/accounts_page_content.dart';
+import 'package:delta_erp/services/di/service_locator.dart';
 
 class AccountsPage extends StatelessWidget {
   const AccountsPage({super.key});

@@ -1,5 +1,5 @@
 import 'package:flutter/foundation.dart';
-import 'package:clothes_inventory/features/auth/domain/auth_user.dart';
+import 'package:delta_erp/features/auth/domain/auth_user.dart';
 
 class SessionService {
   final ValueNotifier<AuthUser?> currentUserListenable =

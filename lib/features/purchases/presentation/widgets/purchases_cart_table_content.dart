@@ -1,10 +1,10 @@
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:clothes_inventory/core/widgets/app_empty_state.dart';
-import 'package:clothes_inventory/features/products/domain/product.dart';
-import 'package:clothes_inventory/features/purchases/domain/purchase_models.dart';
-import 'package:clothes_inventory/features/purchases/presentation/purchases_cubit.dart';
+import 'package:delta_erp/core/widgets/app_empty_state.dart';
+import 'package:delta_erp/features/products/domain/product.dart';
+import 'package:delta_erp/features/purchases/domain/purchase_models.dart';
+import 'package:delta_erp/features/purchases/presentation/purchases_cubit.dart';
 
 class PurchasesCartTableContent extends StatelessWidget {
   const PurchasesCartTableContent({

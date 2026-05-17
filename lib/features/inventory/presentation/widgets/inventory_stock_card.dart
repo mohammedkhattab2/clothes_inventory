@@ -1,6 +1,6 @@
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
-import 'package:clothes_inventory/features/inventory/data/inventory_repository.dart';
+import 'package:delta_erp/features/inventory/data/inventory_repository.dart';
 
 class InventoryStockCard extends StatelessWidget {
   const InventoryStockCard({

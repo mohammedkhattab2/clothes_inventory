@@ -5,17 +5,18 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
-import 'package:clothes_inventory/core/utils/app_paths.dart';
-import 'package:clothes_inventory/services/database/migrations/migration_v1.dart';
-import 'package:clothes_inventory/services/database/migrations/migration_v2.dart';
-import 'package:clothes_inventory/services/database/migrations/migration_v3.dart';
-import 'package:clothes_inventory/services/database/migrations/migration_v4.dart';
-import 'package:clothes_inventory/services/database/migrations/migration_v5.dart';
-import 'package:clothes_inventory/services/database/migrations/migration_v6.dart';
-import 'package:clothes_inventory/services/database/migrations/migration_v7.dart';
-import 'package:clothes_inventory/services/database/migrations/migration_v8.dart';
-import 'package:clothes_inventory/services/database/migrations/migration_v9.dart';
-import 'package:clothes_inventory/services/database/migrations/migration_v10.dart';
+import 'package:delta_erp/core/utils/app_paths.dart';
+import 'package:delta_erp/services/database/migrations/migration_v1.dart';
+import 'package:delta_erp/services/database/migrations/migration_v2.dart';
+import 'package:delta_erp/services/database/migrations/migration_v3.dart';
+import 'package:delta_erp/services/database/migrations/migration_v4.dart';
+import 'package:delta_erp/services/database/migrations/migration_v5.dart';
+import 'package:delta_erp/services/database/migrations/migration_v6.dart';
+import 'package:delta_erp/services/database/migrations/migration_v7.dart';
+import 'package:delta_erp/services/database/migrations/migration_v8.dart';
+import 'package:delta_erp/services/database/migrations/migration_v9.dart';
+import 'package:delta_erp/services/database/migrations/migration_v10.dart';
+import 'package:delta_erp/services/database/migrations/migration_v11.dart';
 
 class AppDatabase {
   AppDatabase._();
@@ -23,7 +24,7 @@ class AppDatabase {
   static final AppDatabase instance = AppDatabase._();
 
   static const _legacyDbName = 'inventory_pos.db';
-  static const _dbVersion = 10;
+  static const _dbVersion = 11;
 
   Database? _db;
 
@@ -75,6 +76,7 @@ class AppDatabase {
         await MigrationV8().up(db);
         await MigrationV9().up(db);
         await MigrationV10().up(db);
+        await MigrationV11().up(db);
         await _ensureProductSalePriceColumns(db);
         await _ensureStockGuards(db);
         await _normalizeStandaloneSettlementPayments(db);
@@ -106,6 +108,9 @@ class AppDatabase {
         }
         if (oldVersion < 10) {
           await MigrationV10().up(db);
+        }
+        if (oldVersion < 11) {
+          await MigrationV11().up(db);
         }
       },
       onOpen: (db) async {

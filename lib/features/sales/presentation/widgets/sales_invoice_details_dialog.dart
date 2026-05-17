@@ -1,16 +1,16 @@
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:clothes_inventory/core/config/company_settings_service.dart';
-import 'package:clothes_inventory/core/widgets/app_empty_state.dart';
-import 'package:clothes_inventory/features/invoices/domain/invoice_print_model.dart';
-import 'package:clothes_inventory/features/invoices/presentation/invoice_details_dialog_constraints.dart';
-import 'package:clothes_inventory/features/invoices/presentation/invoice_payment_display.dart';
-import 'package:clothes_inventory/features/sales/data/sales_repository.dart';
-import 'package:clothes_inventory/features/sales/presentation/widgets/sales_invoice_details_header.dart';
-import 'package:clothes_inventory/features/sales/presentation/widgets/sales_invoice_line_tile.dart';
-import 'package:clothes_inventory/features/sales/presentation/widgets/sales_invoice_metric_card.dart';
-import 'package:clothes_inventory/services/di/service_locator.dart';
+import 'package:delta_erp/core/config/company_settings_service.dart';
+import 'package:delta_erp/core/widgets/app_empty_state.dart';
+import 'package:delta_erp/features/invoices/domain/invoice_print_model.dart';
+import 'package:delta_erp/features/invoices/presentation/invoice_details_dialog_constraints.dart';
+import 'package:delta_erp/features/invoices/presentation/invoice_payment_display.dart';
+import 'package:delta_erp/features/sales/data/sales_repository.dart';
+import 'package:delta_erp/features/sales/presentation/widgets/sales_invoice_details_header.dart';
+import 'package:delta_erp/features/sales/presentation/widgets/sales_invoice_line_tile.dart';
+import 'package:delta_erp/features/sales/presentation/widgets/sales_invoice_metric_card.dart';
+import 'package:delta_erp/services/di/service_locator.dart';
 
 class SalesInvoiceDetailsDialog extends StatefulWidget {
   const SalesInvoiceDetailsDialog({
@@ -90,13 +90,40 @@ class _SalesInvoiceDetailsDialogState extends State<SalesInvoiceDetailsDialog> {
   @override
   void initState() {
     super.initState();
+    _refreshInvoiceSummary();
+    _loadLines();
+  }
+
+  @override
+  void didUpdateWidget(covariant SalesInvoiceDetailsDialog oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _refreshInvoiceSummary();
+    if (oldWidget.invoiceRows != widget.invoiceRows ||
+        oldWidget.activeInvoiceLines != widget.activeInvoiceLines) {
+      if (widget.activeInvoiceLines.isNotEmpty) {
+        setState(() {
+          _sortedLines = [...widget.activeInvoiceLines]
+            ..sort(
+              (a, b) => b.remainingQuantity.compareTo(a.remainingQuantity),
+            );
+        });
+      } else {
+        _loadLines();
+      }
+    }
+  }
+
+  void _refreshInvoiceSummary() {
+    SalesInvoiceSummary? next;
     for (final row in widget.invoiceRows) {
       if (row.id == widget.invoiceId) {
-        _selectedInvoice = row;
+        next = row;
         break;
       }
     }
-    _loadLines();
+    if (next != null && next != _selectedInvoice) {
+      setState(() => _selectedInvoice = next);
+    }
   }
 
   Future<void> _loadLines() async {
@@ -251,53 +278,94 @@ class _SalesInvoiceDetailsDialogState extends State<SalesInvoiceDetailsDialog> {
 
     return widget.animateDialogEntrance(
       Dialog(
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
         child: ConstrainedBox(
           constraints: invoiceDetailsDialogConstraints(context),
           child: Padding(
-            padding: EdgeInsets.all(veryDense ? 12 : 16),
+            padding: EdgeInsets.all(veryDense ? 14 : 20),
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 SalesInvoiceDetailsHeader(
-                  invoiceTitle:
-                      _selectedInvoice?.invoiceNumber ??
-                      (widget.activeInvoiceNumber ?? '#${widget.invoiceId}'),
-                  accountName: _selectedInvoice?.accountName ?? '-',
-                  paymentStatusLabel: paymentStatusLabel,
-                  paymentStatusColor: paymentStatusColor,
+                              invoiceTitle:
+                                  _selectedInvoice?.invoiceNumber ??
+                                  (widget.activeInvoiceNumber ??
+                                      '#${widget.invoiceId}'),
+                              accountName:
+                                  _selectedInvoice?.accountName ?? '-',
+                              paymentStatusLabel: paymentStatusLabel,
+                              paymentStatusColor: paymentStatusColor,
+                              createdByLine: _selectedInvoice == null
+                                  ? null
+                                  : 'invoices.hub.created_by'.tr(
+                                      namedArgs: {
+                                        'name':
+                                            _selectedInvoice!.createdByDisplay,
+                                      },
+                                    ),
+                              lastModifiedByLine:
+                                  _selectedInvoice?.lastModifiedByDisplay ==
+                                          null
+                                      ? null
+                                      : 'invoices.hub.last_modified_by'.tr(
+                                          namedArgs: {
+                                            'name': _selectedInvoice!
+                                                .lastModifiedByDisplay!,
+                                          },
+                                        ),
+                ),
+                SizedBox(height: veryDense ? 10 : 12),
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final cardWidth = constraints.maxWidth > 640
+                        ? (constraints.maxWidth - 8) / 2
+                        : constraints.maxWidth;
+                    return Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        SizedBox(
+                          width: cardWidth,
+                          child: SalesInvoiceMetricCard(
+                            label: 'Total'.tr(),
+                            value: totalAmount.toStringAsFixed(2),
+                            icon: Icons.account_balance_wallet_outlined,
+                          ),
+                        ),
+                        SizedBox(
+                          width: cardWidth,
+                          child: SalesInvoiceMetricCard(
+                            label: 'Paid amount'.tr(),
+                            value: paidAmount.toStringAsFixed(2),
+                            icon: Icons.payments_outlined,
+                            tint: colorScheme.tertiary,
+                          ),
+                        ),
+                        SizedBox(
+                          width: cardWidth,
+                          child: SalesInvoiceMetricCard(
+                            label: 'Outstanding'.tr(),
+                            value: outstandingAmount.toStringAsFixed(2),
+                            icon: Icons.pending_actions_outlined,
+                            tint: colorScheme.primary,
+                          ),
+                        ),
+                        SizedBox(
+                          width: cardWidth,
+                          child: SalesInvoiceMetricCard(
+                            label: 'Items Count'.tr(),
+                            value: _sortedLines.length.toString(),
+                            icon: Icons.inventory_2_outlined,
+                            tint: colorScheme.secondary,
+                          ),
+                        ),
+                      ],
+                    );
+                  },
                 ),
                 SizedBox(height: veryDense ? 8 : 10),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    SalesInvoiceMetricCard(
-                      label: 'Total'.tr(),
-                      value: totalAmount.toStringAsFixed(2),
-                      icon: Icons.account_balance_wallet_outlined,
-                    ),
-                    SalesInvoiceMetricCard(
-                      label: 'Paid amount'.tr(),
-                      value: paidAmount.toStringAsFixed(2),
-                      icon: Icons.payments_outlined,
-                      tint: colorScheme.tertiary,
-                    ),
-                    SalesInvoiceMetricCard(
-                      label: 'Outstanding'.tr(),
-                      value: outstandingAmount.toStringAsFixed(2),
-                      icon: Icons.pending_actions_outlined,
-                      tint: colorScheme.primary,
-                    ),
-                    SalesInvoiceMetricCard(
-                      label: 'Items Count'.tr(),
-                      value: _sortedLines.length.toString(),
-                      icon: Icons.inventory_2_outlined,
-                      tint: colorScheme.secondary,
-                    ),
-                  ],
-                ),
-                SizedBox(height: veryDense ? 6 : 8),
                 Wrap(
                   spacing: 8,
                   runSpacing: 8,
@@ -306,8 +374,8 @@ class _SalesInvoiceDetailsDialogState extends State<SalesInvoiceDetailsDialog> {
                     Text(
                       '${'Payment method'.tr()}: ${invoicePaymentMethodsDisplayLabel(_selectedInvoice?.paymentMethod)}',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
+                            fontWeight: FontWeight.w700,
+                          ),
                     ),
                     Text(
                       '${'Date'.tr()}: ${_selectedInvoice == null ? '-' : widget.dateFormat.format(_selectedInvoice!.createdAt)}',
@@ -339,7 +407,7 @@ class _SalesInvoiceDetailsDialogState extends State<SalesInvoiceDetailsDialog> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
+                SizedBox(height: veryDense ? 8 : 12),
                 Expanded(
                   child: _sortedLines.isEmpty
                       ? AppEmptyState(
@@ -353,17 +421,17 @@ class _SalesInvoiceDetailsDialogState extends State<SalesInvoiceDetailsDialog> {
                             border: Border.all(
                               color: colorScheme.outlineVariant,
                             ),
-                            color: colorScheme.surface,
+                            color: colorScheme.surfaceContainerLowest,
                           ),
                           child: ListView.separated(
                             controller: _dialogListController,
+                            padding: const EdgeInsets.symmetric(vertical: 4),
                             itemCount: filteredLines.length,
                             separatorBuilder: (_, _) =>
                                 const Divider(height: 1),
                             itemBuilder: (context, i) {
                               final line = filteredLines[i];
                               final chosen = _selected?.id == line.id;
-
                               return SalesInvoiceLineTile(
                                 line: line,
                                 selected: chosen,
@@ -377,7 +445,7 @@ class _SalesInvoiceDetailsDialogState extends State<SalesInvoiceDetailsDialog> {
                           ),
                         ),
                 ),
-                SizedBox(height: veryDense ? 10 : 12),
+                const Divider(height: 24),
                 Wrap(
                   alignment: WrapAlignment.end,
                   spacing: 8,

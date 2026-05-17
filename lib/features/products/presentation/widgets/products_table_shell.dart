@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:clothes_inventory/core/widgets/app_loading_indicator.dart';
+import 'package:delta_erp/core/widgets/app_loading_indicator.dart';
 
 class ProductsTableShell extends StatelessWidget {
   const ProductsTableShell({

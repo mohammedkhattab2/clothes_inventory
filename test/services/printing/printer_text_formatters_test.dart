@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:clothes_inventory/features/invoices/domain/invoice_print_model.dart';
-import 'package:clothes_inventory/services/printing/printer_text_formatters.dart';
+import 'package:delta_erp/features/invoices/domain/invoice_print_model.dart';
+import 'package:delta_erp/services/printing/printer_text_formatters.dart';
 
 void main() {
   test('A4 formatter does not reshape Arabic text', () {

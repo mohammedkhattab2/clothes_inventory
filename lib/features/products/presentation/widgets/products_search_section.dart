@@ -1,7 +1,7 @@
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
-import 'package:clothes_inventory/core/widgets/app_text_field.dart';
-import 'package:clothes_inventory/core/widgets/secondary_button.dart';
+import 'package:delta_erp/core/widgets/app_text_field.dart';
+import 'package:delta_erp/core/widgets/secondary_button.dart';
 
 class ProductsSearchSection extends StatelessWidget {
   const ProductsSearchSection({

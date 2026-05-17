@@ -1,8 +1,8 @@
 import 'dart:typed_data';
 
-import 'package:clothes_inventory/services/printing/arabic_print_mode_resolver.dart';
-import 'package:clothes_inventory/services/printing/printer_text_formatters.dart';
-import 'package:clothes_inventory/services/printing/rtl_printer_formatter.dart';
+import 'package:delta_erp/services/printing/arabic_print_mode_resolver.dart';
+import 'package:delta_erp/services/printing/printer_text_formatters.dart';
+import 'package:delta_erp/services/printing/rtl_printer_formatter.dart';
 
 class EscPosInvoiceLine {
   const EscPosInvoiceLine({

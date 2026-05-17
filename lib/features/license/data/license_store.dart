@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:clothes_inventory/core/utils/app_paths.dart';
+import 'package:delta_erp/core/utils/app_paths.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';

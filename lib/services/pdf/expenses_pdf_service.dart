@@ -3,10 +3,8 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:easy_localization/easy_localization.dart';
-import 'package:clothes_inventory/core/config/company_settings_service.dart';
-import 'package:clothes_inventory/features/expenses/data/expenses_repository.dart';
-import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
+import 'package:delta_erp/core/config/company_settings_service.dart';
+import 'package:delta_erp/features/expenses/data/expenses_repository.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
@@ -21,6 +19,7 @@ class ExpensesPdfService {
     required double grossExpenses,
     required double netExpenses,
     required bool includeReversals,
+    required String targetPath,
     DateTime? fromDate,
     DateTime? toDate,
     int? accountId,
@@ -36,12 +35,8 @@ class ExpensesPdfService {
         accountId: accountId,
       );
 
-      final docsDir = await getApplicationDocumentsDirectory();
-      final exportDir = Directory(p.join(docsDir.path, 'exports'));
-      await exportDir.create(recursive: true);
-
-      final fileName = 'expenses_${DateTime.now().millisecondsSinceEpoch}.pdf';
-      final file = File(p.join(exportDir.path, fileName));
+      final file = File(targetPath);
+      await file.parent.create(recursive: true);
       await file.writeAsBytes(bytes, flush: true);
       return file.path;
     } catch (e, st) {

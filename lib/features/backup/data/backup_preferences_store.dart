@@ -2,7 +2,7 @@ import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:clothes_inventory/features/backup/domain/backup_models.dart';
+import 'package:delta_erp/features/backup/domain/backup_models.dart';
 
 class BackupPreferencesStore {
   static const String _lastBackupJsonKey = 'backup.last_backup_json';
@@ -12,6 +12,7 @@ class BackupPreferencesStore {
   static const String _backupDirectoryKey = 'backup.directory';
   static const String _pendingRestoreKey = 'backup.pending_restore';
   static const String _networkModeKey = 'backup.is_network_mode';
+  static const String _lastAutoBackupJsonKey = 'backup.last_auto_backup_json';
 
   Future<SharedPreferences> get _prefs async => SharedPreferences.getInstance();
 
@@ -50,7 +51,7 @@ class BackupPreferencesStore {
 
   Future<int> getDebounceThresholdMinutes() async {
     final prefs = await _prefs;
-    return prefs.getInt(_thresholdMinutesKey) ?? 60 * 24;
+    return prefs.getInt(_thresholdMinutesKey) ?? 60;
   }
 
   Future<void> setDebounceThresholdMinutes(int minutes) async {
@@ -100,5 +101,30 @@ class BackupPreferencesStore {
   Future<void> setNetworkMode(bool enabled) async {
     final prefs = await _prefs;
     await prefs.setBool(_networkModeKey, enabled);
+  }
+
+  Future<void> saveLastAutoBackupResult(AutoBackupLastResult result) async {
+    final prefs = await _prefs;
+    await prefs.setString(
+      _lastAutoBackupJsonKey,
+      jsonEncode(result.toJson()),
+    );
+  }
+
+  Future<AutoBackupLastResult?> getLastAutoBackupResult() async {
+    final prefs = await _prefs;
+    final raw = prefs.getString(_lastAutoBackupJsonKey);
+    if (raw == null || raw.trim().isEmpty) {
+      return null;
+    }
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map<String, dynamic>) {
+        return null;
+      }
+      return AutoBackupLastResult.fromJson(decoded);
+    } catch (_) {
+      return null;
+    }
   }
 }

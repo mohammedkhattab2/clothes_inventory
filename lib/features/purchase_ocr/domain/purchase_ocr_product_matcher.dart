@@ -1,4 +1,4 @@
-import 'package:clothes_inventory/features/products/domain/product.dart';
+import 'package:delta_erp/features/products/domain/product.dart';
 
 class LearnedProductMapping {
   const LearnedProductMapping({

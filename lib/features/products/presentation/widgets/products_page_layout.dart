@@ -1,12 +1,12 @@
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
-import 'package:clothes_inventory/core/widgets/app_page_shell.dart';
-import 'package:clothes_inventory/core/widgets/primary_button.dart';
-import 'package:clothes_inventory/features/products/presentation/widgets/products_filters_actions_section.dart';
-import 'package:clothes_inventory/features/products/presentation/widgets/products_last_export_label.dart';
-import 'package:clothes_inventory/features/products/presentation/widgets/products_search_section.dart';
-import 'package:clothes_inventory/features/products/presentation/widgets/products_summary_section.dart';
-import 'package:clothes_inventory/features/products/presentation/widgets/products_table_shell.dart';
+import 'package:delta_erp/core/widgets/app_page_shell.dart';
+import 'package:delta_erp/core/widgets/primary_button.dart';
+import 'package:delta_erp/features/products/presentation/widgets/products_filters_actions_section.dart';
+import 'package:delta_erp/features/products/presentation/widgets/products_last_export_label.dart';
+import 'package:delta_erp/features/products/presentation/widgets/products_search_section.dart';
+import 'package:delta_erp/features/products/presentation/widgets/products_summary_section.dart';
+import 'package:delta_erp/features/products/presentation/widgets/products_table_shell.dart';
 
 class ProductsPageLayout extends StatelessWidget {
   const ProductsPageLayout({
@@ -14,6 +14,7 @@ class ProductsPageLayout extends StatelessWidget {
     required this.isCompact,
     required this.isDenseViewport,
     required this.isVeryDenseViewport,
+    required this.canManageProducts,
     required this.nameController,
     required this.barcodeController,
     required this.totalProductsCount,
@@ -48,6 +49,7 @@ class ProductsPageLayout extends StatelessWidget {
   final bool isCompact;
   final bool isDenseViewport;
   final bool isVeryDenseViewport;
+  final bool canManageProducts;
   final TextEditingController nameController;
   final TextEditingController barcodeController;
   final int totalProductsCount;
@@ -100,11 +102,12 @@ class ProductsPageLayout extends StatelessWidget {
                   ),
                 ),
               ),
-              PrimaryButton(
-                label: 'Add Product'.tr(),
-                icon: Icons.add,
-                onPressed: onAddProduct,
-              ),
+              if (canManageProducts)
+                PrimaryButton(
+                  label: 'Add Product'.tr(),
+                  icon: Icons.add,
+                  onPressed: onAddProduct,
+                ),
             ],
           ),
           SizedBox(height: sectionGap),
@@ -122,6 +125,7 @@ class ProductsPageLayout extends StatelessWidget {
           AppSectionPanel(
             child: ProductsFiltersActionsSection(
               isVeryDenseViewport: isVeryDenseViewport,
+              canManageProducts: canManageProducts,
               stockFilterIndex: stockFilterIndex,
               lowStockCount: lowStockCount,
               outOfStockCount: outOfStockCount,
@@ -144,6 +148,7 @@ class ProductsPageLayout extends StatelessWidget {
           AppSectionPanel(
             child: ProductsSummarySection(
               isVeryDenseViewport: isVeryDenseViewport,
+              canManageProducts: canManageProducts,
               totalProductsCount: totalProductsCount,
               lowStockCount: lowStockCount,
               outOfStockCount: outOfStockCount,

@@ -13,11 +13,12 @@ class BackupState extends Equatable {
     this.lastBackupSizeBytes,
     this.isHealthy = false,
     this.autoBackupEnabled = true,
-    this.debounceThresholdMinutes = 1440,
+    this.debounceThresholdMinutes = 60,
     this.retentionCount = 5,
     this.isNetworkMode = false,
     this.backupDirectory,
     this.backupHistory = const <BackupSummary>[],
+    this.lastAutoBackupResult,
   });
 
   final BackupStatus status;
@@ -34,6 +35,7 @@ class BackupState extends Equatable {
   final bool isNetworkMode;
   final String? backupDirectory;
   final List<BackupSummary> backupHistory;
+  final AutoBackupLastResult? lastAutoBackupResult;
 
   BackupState copyWith({
     BackupStatus? status,
@@ -50,6 +52,7 @@ class BackupState extends Equatable {
     bool? isNetworkMode,
     String? backupDirectory,
     List<BackupSummary>? backupHistory,
+    AutoBackupLastResult? lastAutoBackupResult,
     bool clearMeta = false,
   }) {
     return BackupState(
@@ -68,6 +71,8 @@ class BackupState extends Equatable {
       isNetworkMode: isNetworkMode ?? this.isNetworkMode,
       backupDirectory: backupDirectory ?? this.backupDirectory,
       backupHistory: backupHistory ?? this.backupHistory,
+      lastAutoBackupResult:
+          lastAutoBackupResult ?? this.lastAutoBackupResult,
     );
   }
 
@@ -87,5 +92,6 @@ class BackupState extends Equatable {
     isNetworkMode,
     backupDirectory,
     backupHistory,
+    lastAutoBackupResult,
   ];
 }

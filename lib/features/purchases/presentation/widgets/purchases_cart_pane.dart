@@ -1,8 +1,8 @@
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:clothes_inventory/features/accounts/data/accounts_repository.dart';
-import 'package:clothes_inventory/features/sales/domain/sale_models.dart';
+import 'package:delta_erp/features/accounts/data/accounts_repository.dart';
+import 'package:delta_erp/features/sales/domain/sale_models.dart';
 
 class PurchasesCartPane extends StatelessWidget {
   const PurchasesCartPane({
@@ -15,6 +15,7 @@ class PurchasesCartPane extends StatelessWidget {
     required this.cartContent,
     required this.suppliers,
     required this.supplierId,
+    required this.supplierPhoneController,
     required this.headerDiscountKind,
     required this.headerDiscountValueController,
     required this.paidController,
@@ -30,6 +31,7 @@ class PurchasesCartPane extends StatelessWidget {
     required this.onHeaderDiscountValueChanged,
     required this.onPaidChanged,
     required this.onPaymentMethodChanged,
+    required this.paymentMethodEditable,
     required this.onCompletePurchase,
     required this.onReturnFromInvoice,
     required this.onCancelInvoice,
@@ -47,6 +49,7 @@ class PurchasesCartPane extends StatelessWidget {
   final Widget cartContent;
   final List<AccountLookup> suppliers;
   final int? supplierId;
+  final TextEditingController supplierPhoneController;
   final InvoiceHeaderDiscountKind headerDiscountKind;
   final TextEditingController headerDiscountValueController;
   final TextEditingController paidController;
@@ -62,6 +65,8 @@ class PurchasesCartPane extends StatelessWidget {
   final ValueChanged<String> onHeaderDiscountValueChanged;
   final ValueChanged<String>? onPaidChanged;
   final ValueChanged<PaymentMethod> onPaymentMethodChanged;
+  /// When false (e.g. deferred settlement), payment method is display-only.
+  final bool paymentMethodEditable;
   final VoidCallback onCompletePurchase;
   final VoidCallback onReturnFromInvoice;
   final VoidCallback onCancelInvoice;
@@ -132,6 +137,16 @@ class PurchasesCartPane extends StatelessWidget {
           ],
         ),
         SizedBox(height: compactGap),
+        TextField(
+          controller: supplierPhoneController,
+          readOnly: invoiceAmendmentMode,
+          keyboardType: TextInputType.phone,
+          textAlign: TextAlign.left,
+          decoration: InputDecoration(
+            labelText: 'Supplier phone'.tr(),
+          ),
+        ),
+        SizedBox(height: compactGap),
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -154,6 +169,9 @@ class PurchasesCartPane extends StatelessWidget {
                 initialValue: paymentMethod,
                 decoration: InputDecoration(
                   labelText: 'Payment method'.tr(),
+                  helperText: paymentMethodEditable || invoiceAmendmentMode
+                      ? null
+                      : 'purchases.deferred_no_payment_method_hint'.tr(),
                 ),
                 items: [
                   DropdownMenuItem(
@@ -169,12 +187,14 @@ class PurchasesCartPane extends StatelessWidget {
                     child: Text('Visa'.tr()),
                   ),
                 ],
-                onChanged: (value) {
-                  if (invoiceAmendmentMode) return;
-                  if (value != null) {
-                    onPaymentMethodChanged(value);
-                  }
-                },
+                onChanged:
+                    (invoiceAmendmentMode || !paymentMethodEditable)
+                    ? null
+                    : (value) {
+                        if (value != null) {
+                          onPaymentMethodChanged(value);
+                        }
+                      },
               ),
             ),
           ],

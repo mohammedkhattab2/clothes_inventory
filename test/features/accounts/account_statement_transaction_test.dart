@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:clothes_inventory/features/accounts/data/account_statement_repository.dart';
+import 'package:delta_erp/features/accounts/data/account_statement_repository.dart';
 
 void main() {
   group('AccountStatementTransaction amounts', () {

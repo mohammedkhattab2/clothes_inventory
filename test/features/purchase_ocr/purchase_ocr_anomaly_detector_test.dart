@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:clothes_inventory/features/purchase_ocr/domain/purchase_ocr_anomaly_detector.dart';
-import 'package:clothes_inventory/features/purchase_ocr/domain/purchase_ocr_models.dart';
+import 'package:delta_erp/features/purchase_ocr/domain/purchase_ocr_anomaly_detector.dart';
+import 'package:delta_erp/features/purchase_ocr/domain/purchase_ocr_models.dart';
 
 class _FakeHistoryProvider implements PurchaseOcrAnomalyHistoryProvider {
   final Map<int, double> avgPriceByProduct = <int, double>{};

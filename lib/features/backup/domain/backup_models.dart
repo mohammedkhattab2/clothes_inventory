@@ -201,6 +201,42 @@ class BackupSummary {
   }
 }
 
+/// Outcome of the most recent automatic backup attempt.
+class AutoBackupLastResult {
+  const AutoBackupLastResult({
+    required this.at,
+    required this.outcome,
+    required this.message,
+    this.trigger,
+  });
+
+  /// `success`, `skipped`, `disabled`, or `error`.
+  final DateTime at;
+  final String outcome;
+  final String message;
+  final String? trigger;
+
+  Map<String, dynamic> toJson() {
+    return {
+      'at': at.toIso8601String(),
+      'outcome': outcome,
+      'message': message,
+      'trigger': trigger,
+    };
+  }
+
+  factory AutoBackupLastResult.fromJson(Map<String, dynamic> json) {
+    return AutoBackupLastResult(
+      at:
+          DateTime.tryParse((json['at'] as String?) ?? '') ??
+          DateTime.fromMillisecondsSinceEpoch(0),
+      outcome: (json['outcome'] as String?) ?? 'unknown',
+      message: (json['message'] as String?) ?? '',
+      trigger: json['trigger'] as String?,
+    );
+  }
+}
+
 class BackupSettings {
   const BackupSettings({
     required this.autoBackupEnabled,

@@ -3,9 +3,9 @@ import 'dart:convert';
 import 'package:cryptography/cryptography.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
-import 'package:clothes_inventory/features/license/data/license_store.dart';
-import 'package:clothes_inventory/features/license/domain/license_models.dart';
-import 'package:clothes_inventory/features/license/domain/machine_fingerprint_service.dart';
+import 'package:delta_erp/features/license/data/license_store.dart';
+import 'package:delta_erp/features/license/domain/license_models.dart';
+import 'package:delta_erp/features/license/domain/machine_fingerprint_service.dart';
 
 class LicenseService {
   LicenseService(this._store, this._fingerprintService);

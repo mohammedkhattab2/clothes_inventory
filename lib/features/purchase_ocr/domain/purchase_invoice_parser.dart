@@ -1,5 +1,5 @@
-import 'package:clothes_inventory/core/utils/number_utils.dart';
-import 'package:clothes_inventory/features/purchase_ocr/domain/purchase_ocr_models.dart';
+import 'package:delta_erp/core/utils/number_utils.dart';
+import 'package:delta_erp/features/purchase_ocr/domain/purchase_ocr_models.dart';
 
 class PurchaseInvoiceParser {
   const PurchaseInvoiceParser();

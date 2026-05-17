@@ -1,9 +1,9 @@
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
-import 'package:clothes_inventory/core/utils/translation_utils.dart';
-import 'package:clothes_inventory/core/widgets/app_inline_loading_indicator.dart';
-import 'package:clothes_inventory/core/widgets/app_page_shell.dart';
-import 'package:clothes_inventory/features/accounts/data/accounts_repository.dart';
+import 'package:delta_erp/core/utils/translation_utils.dart';
+import 'package:delta_erp/core/widgets/app_inline_loading_indicator.dart';
+import 'package:delta_erp/core/widgets/app_page_shell.dart';
+import 'package:delta_erp/features/accounts/data/accounts_repository.dart';
 
 class ExpensesEntrySection extends StatelessWidget {
   const ExpensesEntrySection({

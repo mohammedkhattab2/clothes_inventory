@@ -2,15 +2,15 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:clothes_inventory/features/accounts/data/accounts_repository.dart';
-import 'package:clothes_inventory/features/auth/domain/auth_user.dart';
-import 'package:clothes_inventory/features/products/data/product_repository.dart';
-import 'package:clothes_inventory/features/products/domain/product.dart';
-import 'package:clothes_inventory/features/purchases/data/purchases_repository.dart';
-import 'package:clothes_inventory/features/purchases/domain/purchase_models.dart';
-import 'package:clothes_inventory/services/auth/session_service.dart';
-import 'package:clothes_inventory/services/database/app_database.dart';
-import 'package:clothes_inventory/services/di/service_locator.dart';
+import 'package:delta_erp/features/accounts/data/accounts_repository.dart';
+import 'package:delta_erp/features/auth/domain/auth_user.dart';
+import 'package:delta_erp/features/products/data/product_repository.dart';
+import 'package:delta_erp/features/products/domain/product.dart';
+import 'package:delta_erp/features/purchases/data/purchases_repository.dart';
+import 'package:delta_erp/features/purchases/domain/purchase_models.dart';
+import 'package:delta_erp/services/auth/session_service.dart';
+import 'package:delta_erp/services/database/app_database.dart';
+import 'package:delta_erp/services/di/service_locator.dart';
 
 import '../../support/test_app_isolation.dart';
 

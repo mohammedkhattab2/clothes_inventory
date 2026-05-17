@@ -2,16 +2,17 @@ import 'dart:developer' as dev;
 import 'dart:io';
 
 import 'package:intl/intl.dart';
-import 'package:clothes_inventory/features/products/domain/product.dart';
-import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
+import 'package:delta_erp/features/products/domain/product.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
 class ProductsPdfService {
   const ProductsPdfService();
 
-  Future<String> exportToPdf({required List<Product> items}) async {
+  Future<String> exportToPdf({
+    required List<Product> items,
+    required String targetPath,
+  }) async {
     try {
       final doc = pw.Document();
       final valueFormat = NumberFormat('0.00');
@@ -75,12 +76,8 @@ class ProductsPdfService {
         ),
       );
 
-      final docsDir = await getApplicationDocumentsDirectory();
-      final exportDir = Directory(p.join(docsDir.path, 'exports'));
-      await exportDir.create(recursive: true);
-
-      final fileName = 'products_${DateTime.now().millisecondsSinceEpoch}.pdf';
-      final file = File(p.join(exportDir.path, fileName));
+      final file = File(targetPath);
+      await file.parent.create(recursive: true);
       await file.writeAsBytes(await doc.save(), flush: true);
       return file.path;
     } catch (e, st) {

@@ -1,7 +1,7 @@
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' as intl;
-import 'package:clothes_inventory/features/dashboard/data/dashboard_repository.dart';
+import 'package:delta_erp/features/dashboard/data/dashboard_repository.dart';
 
 class DashboardExecutiveSpotlight extends StatelessWidget {
   const DashboardExecutiveSpotlight({

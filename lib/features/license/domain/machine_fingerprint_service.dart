@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
-import 'package:clothes_inventory/core/utils/app_paths.dart';
+import 'package:delta_erp/core/utils/app_paths.dart';
 import 'package:path/path.dart' as p;
 
 class MachineFingerprintService {

@@ -1,6 +1,6 @@
-import 'package:clothes_inventory/features/accounts/data/accounts_repository.dart';
-import 'package:clothes_inventory/services/database/app_database.dart';
-import 'package:clothes_inventory/services/database/db_transaction_runner.dart';
+import 'package:delta_erp/features/accounts/data/accounts_repository.dart';
+import 'package:delta_erp/services/database/app_database.dart';
+import 'package:delta_erp/services/database/db_transaction_runner.dart';
 import 'package:sqflite/sqflite.dart';
 
 class ExpenseRecord {

@@ -1,8 +1,8 @@
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
-import 'package:clothes_inventory/core/widgets/app_brand_header.dart';
-import 'package:clothes_inventory/core/widgets/app_page_shell.dart';
-import 'package:clothes_inventory/core/widgets/primary_button.dart';
+import 'package:delta_erp/core/widgets/app_brand_header.dart';
+import 'package:delta_erp/core/widgets/app_page_shell.dart';
+import 'package:delta_erp/core/widgets/primary_button.dart';
 
 class ProductsHeaderSection extends StatelessWidget {
   const ProductsHeaderSection({

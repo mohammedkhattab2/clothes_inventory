@@ -1,7 +1,7 @@
 import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:clothes_inventory/features/dashboard/data/dashboard_repository.dart';
-import 'package:clothes_inventory/services/pdf/dashboard_pdf_service.dart';
+import 'package:delta_erp/features/dashboard/data/dashboard_repository.dart';
+import 'package:delta_erp/services/pdf/dashboard_pdf_service.dart';
 import 'dart:typed_data';
 
 String buildDashboardDrillDownRoute({
@@ -158,7 +158,7 @@ class DashboardCubit extends Cubit<DashboardState> {
         ),
       );
     } catch (e) {
-      emit(state.copyWith(loading: false, error: e.toString()));
+      emit(state.copyWith(loading: false, error: _userFacingError(e)));
     }
   }
 
@@ -237,6 +237,7 @@ class DashboardCubit extends Cubit<DashboardState> {
   }
 
   Future<String> exportDashboardPdf({
+    required String targetPath,
     Uint8List? topProductsChart,
     Uint8List? trendChart,
     bool includeOwnerAnalytics = true,
@@ -253,6 +254,7 @@ class DashboardCubit extends Cubit<DashboardState> {
         fromDate: state.fromDate,
         toDate: state.toDate,
         granularity: state.granularity,
+        targetPath: targetPath,
         includeOwnerAnalytics: includeOwnerAnalytics,
         preparedByName: preparedByName,
         categoryLabel: selectedCategoryLabel(),
@@ -263,7 +265,7 @@ class DashboardCubit extends Cubit<DashboardState> {
       emit(state.copyWith(exporting: false, lastExportPath: path));
       return path;
     } catch (e) {
-      emit(state.copyWith(exporting: false, error: e.toString()));
+      emit(state.copyWith(exporting: false, error: _userFacingError(e)));
       rethrow;
     }
   }
@@ -324,7 +326,15 @@ class DashboardCubit extends Cubit<DashboardState> {
         ),
       );
     } catch (e) {
-      emit(state.copyWith(loading: false, error: e.toString()));
+      emit(state.copyWith(loading: false, error: _userFacingError(e)));
     }
+  }
+
+  String _userFacingError(Object error) {
+    final raw = error.toString();
+    if (raw.contains('Bad state: Dashboard snapshot is not loaded yet.')) {
+      return 'dashboard.snapshot_unavailable';
+    }
+    return 'dashboard.unexpected_error';
   }
 }

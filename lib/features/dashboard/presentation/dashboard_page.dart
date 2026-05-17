@@ -5,22 +5,23 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:clothes_inventory/core/widgets/app_brand_header.dart';
-import 'package:clothes_inventory/core/widgets/app_error_banner.dart';
-import 'package:clothes_inventory/core/widgets/app_inline_loading_indicator.dart';
-import 'package:clothes_inventory/core/widgets/app_loading_indicator.dart';
-import 'package:clothes_inventory/core/widgets/app_page_shell.dart';
-import 'package:clothes_inventory/features/auth/domain/auth_user.dart';
-import 'package:clothes_inventory/features/dashboard/data/dashboard_repository.dart';
-import 'package:clothes_inventory/features/dashboard/presentation/dashboard_cubit.dart';
-import 'package:clothes_inventory/features/dashboard/presentation/widgets/dashboard_charts_section.dart';
-import 'package:clothes_inventory/features/dashboard/presentation/widgets/dashboard_executive_spotlight.dart';
-import 'package:clothes_inventory/features/dashboard/presentation/widgets/dashboard_filters.dart';
-import 'package:clothes_inventory/features/dashboard/presentation/widgets/dashboard_kpi_grid.dart';
-import 'package:clothes_inventory/features/dashboard/presentation/widgets/dashboard_top_suppliers_card.dart';
-import 'package:clothes_inventory/services/auth/session_service.dart';
-import 'package:clothes_inventory/services/di/service_locator.dart';
-import 'package:clothes_inventory/services/platform/folder_opener_service.dart';
+import 'package:delta_erp/core/widgets/app_brand_header.dart';
+import 'package:delta_erp/core/widgets/app_error_banner.dart';
+import 'package:delta_erp/core/widgets/app_inline_loading_indicator.dart';
+import 'package:delta_erp/core/widgets/app_loading_indicator.dart';
+import 'package:delta_erp/core/widgets/app_page_shell.dart';
+import 'package:delta_erp/features/auth/domain/auth_user.dart';
+import 'package:delta_erp/features/dashboard/data/dashboard_repository.dart';
+import 'package:delta_erp/features/dashboard/presentation/dashboard_cubit.dart';
+import 'package:delta_erp/features/dashboard/presentation/widgets/dashboard_charts_section.dart';
+import 'package:delta_erp/features/dashboard/presentation/widgets/dashboard_executive_spotlight.dart';
+import 'package:delta_erp/features/dashboard/presentation/widgets/dashboard_filters.dart';
+import 'package:delta_erp/features/dashboard/presentation/widgets/dashboard_kpi_grid.dart';
+import 'package:delta_erp/features/dashboard/presentation/widgets/dashboard_top_suppliers_card.dart';
+import 'package:delta_erp/services/auth/session_service.dart';
+import 'package:delta_erp/services/di/service_locator.dart';
+import 'package:delta_erp/services/export/user_export_path_picker.dart';
+import 'package:delta_erp/services/platform/folder_opener_service.dart';
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
@@ -134,7 +135,7 @@ class _DashboardPageState extends State<DashboardPage> {
                 SizedBox(height: sectionGap),
                 if (state.error != null && snapshot != null) ...[
                   AppErrorBanner(
-                    message: state.error!,
+                    message: state.error!.tr(),
                     onRetry: () => context.read<DashboardCubit>().initialize(),
                     retryLabel: 'Refresh'.tr(),
                   ),
@@ -152,7 +153,7 @@ class _DashboardPageState extends State<DashboardPage> {
                       child: ConstrainedBox(
                         constraints: const BoxConstraints(maxWidth: 680),
                         child: AppErrorBanner(
-                          message: state.error!,
+                          message: state.error!.tr(),
                           onRetry: () =>
                               context.read<DashboardCubit>().initialize(),
                           retryLabel: 'Refresh'.tr(),
@@ -208,10 +209,20 @@ class _DashboardPageState extends State<DashboardPage> {
     final cubit = context.read<DashboardCubit>();
     final currentUser = getIt<SessionService>().currentUser;
     final includeOwnerAnalytics = currentUser?.role == UserRole.owner;
+
+    final targetPath = await getIt<UserExportPathPicker>().pickSavePath(
+      dialogTitle: 'export.save_dialog_title'.tr(),
+      suggestedFileName:
+          'dashboard_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.pdf',
+      extensions: const ['pdf'],
+    );
+    if (targetPath == null) return;
+
     try {
       final topProductsImage = await _capturePng(_topChartKey);
       final trendImage = await _capturePng(_trendChartKey);
       final path = await cubit.exportDashboardPdf(
+        targetPath: targetPath,
         topProductsChart: topProductsImage,
         trendChart: trendImage,
         includeOwnerAnalytics: includeOwnerAnalytics,

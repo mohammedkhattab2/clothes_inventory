@@ -1,12 +1,13 @@
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
-import 'package:clothes_inventory/core/widgets/app_inline_loading_indicator.dart';
-import 'package:clothes_inventory/features/products/presentation/widgets/products_summary_chip.dart';
+import 'package:delta_erp/core/widgets/app_inline_loading_indicator.dart';
+import 'package:delta_erp/features/products/presentation/widgets/products_summary_chip.dart';
 
 class ProductsFiltersActionsSection extends StatelessWidget {
   const ProductsFiltersActionsSection({
     super.key,
     required this.isVeryDenseViewport,
+    required this.canManageProducts,
     required this.stockFilterIndex,
     required this.lowStockCount,
     required this.outOfStockCount,
@@ -25,6 +26,7 @@ class ProductsFiltersActionsSection extends StatelessWidget {
   });
 
   final bool isVeryDenseViewport;
+  final bool canManageProducts;
   final int stockFilterIndex;
   final int lowStockCount;
   final int outOfStockCount;
@@ -157,7 +159,7 @@ class ProductsFiltersActionsSection extends StatelessWidget {
           ),
         ),
         OutlinedButton.icon(
-          onPressed: savingImportTemplate
+          onPressed: !canManageProducts || savingImportTemplate
               ? null
               : () async {
                   await onDownloadImportTemplate();
@@ -180,7 +182,7 @@ class ProductsFiltersActionsSection extends StatelessWidget {
           ),
         ),
         FilledButton.icon(
-          onPressed: importingProducts
+          onPressed: !canManageProducts || importingProducts
               ? null
               : () async {
                   await onImportProducts();

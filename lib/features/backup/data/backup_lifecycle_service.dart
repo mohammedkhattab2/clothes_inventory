@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:clothes_inventory/features/backup/data/backup_logger.dart';
-import 'package:clothes_inventory/features/backup/data/backup_preferences_store.dart';
-import 'package:clothes_inventory/features/backup/domain/backup_repository.dart';
+import 'package:delta_erp/features/backup/data/backup_logger.dart';
+import 'package:delta_erp/features/backup/data/backup_preferences_store.dart';
+import 'package:delta_erp/features/backup/domain/backup_repository.dart';
 
 class BackupLifecycleService {
   BackupLifecycleService({
@@ -46,6 +46,15 @@ class BackupLifecycleService {
   Future<void> handleAppExit() async {
     final result = await _repository.runAutoBackupIfDue(trigger: 'exit');
     _logger.info('auto_backup_exit_result', {
+      'success': result.success,
+      'message': result.message,
+      'errorCode': result.errorCode,
+    });
+  }
+
+  Future<void> handleAppBackground() async {
+    final result = await _repository.runAutoBackupIfDue(trigger: 'background');
+    _logger.info('auto_backup_background_result', {
       'success': result.success,
       'message': result.message,
       'errorCode': result.errorCode,

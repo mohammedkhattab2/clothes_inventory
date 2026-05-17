@@ -8,15 +8,15 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 
-import 'package:clothes_inventory/core/utils/app_paths.dart';
-import 'package:clothes_inventory/features/backup/data/backup_logger.dart';
-import 'package:clothes_inventory/features/backup/data/backup_preferences_store.dart';
-import 'package:clothes_inventory/features/backup/data/file_operation_executor.dart';
-import 'package:clothes_inventory/features/backup/domain/backup_models.dart';
-import 'package:clothes_inventory/features/backup/domain/backup_repository.dart';
-import 'package:clothes_inventory/features/products/data/product_repository.dart';
-import 'package:clothes_inventory/services/database/app_database.dart';
-import 'package:clothes_inventory/services/database/maintenance_coordinator.dart';
+import 'package:delta_erp/core/utils/app_paths.dart';
+import 'package:delta_erp/features/backup/data/backup_logger.dart';
+import 'package:delta_erp/features/backup/data/backup_preferences_store.dart';
+import 'package:delta_erp/features/backup/data/file_operation_executor.dart';
+import 'package:delta_erp/features/backup/domain/backup_models.dart';
+import 'package:delta_erp/features/backup/domain/backup_repository.dart';
+import 'package:delta_erp/features/products/data/product_repository.dart';
+import 'package:delta_erp/services/database/app_database.dart';
+import 'package:delta_erp/services/database/maintenance_coordinator.dart';
 
 class BackupRepositoryImpl implements BackupRepository {
   BackupRepositoryImpl({
@@ -179,7 +179,12 @@ class BackupRepositoryImpl implements BackupRepository {
         sizeBytes: backupSize,
       );
       await _preferences.saveLastBackup(summary);
-      await _preferences.setBackupDirectory(p.dirname(targetPath));
+      if (!isAuto) {
+        final savedDir = await _preferences.getBackupDirectory();
+        if (savedDir == null || savedDir.trim().isEmpty) {
+          await _preferences.setBackupDirectory(p.dirname(targetPath));
+        }
+      }
       final retention = await _preferences.getRetentionCount();
       await pruneBackups(keepLatest: retention);
 
@@ -451,7 +456,13 @@ class BackupRepositoryImpl implements BackupRepository {
   Future<OperationResult> runAutoBackupIfDue({required String trigger}) async {
     final enabled = await _preferences.isAutoBackupEnabled();
     if (!enabled) {
-      return OperationResult.ok('Auto backup is disabled.');
+      final result = OperationResult.ok('Auto backup is disabled.');
+      await _recordAutoBackupResult(
+        trigger: trigger,
+        outcome: 'disabled',
+        message: result.message,
+      );
+      return result;
     }
 
     final thresholdMinutes = await _preferences.getDebounceThresholdMinutes();
@@ -460,13 +471,20 @@ class BackupRepositoryImpl implements BackupRepository {
     if (lastBackup != null) {
       final delta = now.difference(lastBackup.createdAt);
       if (delta.inMinutes < thresholdMinutes) {
-        return OperationResult.ok(
+        final result = OperationResult.ok(
           'Auto backup skipped due to debounce threshold.',
           meta: {
             'trigger': trigger,
             'lastBackupAt': lastBackup.createdAt.toIso8601String(),
+            'thresholdMinutes': thresholdMinutes,
           },
         );
+        await _recordAutoBackupResult(
+          trigger: trigger,
+          outcome: 'skipped',
+          message: result.message,
+        );
+        return result;
       }
     }
 
@@ -474,7 +492,49 @@ class BackupRepositoryImpl implements BackupRepository {
     final destination = preferredDir == null || preferredDir.trim().isEmpty
         ? null
         : p.join(preferredDir, _generateBackupFileName());
-    return createBackup(destinationPath: destination, isAuto: true);
+    try {
+      final result = await createBackup(
+        destinationPath: destination,
+        isAuto: true,
+      );
+      await _recordAutoBackupResult(
+        trigger: trigger,
+        outcome: result.success ? 'success' : 'error',
+        message: result.message,
+      );
+      return result;
+    } catch (error, stackTrace) {
+      _logger.error('auto_backup_failed', error, stackTrace, {
+        'trigger': trigger,
+      });
+      final message = error is StateError
+          ? 'Another maintenance operation is already running.'
+          : 'Auto backup failed unexpectedly.';
+      await _recordAutoBackupResult(
+        trigger: trigger,
+        outcome: 'error',
+        message: message,
+      );
+      return OperationResult.fail(
+        message,
+        errorCode: BackupErrorCodes.unknownError,
+      );
+    }
+  }
+
+  Future<void> _recordAutoBackupResult({
+    required String trigger,
+    required String outcome,
+    required String message,
+  }) async {
+    await _preferences.saveLastAutoBackupResult(
+      AutoBackupLastResult(
+        at: DateTime.now().toUtc(),
+        outcome: outcome,
+        message: message,
+        trigger: trigger,
+      ),
+    );
   }
 
   @override
@@ -531,6 +591,11 @@ class BackupRepositoryImpl implements BackupRepository {
   @override
   Future<BackupSummary?> getLastBackupInfo() {
     return _preferences.getLastBackup();
+  }
+
+  @override
+  Future<AutoBackupLastResult?> getLastAutoBackupResult() {
+    return _preferences.getLastAutoBackupResult();
   }
 
   @override
@@ -649,7 +714,7 @@ class BackupRepositoryImpl implements BackupRepository {
 
     final docsDir = await getApplicationDocumentsDirectory();
     final backupDir = Directory(
-      p.join(docsDir.path, 'ClothesInventory', 'Backups'),
+      p.join(docsDir.path, 'DeltaFlow', 'Backups'),
     );
     if (!await backupDir.exists()) {
       await backupDir.create(recursive: true);

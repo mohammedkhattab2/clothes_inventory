@@ -1,6 +1,6 @@
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
-import 'package:clothes_inventory/features/products/domain/product.dart';
+import 'package:delta_erp/features/products/domain/product.dart';
 
 class PurchasesProductsPane extends StatelessWidget {
   const PurchasesProductsPane({

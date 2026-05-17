@@ -3,11 +3,15 @@ import 'dart:async';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:clothes_inventory/features/products/domain/duplicate_product_barcode_exception.dart';
-import 'package:clothes_inventory/features/products/domain/product.dart';
+import 'package:delta_erp/features/products/domain/duplicate_product_barcode_exception.dart';
+import 'package:delta_erp/features/products/domain/product.dart';
+import 'package:delta_erp/services/printing/product_barcode_label_printer.dart';
+import 'package:printing/printing.dart';
 
 class PurchasesProductDialog {
   const PurchasesProductDialog._();
+
+  static const int _maxBarcodeLabelCopies = 500;
 
   static void _disposeDialogResources({
     required List<TextEditingController> controllers,
@@ -40,6 +44,7 @@ class PurchasesProductDialog {
       required int quantity,
     })?
     onPrintBarcode,
+    ProductBarcodeLabelPrinter? barcodeLabelPrinter,
     required Future<Product> Function(Product payload) onCreateProduct,
     required Future<void> Function(Product payload) onUpdateProduct,
     required Future<void> Function() onRefreshSearch,
@@ -123,6 +128,31 @@ class PurchasesProductDialog {
         return '${t[0].toUpperCase()}${t.substring(1)}';
       }
       return t;
+    }
+
+    int requestedBarcodeLabelCopies() {
+      final rawQuantity = existingProduct == null
+          ? (parseFlexibleNumber(quantityController.text.trim()) ?? 1)
+          : 1.0;
+      return rawQuantity < 1 ? 1 : rawQuantity.round();
+    }
+
+    int effectiveBarcodeLabelCopies() =>
+        requestedBarcodeLabelCopies().clamp(1, _maxBarcodeLabelCopies);
+
+    void notifyIfBarcodeLabelCopiesCapped(BuildContext ctx) {
+      if (requestedBarcodeLabelCopies() > _maxBarcodeLabelCopies &&
+          ctx.mounted) {
+        ScaffoldMessenger.of(ctx).showSnackBar(
+          SnackBar(
+            content: Text(
+              'purchases.barcode_labels_limited'.tr(
+                namedArgs: {'max': '$_maxBarcodeLabelCopies'},
+              ),
+            ),
+          ),
+        );
+      }
     }
 
     Future<void> tryAutoGenerateBarcode(
@@ -512,6 +542,110 @@ class PurchasesProductDialog {
               },
             ),
             actions: [
+              if (barcodeLabelPrinter != null)
+                OutlinedButton.icon(
+                  onPressed: generatingBarcode
+                      ? null
+                      : () async {
+                          final productName = nameController.text.trim();
+                          final productBarcode =
+                              normalizeBarcodeForSave(barcodeController.text);
+                          if (productName.isEmpty || productBarcode.isEmpty) {
+                            ScaffoldMessenger.of(dialogContext).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  'Enter product name and barcode first'.tr(),
+                                ),
+                              ),
+                            );
+                            return;
+                          }
+
+                          notifyIfBarcodeLabelCopiesCapped(dialogContext);
+                          final copies = effectiveBarcodeLabelCopies();
+                          final printer = barcodeLabelPrinter;
+
+                          try {
+                            final bytes = await printer.buildLabelPdfBytes(
+                              productName: productName,
+                              barcodeValue: productBarcode,
+                              copies: copies,
+                            );
+                            if (!dialogContext.mounted) return;
+                            await showDialog<void>(
+                              context: dialogContext,
+                              builder: (ctx) => Dialog(
+                                insetPadding: const EdgeInsets.all(16),
+                                child: SizedBox(
+                                  width: 420,
+                                  height: 560,
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.stretch,
+                                    children: [
+                                      Padding(
+                                        padding: const EdgeInsets.fromLTRB(
+                                          12,
+                                          10,
+                                          8,
+                                          8,
+                                        ),
+                                        child: Row(
+                                          children: [
+                                            Expanded(
+                                              child: Text(
+                                                'purchases.barcode_labels_preview_title'
+                                                    .tr(
+                                                      namedArgs: {
+                                                        'count': '$copies',
+                                                      },
+                                                    ),
+                                                style: Theme.of(ctx)
+                                                    .textTheme
+                                                    .titleMedium
+                                                    ?.copyWith(
+                                                      fontWeight:
+                                                          FontWeight.w800,
+                                                    ),
+                                              ),
+                                            ),
+                                            IconButton(
+                                              onPressed: () =>
+                                                  Navigator.of(ctx).pop(),
+                                              icon: const Icon(Icons.close),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      const Divider(height: 1),
+                                      Expanded(
+                                        child: PdfPreview(
+                                          padding: EdgeInsets.zero,
+                                          build: (format) async => bytes,
+                                          canChangeOrientation: false,
+                                          canChangePageFormat: false,
+                                          canDebug: false,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            );
+                          } catch (e) {
+                            if (!dialogContext.mounted) return;
+                            ScaffoldMessenger.of(dialogContext).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  '${'Preview failed'.tr()}: $e',
+                                ),
+                              ),
+                            );
+                          }
+                        },
+                  icon: const Icon(Icons.visibility_outlined),
+                  label: Text('Preview'.tr()),
+                ),
               if (onPrintBarcode != null)
                 OutlinedButton.icon(
                   onPressed: generatingBarcode
@@ -531,15 +665,8 @@ class PurchasesProductDialog {
                             return;
                           }
 
-                          final rawQuantity = existingProduct == null
-                              ? (parseFlexibleNumber(
-                                      quantityController.text.trim(),
-                                    ) ??
-                                    1)
-                              : 1;
-                          final printQuantity = rawQuantity < 1
-                              ? 1
-                              : rawQuantity.round();
+                          notifyIfBarcodeLabelCopiesCapped(dialogContext);
+                          final printQuantity = effectiveBarcodeLabelCopies();
                           await onPrintBarcode(
                             productName: productName,
                             barcode: productBarcode,

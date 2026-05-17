@@ -3,7 +3,7 @@ import 'dart:ui' as ui;
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:clothes_inventory/features/products/domain/product.dart';
+import 'package:delta_erp/features/products/domain/product.dart';
 
 /// Single-row POS controls: product name autocomplete + barcode field.
 class SalesCheckoutToolbar extends StatelessWidget {

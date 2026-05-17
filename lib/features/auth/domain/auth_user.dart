@@ -15,7 +15,9 @@ extension UserRoleCodec on UserRole {
   }
 
   bool get canViewAllInvoices =>
-      this == UserRole.owner || this == UserRole.manager;
+      this == UserRole.owner ||
+      this == UserRole.manager ||
+      this == UserRole.cashier;
 }
 
 UserRole userRoleFromDb(String raw) {

@@ -1,7 +1,7 @@
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:clothes_inventory/features/sales/data/sales_repository.dart';
+import 'package:delta_erp/features/sales/data/sales_repository.dart';
 
 class SalesReturnLinePickerCard extends StatelessWidget {
   const SalesReturnLinePickerCard({

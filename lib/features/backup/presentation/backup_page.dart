@@ -4,12 +4,19 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:path/path.dart' as p;
 
-import 'package:clothes_inventory/core/utils/translation_utils.dart';
-import 'package:clothes_inventory/core/widgets/app_page_shell.dart';
-import 'package:clothes_inventory/features/backup/presentation/backup_cubit.dart';
-import 'package:clothes_inventory/services/di/service_locator.dart';
-import 'package:clothes_inventory/features/backup/data/backup_lifecycle_service.dart';
+import 'package:delta_erp/core/utils/translation_utils.dart';
+import 'package:delta_erp/features/backup/domain/backup_models.dart';
+import 'package:delta_erp/core/widgets/app_page_shell.dart';
+import 'package:delta_erp/features/backup/presentation/backup_cubit.dart';
+import 'package:delta_erp/services/di/service_locator.dart';
+import 'package:delta_erp/features/backup/data/backup_lifecycle_service.dart';
+
+/// ASCII-only titles for native file dialogs (avoids Windows plugin crashes).
+const _kSaveBackupDialogTitle = 'Save backup package';
+const _kRestoreBackupDialogTitle = 'Select backup package';
+const _kPickFolderDialogTitle = 'Select backup folder';
 
 class BackupPage extends StatelessWidget {
   const BackupPage({super.key});
@@ -33,7 +40,7 @@ class _BackupView extends StatefulWidget {
 class _BackupViewState extends State<_BackupView> {
   bool _settingsInitialized = false;
   bool _autoBackupEnabled = true;
-  int _debounceThresholdMinutes = 1440;
+  int _debounceThresholdMinutes = 60;
   int _retentionCount = 5;
   bool _networkMode = false;
   String? _backupDirectory;
@@ -249,6 +256,11 @@ class _BackupViewState extends State<_BackupView> {
                           title: Text('backup.auto_enabled'.tr()),
                           subtitle: Text('backup.auto_enabled_hint'.tr()),
                         ),
+                        _buildInfoRow(
+                          context,
+                          label: 'backup.auto_last_result'.tr(),
+                          value: _formatAutoBackupResult(state.lastAutoBackupResult),
+                        ),
                         SwitchListTile.adaptive(
                           contentPadding: EdgeInsets.zero,
                           value: _networkMode,
@@ -277,6 +289,13 @@ class _BackupViewState extends State<_BackupView> {
                                   });
                                 },
                         ),
+                        Text(
+                          'backup.threshold_hint'.tr(),
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
                         _buildInfoRow(
                           context,
                           label: 'backup.retention'.tr(),
@@ -296,6 +315,13 @@ class _BackupViewState extends State<_BackupView> {
                                   });
                                 },
                         ),
+                        Text(
+                          'backup.retention_hint'.tr(),
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
                         _buildInfoRow(
                           context,
                           label: 'backup.custom_location'.tr(),
@@ -416,6 +442,42 @@ class _BackupViewState extends State<_BackupView> {
     );
   }
 
+  String _formatAutoBackupResult(AutoBackupLastResult? result) {
+    if (result == null) {
+      return 'backup.not_available'.tr();
+    }
+    final when = DateFormat('yyyy-MM-dd HH:mm:ss').format(result.at.toLocal());
+    final outcomeKey = switch (result.outcome) {
+      'success' => 'backup.auto_outcome_success',
+      'skipped' => 'backup.auto_outcome_skipped',
+      'disabled' => 'backup.auto_outcome_disabled',
+      'error' => 'backup.auto_outcome_error',
+      _ => 'backup.auto_outcome_unknown',
+    };
+    final outcome = outcomeKey.tr();
+    final trigger = result.trigger == null || result.trigger!.trim().isEmpty
+        ? ''
+        : ' (${result.trigger})';
+    return '$when — $outcome$trigger';
+  }
+
+  String _suggestedBackupFileName() {
+    return 'backup_${DateFormat('yyyy-MM-dd_HH-mm-ss-SSS').format(DateTime.now())}.zip';
+  }
+
+  String? _pickBackupZipPath(FilePickerResult? picked) {
+    if (picked == null || picked.files.isEmpty) {
+      return null;
+    }
+    return picked.files.first.path;
+  }
+
+  void _showPickerError(BuildContext context) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('backup.picker_failed'.tr())),
+    );
+  }
+
   String _formatBytes(int bytes) {
     if (bytes < 1024) return '$bytes B';
     if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
@@ -464,14 +526,56 @@ class _BackupViewState extends State<_BackupView> {
   }
 
   Future<void> _onCreateBackup(BuildContext context, BackupCubit cubit) async {
-    final suggested =
-        'backup_${DateFormat('yyyy-MM-dd_HH-mm-ss-SSS').format(DateTime.now())}.zip';
-    final targetPath = await FilePicker.platform.saveFile(
-      dialogTitle: 'backup.save_dialog'.tr(),
-      fileName: suggested,
-      type: FileType.custom,
-      allowedExtensions: const ['zip'],
-    );
+    final customDir = _backupDirectory?.trim();
+    if (customDir != null && customDir.isNotEmpty) {
+      final fileName = _suggestedBackupFileName();
+      final targetPath = p.join(customDir, fileName);
+      if (!context.mounted) {
+        return;
+      }
+      final confirm = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) {
+          return AlertDialog(
+            title: Text('backup.create_to_folder_title'.tr()),
+            content: Text(
+              'backup.create_to_folder'.tr(namedArgs: {'path': targetPath}),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+                child: Text('Cancel'.tr()),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(dialogContext).pop(true),
+                child: Text('backup.create'.tr()),
+              ),
+            ],
+          );
+        },
+      );
+      if (confirm != true || !context.mounted) {
+        return;
+      }
+      await _runCreateBackup(context, cubit, targetPath);
+      return;
+    }
+
+    String? targetPath;
+    try {
+      targetPath = await FilePicker.platform.saveFile(
+        dialogTitle: _kSaveBackupDialogTitle,
+        fileName: _suggestedBackupFileName(),
+        type: FileType.custom,
+        allowedExtensions: const ['zip'],
+      );
+    } catch (_) {
+      if (!context.mounted) {
+        return;
+      }
+      _showPickerError(context);
+      return;
+    }
 
     if (targetPath == null || targetPath.trim().isEmpty) {
       return;
@@ -481,6 +585,14 @@ class _BackupViewState extends State<_BackupView> {
       return;
     }
 
+    await _runCreateBackup(context, cubit, targetPath);
+  }
+
+  Future<void> _runCreateBackup(
+    BuildContext context,
+    BackupCubit cubit,
+    String targetPath,
+  ) async {
     final result = await cubit.createBackup(destinationPath: targetPath);
     final requiresOverwrite =
         (result.meta ??
@@ -510,7 +622,7 @@ class _BackupViewState extends State<_BackupView> {
       },
     );
 
-    if (confirm == true) {
+    if (confirm == true && context.mounted) {
       await cubit.createBackup(
         destinationPath: targetPath,
         overwriteConfirmed: true,
@@ -519,14 +631,23 @@ class _BackupViewState extends State<_BackupView> {
   }
 
   Future<void> _onRestoreBackup(BuildContext context, BackupCubit cubit) async {
-    final picked = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: const ['zip'],
-      allowMultiple: false,
-      dialogTitle: 'backup.restore_dialog'.tr(),
-    );
+    FilePickerResult? picked;
+    try {
+      picked = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: const ['zip'],
+        allowMultiple: false,
+        dialogTitle: _kRestoreBackupDialogTitle,
+      );
+    } catch (_) {
+      if (!context.mounted) {
+        return;
+      }
+      _showPickerError(context);
+      return;
+    }
 
-    final path = picked?.files.single.path;
+    final path = _pickBackupZipPath(picked);
     if (path == null || path.trim().isEmpty) {
       return;
     }
@@ -574,14 +695,23 @@ class _BackupViewState extends State<_BackupView> {
     BuildContext context,
     BackupCubit cubit,
   ) async {
-    final picked = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: const ['zip'],
-      allowMultiple: false,
-      dialogTitle: 'backup.restore_dialog'.tr(),
-    );
+    FilePickerResult? picked;
+    try {
+      picked = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: const ['zip'],
+        allowMultiple: false,
+        dialogTitle: _kRestoreBackupDialogTitle,
+      );
+    } catch (_) {
+      if (!context.mounted) {
+        return;
+      }
+      _showPickerError(context);
+      return;
+    }
 
-    final path = picked?.files.single.path;
+    final path = _pickBackupZipPath(picked);
     if (path == null || path.trim().isEmpty) {
       return;
     }
@@ -596,7 +726,7 @@ class _BackupViewState extends State<_BackupView> {
   Future<void> _onPickBackupDirectory() async {
     try {
       final selected = await FilePicker.platform.getDirectoryPath(
-        dialogTitle: 'backup.pick_location'.tr(),
+        dialogTitle: _kPickFolderDialogTitle,
       );
 
       if (!mounted) {

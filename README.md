@@ -1,4 +1,4 @@
-# Clothes Inventory POS
+# DeltaErp
 
 Flutter desktop inventory/POS/ledger app with SQLite-backed transactional flows.
 

@@ -6,33 +6,33 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
-import 'package:clothes_inventory/core/config/company_settings_service.dart';
-import 'package:clothes_inventory/core/config/company_settings.dart';
-import 'package:clothes_inventory/core/utils/app_paths.dart';
-import 'package:clothes_inventory/core/utils/translation_utils.dart';
-import 'package:clothes_inventory/core/widgets/app_page_shell.dart';
-import 'package:clothes_inventory/features/invoices/domain/invoice_print_model.dart';
-import 'package:clothes_inventory/features/invoices/domain/a4_invoice_view_data.dart';
-import 'package:clothes_inventory/features/invoices/presentation/invoice_print_model_mapper.dart';
-import 'package:clothes_inventory/features/invoices/presentation/invoice_print_preview_page.dart';
-import 'package:clothes_inventory/features/invoices/presentation/widgets/a4_invoice_rtl_widget.dart';
-import 'package:clothes_inventory/features/license/domain/license_models.dart';
-import 'package:clothes_inventory/features/license/domain/license_service.dart';
-import 'package:clothes_inventory/features/purchase_ocr/data/purchase_ocr_service.dart';
-import 'package:clothes_inventory/features/settings/data/app_reset_service.dart';
-import 'package:clothes_inventory/features/settings/presentation/widgets/settings_company_tab.dart';
-import 'package:clothes_inventory/features/settings/presentation/widgets/settings_diagnostics_tab.dart';
-import 'package:clothes_inventory/features/settings/presentation/widgets/settings_license_tab.dart';
-import 'package:clothes_inventory/features/settings/presentation/widgets/settings_overview_tab.dart';
-import 'package:clothes_inventory/services/database/maintenance_coordinator.dart';
-import 'package:clothes_inventory/services/printing/a4_invoice_printer.dart';
-import 'package:clothes_inventory/services/printing/invoice_print_manager.dart';
-import 'package:clothes_inventory/services/printing/thermal_pdf_invoice_printer.dart';
-import 'package:clothes_inventory/services/printing/thermal_printer_preferences.dart';
+import 'package:delta_erp/core/config/company_settings_service.dart';
+import 'package:delta_erp/core/config/company_settings.dart';
+import 'package:delta_erp/core/utils/app_paths.dart';
+import 'package:delta_erp/core/utils/translation_utils.dart';
+import 'package:delta_erp/core/widgets/app_page_shell.dart';
+import 'package:delta_erp/features/invoices/domain/invoice_print_model.dart';
+import 'package:delta_erp/features/invoices/domain/a4_invoice_view_data.dart';
+import 'package:delta_erp/features/invoices/presentation/invoice_print_model_mapper.dart';
+import 'package:delta_erp/features/invoices/presentation/invoice_print_preview_page.dart';
+import 'package:delta_erp/features/invoices/presentation/widgets/a4_invoice_rtl_widget.dart';
+import 'package:delta_erp/features/license/domain/license_models.dart';
+import 'package:delta_erp/features/license/domain/license_service.dart';
+import 'package:delta_erp/features/purchase_ocr/data/purchase_ocr_service.dart';
+import 'package:delta_erp/features/settings/data/app_reset_service.dart';
+import 'package:delta_erp/features/settings/presentation/widgets/settings_company_tab.dart';
+import 'package:delta_erp/features/settings/presentation/widgets/settings_diagnostics_tab.dart';
+import 'package:delta_erp/features/settings/presentation/widgets/settings_license_tab.dart';
+import 'package:delta_erp/features/settings/presentation/widgets/settings_overview_tab.dart';
+import 'package:delta_erp/services/database/maintenance_coordinator.dart';
+import 'package:delta_erp/services/printing/a4_invoice_printer.dart';
+import 'package:delta_erp/services/printing/invoice_print_manager.dart';
+import 'package:delta_erp/services/printing/thermal_pdf_invoice_printer.dart';
+import 'package:delta_erp/services/printing/thermal_printer_preferences.dart';
 import 'package:printing/printing.dart';
-import 'package:clothes_inventory/services/di/service_locator.dart';
-import 'package:clothes_inventory/services/platform/folder_opener_service.dart';
-import 'package:clothes_inventory/services/pdf/thermal_invoice_pdf_document.dart';
+import 'package:delta_erp/services/di/service_locator.dart';
+import 'package:delta_erp/services/platform/folder_opener_service.dart';
+import 'package:delta_erp/services/pdf/thermal_invoice_pdf_document.dart';
 
 enum _SettingsTab { overview, company, license, diagnostics }
 
@@ -125,8 +125,10 @@ class _CompanySettingsPageState extends State<CompanySettingsPage> {
       setState(() => _currentThermalPrinterName = printer.name);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('تم حفظ الطابعة: ${printer.name}'),
-          backgroundColor: Colors.green,
+          content: Text(
+            'settings.thermal_printer_saved'.tr(namedArgs: {'name': printer.name}),
+          ),
+          backgroundColor: Theme.of(context).colorScheme.primary,
         ),
       );
     } finally {
@@ -139,7 +141,7 @@ class _CompanySettingsPageState extends State<CompanySettingsPage> {
     if (!mounted) return;
     setState(() => _currentThermalPrinterName = null);
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('تم إلغاء تحديد الطابعة الحرارية')),
+      SnackBar(content: Text('settings.thermal_printer_cleared'.tr())),
     );
   }
 
@@ -342,7 +344,11 @@ class _CompanySettingsPageState extends State<CompanySettingsPage> {
       }
       setState(() => _resettingAppData = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to restart application: $error')),
+        SnackBar(
+          content: Text(
+            'settings.restart_failed'.tr(namedArgs: {'error': '$error'}),
+          ),
+        ),
       );
     }
   }
@@ -394,7 +400,7 @@ class _CompanySettingsPageState extends State<CompanySettingsPage> {
                           },
                           decoration: InputDecoration(
                             labelText: 'Confirmation'.tr(),
-                            hintText: 'RESET',
+                            hintText: 'settings.reset_keyword'.tr(),
                           ),
                         ),
                         const SizedBox(height: 14),
@@ -616,43 +622,48 @@ class _CompanySettingsPageState extends State<CompanySettingsPage> {
     String logsPath = 'n/a';
     String tempPath = 'n/a';
     bool healthOk = false;
-    String healthMessage = 'Not available';
+    String healthMessage = 'backup.not_available'.tr();
     bool ocrReady = false;
-    String ocrVersion = 'Not available';
+    String ocrVersion = 'backup.not_available'.tr();
     String? generalError;
 
     try {
       final appDataDir = await AppPaths.getAppDataDir();
       appDataPath = appDataDir.path;
     } catch (error) {
-      appDataPath = 'Unavailable';
-      generalError = 'AppData path failed: $error';
+      appDataPath = 'settings.unavailable'.tr();
+      generalError = 'settings.appdata_path_failed'.tr(
+        namedArgs: {'error': '$error'},
+      );
     }
 
     try {
       databasePath = await AppPaths.getDatabasePath();
     } catch (error) {
-      databasePath = 'Unavailable';
-      generalError = generalError ?? 'Database path failed: $error';
+      databasePath = 'settings.unavailable'.tr();
+      generalError = generalError ??
+          'settings.database_path_failed'.tr(namedArgs: {'error': '$error'});
     }
 
     try {
       logsPath = await AppPaths.getLogsPath();
     } catch (error) {
-      logsPath = 'Unavailable';
-      generalError = generalError ?? 'Logs path failed: $error';
+      logsPath = 'settings.unavailable'.tr();
+      generalError = generalError ??
+          'settings.logs_path_failed'.tr(namedArgs: {'error': '$error'});
     }
 
     try {
       tempPath = await AppPaths.getTempDir();
     } catch (error) {
-      tempPath = 'Unavailable';
-      generalError = generalError ?? 'Temp path failed: $error';
+      tempPath = 'settings.unavailable'.tr();
+      generalError = generalError ??
+          'settings.temp_path_failed'.tr(namedArgs: {'error': '$error'});
     }
 
     try {
       healthOk = await AppPaths.healthCheck();
-      healthMessage = healthOk ? 'Healthy' : 'Health check failed';
+      healthMessage = healthOk ? 'Healthy'.tr() : 'settings.health_check_failed'.tr();
     } catch (error) {
       healthOk = false;
       healthMessage = error.toString();
@@ -663,16 +674,17 @@ class _CompanySettingsPageState extends State<CompanySettingsPage> {
       ocrReady = ocrHealth.values.every((value) => value);
     } catch (error) {
       ocrReady = false;
-      generalError = generalError ?? 'OCR health check failed: $error';
+      generalError = generalError ??
+          'settings.ocr_health_check_failed'.tr(namedArgs: {'error': '$error'});
     }
 
     try {
       ocrVersion = await _ocrService.getTesseractVersion();
       if (ocrVersion.trim().isEmpty) {
-        ocrVersion = 'Not available';
+        ocrVersion = 'backup.not_available'.tr();
       }
     } catch (error) {
-      ocrVersion = 'Error: $error';
+      ocrVersion = 'settings.error_with_detail'.tr(namedArgs: {'error': '$error'});
     }
 
     final lastError = _ocrService.getLastFailure();
@@ -718,7 +730,13 @@ class _CompanySettingsPageState extends State<CompanySettingsPage> {
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to copy diagnostics: $error')),
+        SnackBar(
+          content: Text(
+            'settings.copy_diagnostics_failed'.tr(
+              namedArgs: {'error': '$error'},
+            ),
+          ),
+        ),
       );
     }
   }
@@ -726,13 +744,14 @@ class _CompanySettingsPageState extends State<CompanySettingsPage> {
   Future<void> _openAppDataFolder(SettingsSystemDiagnosticsData data) async {
     try {
       final target =
-          data.databasePath == 'n/a' || data.databasePath == 'Unavailable'
+          data.databasePath == 'n/a' ||
+              data.databasePath == 'settings.unavailable'.tr()
           ? data.logsPath
           : data.databasePath;
-      if (target == 'n/a' || target == 'Unavailable') {
+      if (target == 'n/a' || target == 'settings.unavailable'.tr()) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('AppData path is not available.')),
+          SnackBar(content: Text('settings.appdata_path_unavailable'.tr())),
         );
         return;
       }
@@ -743,15 +762,21 @@ class _CompanySettingsPageState extends State<CompanySettingsPage> {
         SnackBar(
           content: Text(
             opened
-                ? 'Opened AppData folder.'
-                : 'Failed to open AppData folder.',
+                ? 'settings.appdata_opened'.tr()
+                : 'settings.appdata_open_failed'.tr(),
           ),
         ),
       );
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to open AppData folder: $error')),
+        SnackBar(
+          content: Text(
+            'settings.appdata_open_failed_with_error'.tr(
+              namedArgs: {'error': '$error'},
+            ),
+          ),
+        ),
       );
     }
   }
@@ -1198,13 +1223,21 @@ class _CompanySettingsPageState extends State<CompanySettingsPage> {
       phone: _previewPhonesText(),
       invoiceNumber: 'PREVIEW-001',
       date: DateTime.now(),
-      customerName: 'عميل تجريبي',
-      items: const [
-        InvoiceItem(productName: 'منتج A', quantity: 2, unitPrice: 45),
-        InvoiceItem(productName: 'منتج B', quantity: 1, unitPrice: 60),
+      customerName: 'settings.preview_customer_name'.tr(),
+      items: [
+        InvoiceItem(
+          productName: 'settings.preview_product_a'.tr(),
+          quantity: 2,
+          unitPrice: 45,
+        ),
+        InvoiceItem(
+          productName: 'settings.preview_product_b'.tr(),
+          quantity: 1,
+          unitPrice: 60,
+        ),
       ],
       total: 150,
-      title: 'فاتورة مبيعات',
+      title: 'Sales Invoice'.tr(),
       invoiceFooterNote: company.invoiceFooterNote,
       invoiceFooterImageBytes: footerBytes,
     );

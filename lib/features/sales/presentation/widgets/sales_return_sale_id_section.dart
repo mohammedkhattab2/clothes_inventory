@@ -1,15 +1,16 @@
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
-import 'package:clothes_inventory/core/widgets/app_inline_loading_indicator.dart';
-import 'package:clothes_inventory/features/invoices/domain/invoice_suggestion.dart';
-import 'package:clothes_inventory/features/invoices/presentation/widgets/invoice_return_raw_autocomplete.dart';
+import 'package:delta_erp/core/widgets/app_inline_loading_indicator.dart';
+import 'package:delta_erp/features/invoices/domain/invoice_suggestion.dart';
+import 'package:delta_erp/features/invoices/presentation/widgets/invoice_return_raw_autocomplete.dart';
 
 class SalesReturnSaleIdSection extends StatelessWidget {
   const SalesReturnSaleIdSection({
     super.key,
     required this.canUseInvoicePicker,
     this.activeInvoiceNumber,
-    required this.resolvedSaleId,
+    this.activeInvoiceId,
+    required this.canLoadItems,
     required this.saleIdController,
     required this.loadingInvoiceItems,
     required this.searchSuggestions,
@@ -21,7 +22,8 @@ class SalesReturnSaleIdSection extends StatelessWidget {
   final bool canUseInvoicePicker;
   /// Label for the invoice when the picker is locked to [activeInvoiceId].
   final String? activeInvoiceNumber;
-  final int? resolvedSaleId;
+  final int? activeInvoiceId;
+  final bool canLoadItems;
   final TextEditingController saleIdController;
   final bool loadingInvoiceItems;
   final Future<List<InvoiceSuggestion>> Function(String prefix) searchSuggestions;
@@ -32,7 +34,7 @@ class SalesReturnSaleIdSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (canUseInvoicePicker) {
-      final id = resolvedSaleId;
+      final id = activeInvoiceId;
       return Container(
         width: double.infinity,
         margin: const EdgeInsets.only(bottom: 8),
@@ -69,7 +71,7 @@ class SalesReturnSaleIdSection extends StatelessWidget {
         Align(
           alignment: Alignment.centerRight,
           child: OutlinedButton.icon(
-            onPressed: resolvedSaleId == null || loadingInvoiceItems
+            onPressed: !canLoadItems || loadingInvoiceItems
                 ? null
                 : onLoadSaleItems,
             icon: loadingInvoiceItems

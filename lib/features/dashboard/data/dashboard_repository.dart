@@ -1,7 +1,7 @@
 import 'dart:collection';
 
-import 'package:clothes_inventory/services/auth/session_service.dart';
-import 'package:clothes_inventory/services/database/app_database.dart';
+import 'package:delta_erp/services/auth/session_service.dart';
+import 'package:delta_erp/services/database/app_database.dart';
 
 class DashboardFilterOption {
   const DashboardFilterOption({required this.id, required this.name});
@@ -85,6 +85,9 @@ class DashboardInvoiceRecord {
     required this.createdAt,
     required this.type,
     this.paymentMethodRaw,
+    this.paidCash = 0,
+    this.paidVodafone = 0,
+    this.paidVisa = 0,
   });
 
   final int id;
@@ -94,8 +97,14 @@ class DashboardInvoiceRecord {
   final double totalAmount;
   final double paidAmount;
   final double outstandingAmount;
+
+  /// Sale invoice totals by payment channel (excluding reversals/refunds).
+  final double paidCash;
+  final double paidVodafone;
+  final double paidVisa;
   final DateTime createdAt;
   final String type;
+
   /// Distinct payment methods from DB; sale drilldown only.
   final String? paymentMethodRaw;
 }
@@ -598,6 +607,8 @@ class DashboardRepository {
           WHERE pp.invoice_type = 'sale'
             AND pp.invoice_id = s.id
             AND pp.reversal_for_id IS NULL
+            AND pp.is_refund = 0
+            AND pp.amount > 0
         ), 0)
       ) > 0.00001''');
 
@@ -649,6 +660,8 @@ class DashboardRepository {
           WHERE pp.invoice_type = 'sale'
             AND pp.invoice_id = s.id
             AND pp.reversal_for_id IS NULL
+            AND pp.is_refund = 0
+            AND pp.amount > 0
         ), 0) AS paid_amount,
         (
           s.total_amount - COALESCE((
@@ -657,8 +670,40 @@ class DashboardRepository {
             WHERE pp.invoice_type = 'sale'
               AND pp.invoice_id = s.id
               AND pp.reversal_for_id IS NULL
+              AND pp.is_refund = 0
+              AND pp.amount > 0
           ), 0)
         ) AS outstanding_amount,
+        COALESCE((
+          SELECT SUM(pp.amount)
+          FROM payments pp
+          WHERE pp.invoice_type = 'sale'
+            AND pp.invoice_id = s.id
+            AND pp.reversal_for_id IS NULL
+            AND pp.is_refund = 0
+            AND pp.amount > 0
+            AND pp.payment_method = 'cash'
+        ), 0) AS paid_cash,
+        COALESCE((
+          SELECT SUM(pp.amount)
+          FROM payments pp
+          WHERE pp.invoice_type = 'sale'
+            AND pp.invoice_id = s.id
+            AND pp.reversal_for_id IS NULL
+            AND pp.is_refund = 0
+            AND pp.amount > 0
+            AND pp.payment_method = 'vodafone_cash'
+        ), 0) AS paid_vodafone,
+        COALESCE((
+          SELECT SUM(pp.amount)
+          FROM payments pp
+          WHERE pp.invoice_type = 'sale'
+            AND pp.invoice_id = s.id
+            AND pp.reversal_for_id IS NULL
+            AND pp.is_refund = 0
+            AND pp.amount > 0
+            AND pp.payment_method = 'visa'
+        ), 0) AS paid_visa,
         s.created_at,
         COALESCE(a.name, 'Walk-in') AS account_name,
         COALESCE(
@@ -691,6 +736,9 @@ class DashboardRepository {
             paidAmount: ((e['paid_amount'] ?? 0) as num).toDouble(),
             outstandingAmount: ((e['outstanding_amount'] ?? 0) as num)
                 .toDouble(),
+            paidCash: ((e['paid_cash'] ?? 0) as num).toDouble(),
+            paidVodafone: ((e['paid_vodafone'] ?? 0) as num).toDouble(),
+            paidVisa: ((e['paid_visa'] ?? 0) as num).toDouble(),
             createdAt: DateTime.parse(e['created_at'] as String),
             type: 'sale',
             paymentMethodRaw: () {

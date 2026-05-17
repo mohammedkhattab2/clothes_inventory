@@ -1,8 +1,8 @@
 import 'dart:io';
 
-import 'package:clothes_inventory/core/utils/app_paths.dart';
-import 'package:clothes_inventory/services/database/app_database.dart';
-import 'package:clothes_inventory/services/di/service_locator.dart';
+import 'package:delta_erp/core/utils/app_paths.dart';
+import 'package:delta_erp/services/database/app_database.dart';
+import 'package:delta_erp/services/di/service_locator.dart';
 
 /// Binds [AppPaths] to a unique temp directory, resets [getIt], and runs
 /// [setupServiceLocator] so tests never read or wipe the real

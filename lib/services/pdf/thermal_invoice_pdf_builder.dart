@@ -1,4 +1,4 @@
-import 'package:clothes_inventory/features/invoices/domain/invoice_print_model.dart';
+import 'package:delta_erp/features/invoices/domain/invoice_print_model.dart';
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;

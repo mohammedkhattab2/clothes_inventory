@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:clothes_inventory/features/purchases/domain/purchase_models.dart';
-import 'package:clothes_inventory/features/purchases/presentation/purchases_cubit.dart';
-import 'package:clothes_inventory/features/sales/domain/sale_models.dart';
-import 'package:clothes_inventory/features/sales/presentation/sales_cubit.dart';
+import 'package:delta_erp/features/purchases/domain/purchase_models.dart';
+import 'package:delta_erp/features/purchases/presentation/purchases_cubit.dart';
+import 'package:delta_erp/features/sales/domain/sale_models.dart';
+import 'package:delta_erp/features/sales/presentation/sales_cubit.dart';
 
 void main() {
   group('SalesState header discount calculations', () {

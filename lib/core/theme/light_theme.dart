@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:clothes_inventory/core/theme/app_colors.dart';
-import 'package:clothes_inventory/core/theme/app_text_styles.dart';
+import 'package:delta_erp/core/theme/app_colors.dart';
+import 'package:delta_erp/core/theme/app_text_styles.dart';
 
 ThemeData buildLightTheme() {
   final colorScheme = ColorScheme.fromSeed(
@@ -13,7 +13,7 @@ ThemeData buildLightTheme() {
   return ThemeData(
     useMaterial3: true,
     colorScheme: colorScheme,
-    scaffoldBackgroundColor: colorScheme.surface,
+    scaffoldBackgroundColor: AppColors.background,
     textTheme:
         const TextTheme(
           headlineLarge: AppTextStyles.headingLarge,
@@ -22,8 +22,8 @@ ThemeData buildLightTheme() {
           bodyMedium: AppTextStyles.body,
           labelMedium: AppTextStyles.label,
         ).apply(
-          bodyColor: AppColors.textPrimary,
-          displayColor: AppColors.textPrimary,
+          bodyColor: colorScheme.onSurface,
+          displayColor: colorScheme.onSurface,
         ),
     cardTheme: CardThemeData(
       color: colorScheme.surface,

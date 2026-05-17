@@ -1,11 +1,11 @@
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
-import 'package:clothes_inventory/core/utils/translation_utils.dart';
+import 'package:delta_erp/core/utils/translation_utils.dart';
 import 'package:flutter/services.dart';
-import 'package:clothes_inventory/features/invoices/domain/invoice_suggestion.dart';
-import 'package:clothes_inventory/features/invoices/presentation/widgets/invoice_return_raw_autocomplete.dart';
-import 'package:clothes_inventory/features/purchases/data/purchases_repository.dart';
-import 'package:clothes_inventory/features/sales/presentation/widgets/sales_return_dialog_actions.dart';
+import 'package:delta_erp/features/invoices/domain/invoice_suggestion.dart';
+import 'package:delta_erp/features/invoices/presentation/widgets/invoice_return_raw_autocomplete.dart';
+import 'package:delta_erp/features/purchases/data/purchases_repository.dart';
+import 'package:delta_erp/features/sales/presentation/widgets/sales_return_dialog_actions.dart';
 
 class PurchasesReturnDialog extends StatefulWidget {
   const PurchasesReturnDialog({
@@ -145,6 +145,37 @@ class _PurchasesReturnDialogState extends State<PurchasesReturnDialog> {
   bool _resolvingAmendEligibility = false;
 
   InvoiceSuggestion? _lockedSuggestion;
+  bool _pinnedToActiveInvoice = false;
+
+  Future<int?> _resolvePurchaseIdForLoad() async {
+    final locked = _lockedSuggestion;
+    final t = _purchaseIdController.text.trim();
+    if (t.isEmpty) return null;
+
+    if (locked != null) {
+      if (t == locked.invoiceNumber.trim()) {
+        return locked.id;
+      }
+      final parsedLocked = widget.parseFlexibleInt(t);
+      if (parsedLocked == locked.id) {
+        return locked.id;
+      }
+    }
+
+    final parsed = widget.parseFlexibleInt(t);
+    if (parsed != null) {
+      return parsed;
+    }
+
+    final hits = await widget.searchPurchaseInvoicesForReturn(t);
+    final lower = t.toLowerCase();
+    for (final hit in hits) {
+      if (hit.invoiceNumber.trim().toLowerCase() == lower) {
+        return hit.id;
+      }
+    }
+    return null;
+  }
 
   Future<void> _refreshAmendEligibility(int purchaseId) async {
     final checker = widget.canAmendPurchaseForCart;
@@ -167,21 +198,6 @@ class _PurchasesReturnDialogState extends State<PurchasesReturnDialog> {
         _resolvingAmendEligibility = false;
       });
     }
-  }
-
-  int? _resolvePurchaseIdFromField() {
-    final locked = _lockedSuggestion;
-    final t = _purchaseIdController.text.trim();
-    if (locked != null) {
-      if (t == locked.invoiceNumber.trim()) {
-        return locked.id;
-      }
-      final parsed = widget.parseFlexibleInt(t);
-      if (parsed == locked.id) {
-        return locked.id;
-      }
-    }
-    return widget.parseFlexibleInt(t);
   }
 
   void _invalidateLockIfNeeded() {
@@ -232,6 +248,7 @@ class _PurchasesReturnDialogState extends State<PurchasesReturnDialog> {
     if (resolvedInitialPurchaseId == null) return;
 
     if (resolvedInitialPurchaseId == widget.activeInvoiceId) {
+      _pinnedToActiveInvoice = true;
       _loadedInvoiceLines = widget.activeInvoiceLines;
       _loadedForPurchaseId = resolvedInitialPurchaseId;
       _syncSelectionForLines(_loadedInvoiceLines);
@@ -294,6 +311,25 @@ class _PurchasesReturnDialogState extends State<PurchasesReturnDialog> {
         () => widget.formatInvoiceQuantity(line.remainingQuantity),
       );
     }
+  }
+
+  Future<void> _onLoadPurchaseItemsPressed() async {
+    final id = await _resolvePurchaseIdForLoad();
+    if (!mounted) return;
+    if (id == null) {
+      setState(() {
+        _attemptedInvoiceItemsLoad = true;
+        _invoiceItemsLoadError =
+            'invoice_return.invoice_not_found'.tr();
+        _loadedInvoiceLines = const [];
+        _loadedForPurchaseId = null;
+        _selectedPurchaseItemIds.clear();
+        _selectedQtyByItemId.clear();
+        _canAmendInCartCheck = false;
+      });
+      return;
+    }
+    await _loadItemsForPurchase(id);
   }
 
   Future<void> _loadItemsForPurchase(int id) async {
@@ -359,13 +395,14 @@ class _PurchasesReturnDialogState extends State<PurchasesReturnDialog> {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final veryDense = MediaQuery.sizeOf(context).height < 720;
-    final purchaseId = _resolvePurchaseIdFromField();
-    final canUseInvoicePicker =
-        purchaseId != null && purchaseId == widget.activeInvoiceId;
+    final loadedPurchaseId = _loadedForPurchaseId;
+    final canUseInvoicePicker = _pinnedToActiveInvoice &&
+        loadedPurchaseId != null &&
+        loadedPurchaseId == widget.activeInvoiceId;
 
     final invoiceLinesForPicker = canUseInvoicePicker
         ? widget.activeInvoiceLines
-        : ((purchaseId != null && purchaseId == _loadedForPurchaseId)
+        : (loadedPurchaseId != null
               ? _loadedInvoiceLines
               : const <PurchaseInvoiceLine>[]);
 
@@ -378,8 +415,10 @@ class _PurchasesReturnDialogState extends State<PurchasesReturnDialog> {
       (line) => _itemErrorFor(line.id, line.remainingQuantity) != null,
     );
 
+    final canLoadItems = _purchaseIdController.text.trim().isNotEmpty;
+
     final canSubmit =
-        purchaseId != null &&
+        loadedPurchaseId != null &&
         selectedLines.isNotEmpty &&
         !_loadingInvoiceItems &&
         !_submittingReturns &&
@@ -392,7 +431,7 @@ class _PurchasesReturnDialogState extends State<PurchasesReturnDialog> {
         !_loadingInvoiceItems;
 
     final canAmendLoaded =
-        purchaseId != null &&
+        loadedPurchaseId != null &&
         invoiceLinesForPicker.isNotEmpty &&
         _canAmendInCartCheck;
 
@@ -450,10 +489,10 @@ class _PurchasesReturnDialogState extends State<PurchasesReturnDialog> {
                                     color: colorScheme.onPrimaryContainer,
                                   ),
                             ),
-                            if (purchaseId != null)
+                            if (loadedPurchaseId != null)
                               Text(
                                 '${'Invoice'.tr()}: '
-                                '${widget.activeInvoiceDisplayNumber ?? '—'} (#$purchaseId)',
+                                '${widget.activeInvoiceDisplayNumber ?? '—'} (#$loadedPurchaseId)',
                                 style: Theme.of(context).textTheme.bodySmall
                                     ?.copyWith(
                                       color: colorScheme.onPrimaryContainer
@@ -490,7 +529,7 @@ class _PurchasesReturnDialogState extends State<PurchasesReturnDialog> {
                             child: Text(
                               '${'invoice_return.active_invoice_hint'.tr()}: '
                               '${widget.activeInvoiceDisplayNumber ?? '—'} '
-                              '(#$purchaseId)',
+                              '(#$loadedPurchaseId)',
                               style: Theme.of(context).textTheme.bodyMedium,
                             ),
                           )
@@ -502,6 +541,9 @@ class _PurchasesReturnDialogState extends State<PurchasesReturnDialog> {
                             onSuggestionSelected: (suggestion) {
                               setState(() {
                                 _lockedSuggestion = suggestion;
+                                _pinnedToActiveInvoice = false;
+                                _loadedForPurchaseId = null;
+                                _loadedInvoiceLines = const [];
                                 _selectedPurchaseItemIds.clear();
                                 _selectedQtyByItemId.clear();
                                 _invoiceItemsLoadError = null;
@@ -511,6 +553,9 @@ class _PurchasesReturnDialogState extends State<PurchasesReturnDialog> {
                             onTextEdited: () {
                               _invalidateLockIfNeeded();
                               setState(() {
+                                _pinnedToActiveInvoice = false;
+                                _loadedForPurchaseId = null;
+                                _loadedInvoiceLines = const [];
                                 _selectedPurchaseItemIds.clear();
                                 _selectedQtyByItemId.clear();
                                 _invoiceItemsLoadError = null;
@@ -527,10 +572,9 @@ class _PurchasesReturnDialogState extends State<PurchasesReturnDialog> {
                           Align(
                             alignment: Alignment.centerRight,
                             child: OutlinedButton.icon(
-                              onPressed:
-                                  purchaseId == null || _loadingInvoiceItems
+                              onPressed: !canLoadItems || _loadingInvoiceItems
                                   ? null
-                                  : () => _loadItemsForPurchase(purchaseId),
+                                  : _onLoadPurchaseItemsPressed,
                               icon: _loadingInvoiceItems
                                   ? const SizedBox(
                                       width: 16,
@@ -762,7 +806,7 @@ class _PurchasesReturnDialogState extends State<PurchasesReturnDialog> {
                   canAmendInCart: canAmendLoaded && !_submittingReturns,
                   onAmendInCart: amendAvailable
                       ? () async {
-                          final pid = purchaseId!;
+                          final pid = loadedPurchaseId!;
                           Navigator.of(context).pop();
                           await widget.onPurchaseInvoiceAmendedInCart?.call(
                             pid,
@@ -773,7 +817,7 @@ class _PurchasesReturnDialogState extends State<PurchasesReturnDialog> {
                   onCancel: () => Navigator.of(context).pop(),
                   onApply: () async {
                     setState(() => _submittingReturns = true);
-                    final pid = purchaseId!;
+                    final pid = loadedPurchaseId!;
                     final selected = selectedLines
                         .where(
                           (line) => _selectedPurchaseItemIds.contains(line.id),

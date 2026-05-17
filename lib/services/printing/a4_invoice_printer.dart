@@ -1,10 +1,10 @@
 import 'dart:typed_data';
 
-import 'package:clothes_inventory/features/invoices/domain/a4_invoice_view_data.dart';
-import 'package:clothes_inventory/features/invoices/domain/invoice_print_model.dart';
-import 'package:clothes_inventory/services/pdf/a4_invoice_rtl_pdf_builder.dart';
-import 'package:clothes_inventory/services/printing/invoice_printer.dart';
-import 'package:clothes_inventory/services/printing/printer_text_formatters.dart';
+import 'package:delta_erp/features/invoices/domain/a4_invoice_view_data.dart';
+import 'package:delta_erp/features/invoices/domain/invoice_print_model.dart';
+import 'package:delta_erp/services/pdf/a4_invoice_rtl_pdf_builder.dart';
+import 'package:delta_erp/services/printing/invoice_printer.dart';
+import 'package:delta_erp/services/printing/printer_text_formatters.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 

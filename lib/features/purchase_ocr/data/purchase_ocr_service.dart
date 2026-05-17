@@ -6,9 +6,9 @@ import 'package:flutter/foundation.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'package:path/path.dart' as path;
 
-import 'package:clothes_inventory/core/utils/app_paths.dart';
-import 'package:clothes_inventory/features/purchase_ocr/data/ocr_logger.dart';
-import 'package:clothes_inventory/features/purchase_ocr/domain/purchase_ocr_models.dart';
+import 'package:delta_erp/core/utils/app_paths.dart';
+import 'package:delta_erp/features/purchase_ocr/data/ocr_logger.dart';
+import 'package:delta_erp/features/purchase_ocr/domain/purchase_ocr_models.dart';
 
 abstract class PurchaseOcrService {
   Future<String> extractText({required String imagePath});

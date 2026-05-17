@@ -1,6 +1,6 @@
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
-import 'package:clothes_inventory/features/license/domain/license_service.dart';
+import 'package:delta_erp/features/license/domain/license_service.dart';
 
 class ActivationPage extends StatefulWidget {
   const ActivationPage({
@@ -132,28 +132,31 @@ class _ActivationPageState extends State<ActivationPage> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
-                    Text('تفعيل النسخة', style: theme.textTheme.headlineSmall),
+                    Text(
+                      'license.activation_page_title'.tr(),
+                      style: theme.textTheme.headlineSmall,
+                    ),
                     const SizedBox(height: 8),
-                    const Text(
-                      'أرسل كود الجهاز إلى البائع ثم ألصق كود التفعيل هنا.',
+                    Text(
+                      'license.activation_page_hint'.tr(),
                     ),
                     const SizedBox(height: 16),
                     SelectableText(
-                      'Machine Code: ${_machineCode.isEmpty ? 'Loading...' : _machineCode}',
+                      '${'license.machine_code'.tr()}: ${_machineCode.isEmpty ? 'common.loading'.tr() : _machineCode}',
                       style: theme.textTheme.titleMedium,
                     ),
                     const SizedBox(height: 8),
                     SelectableText(
-                      'Machine Hash: ${_machineHash.isEmpty ? 'Loading...' : _machineHash}',
+                      '${'license.machine_hash'.tr()}: ${_machineHash.isEmpty ? 'common.loading'.tr() : _machineHash}',
                       style: theme.textTheme.bodyMedium,
                     ),
                     const SizedBox(height: 16),
                     TextField(
                       controller: _codeController,
                       maxLines: 8,
-                      decoration: const InputDecoration(
-                        border: OutlineInputBorder(),
-                        labelText: 'Activation Code',
+                      decoration: InputDecoration(
+                        border: const OutlineInputBorder(),
+                        labelText: 'license.enter_activation_code'.tr(),
                         alignLabelWithHint: true,
                       ),
                     ),
@@ -170,7 +173,9 @@ class _ActivationPageState extends State<ActivationPage> {
                       child: FilledButton(
                         onPressed: _isSubmitting ? null : _activate,
                         child: Text(
-                          _isSubmitting ? 'جارٍ التفعيل...' : 'تفعيل',
+                          _isSubmitting
+                              ? 'license.activating'.tr()
+                              : 'license.activate'.tr(),
                         ),
                       ),
                     ),

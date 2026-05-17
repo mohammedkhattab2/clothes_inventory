@@ -1,11 +1,12 @@
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
-import 'package:clothes_inventory/features/products/presentation/widgets/products_summary_chip.dart';
+import 'package:delta_erp/features/products/presentation/widgets/products_summary_chip.dart';
 
 class ProductsSummarySection extends StatelessWidget {
   const ProductsSummarySection({
     super.key,
     required this.isVeryDenseViewport,
+    required this.canManageProducts,
     required this.totalProductsCount,
     required this.lowStockCount,
     required this.outOfStockCount,
@@ -16,6 +17,7 @@ class ProductsSummarySection extends StatelessWidget {
   });
 
   final bool isVeryDenseViewport;
+  final bool canManageProducts;
   final int totalProductsCount;
   final int lowStockCount;
   final int outOfStockCount;
@@ -51,36 +53,38 @@ class ProductsSummarySection extends StatelessWidget {
           valueColor: colorScheme.onError,
           compact: isVeryDenseViewport,
         ),
-        OutlinedButton.icon(
-          onPressed: onToggleSelectionMode,
-          icon: Icon(
-            selectionMode
-                ? Icons.check_box_outlined
-                : Icons.check_box_outline_blank,
-          ),
-          label: Text(
-            selectionMode ? 'Exit selection'.tr() : 'Select products'.tr(),
-          ),
-          style: OutlinedButton.styleFrom(
-            visualDensity: VisualDensity.compact,
-            side: BorderSide(color: colorScheme.outlineVariant),
-          ),
-        ),
-        if (selectionMode)
-          FilledButton.icon(
-            onPressed: selectedCount == 0
-                ? null
-                : () async {
-                    await onDeleteSelected();
-                  },
-            icon: const Icon(Icons.delete_sweep_outlined),
-            label: Text('${'Delete selected'.tr()} ($selectedCount)'),
-            style: FilledButton.styleFrom(
+        if (canManageProducts) ...[
+          OutlinedButton.icon(
+            onPressed: onToggleSelectionMode,
+            icon: Icon(
+              selectionMode
+                  ? Icons.check_box_outlined
+                  : Icons.check_box_outline_blank,
+            ),
+            label: Text(
+              selectionMode ? 'Exit selection'.tr() : 'Select products'.tr(),
+            ),
+            style: OutlinedButton.styleFrom(
               visualDensity: VisualDensity.compact,
-              backgroundColor: colorScheme.error,
-              foregroundColor: colorScheme.onError,
+              side: BorderSide(color: colorScheme.outlineVariant),
             ),
           ),
+          if (selectionMode)
+            FilledButton.icon(
+              onPressed: selectedCount == 0
+                  ? null
+                  : () async {
+                      await onDeleteSelected();
+                    },
+              icon: const Icon(Icons.delete_sweep_outlined),
+              label: Text('${'Delete selected'.tr()} ($selectedCount)'),
+              style: FilledButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                backgroundColor: colorScheme.error,
+                foregroundColor: colorScheme.onError,
+              ),
+            ),
+        ],
       ],
     );
   }

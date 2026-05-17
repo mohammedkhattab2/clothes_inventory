@@ -1,6 +1,6 @@
 import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:clothes_inventory/features/accounts/data/account_statement_repository.dart';
+import 'package:delta_erp/features/accounts/data/account_statement_repository.dart';
 
 class AccountStatementState extends Equatable {
   const AccountStatementState({

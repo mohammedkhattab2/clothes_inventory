@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import 'package:csv/csv.dart';
-import 'package:clothes_inventory/features/products/domain/product.dart';
+import 'package:delta_erp/features/products/domain/product.dart';
 import 'package:spreadsheet_decoder/spreadsheet_decoder.dart';
 
 class ProductsImportIssue {

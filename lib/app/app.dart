@@ -3,27 +3,27 @@ import 'dart:async';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:clothes_inventory/app/app_startup_coordinator.dart';
-import 'package:clothes_inventory/app/startup_splash_overlay.dart';
-import 'package:clothes_inventory/core/theme/app_theme.dart';
-import 'package:clothes_inventory/core/theme/theme_cubit.dart';
-import 'package:clothes_inventory/core/utils/translation_utils.dart';
-import 'package:clothes_inventory/features/backup/data/backup_lifecycle_service.dart';
-import 'package:clothes_inventory/features/auth/presentation/login_page.dart';
-import 'package:clothes_inventory/features/license/domain/license_service.dart';
-import 'package:clothes_inventory/features/license/presentation/activation_page.dart';
-import 'package:clothes_inventory/services/auth/session_service.dart';
-import 'package:clothes_inventory/services/di/service_locator.dart';
-import 'package:clothes_inventory/services/router/app_router.dart';
+import 'package:delta_erp/app/app_startup_coordinator.dart';
+import 'package:delta_erp/app/startup_splash_overlay.dart';
+import 'package:delta_erp/core/theme/app_theme.dart';
+import 'package:delta_erp/core/theme/theme_cubit.dart';
+import 'package:delta_erp/core/utils/translation_utils.dart';
+import 'package:delta_erp/features/backup/data/backup_lifecycle_service.dart';
+import 'package:delta_erp/features/auth/presentation/login_page.dart';
+import 'package:delta_erp/features/license/domain/license_service.dart';
+import 'package:delta_erp/features/license/presentation/activation_page.dart';
+import 'package:delta_erp/services/auth/session_service.dart';
+import 'package:delta_erp/services/di/service_locator.dart';
+import 'package:delta_erp/services/router/app_router.dart';
 
-class InventoryPosApp extends StatefulWidget {
-  const InventoryPosApp({super.key});
+class DeltaErpApp extends StatefulWidget {
+  const DeltaErpApp({super.key});
 
   @override
-  State<InventoryPosApp> createState() => _InventoryPosAppState();
+  State<DeltaErpApp> createState() => _DeltaErpAppState();
 }
 
-class _InventoryPosAppState extends State<InventoryPosApp> {
+class _DeltaErpAppState extends State<DeltaErpApp> {
   bool _isCheckingLicense = true;
   bool _isLicenseActive = false;
   late final ThemeCubit _themeCubit;
@@ -33,6 +33,8 @@ class _InventoryPosAppState extends State<InventoryPosApp> {
   late final AppStartupCoordinator _startupCoordinator;
   AppLifecycleListener? _lifecycleListener;
   bool _isExitBackupInProgress = false;
+  bool _isBackgroundBackupInProgress = false;
+  DateTime? _lastBackgroundBackupAt;
   static const int _maxStartupLicenseRetries = 2;
   String? _lastLicenseFailureCode;
   String? _lastLicenseFailureMessage;
@@ -46,7 +48,11 @@ class _InventoryPosAppState extends State<InventoryPosApp> {
     _sessionService = getIt<SessionService>();
     _backupLifecycleService = getIt<BackupLifecycleService>();
     _startupCoordinator = getIt<AppStartupCoordinator>();
-    _lifecycleListener = AppLifecycleListener(onDetach: _onAppDetach);
+    _lifecycleListener = AppLifecycleListener(
+      onDetach: _onAppDetach,
+      onPause: _onAppBackgrounded,
+      onHide: _onAppBackgrounded,
+    );
     unawaited(_runDeferredStartupTasks());
     _checkLicense();
   }
@@ -63,21 +69,48 @@ class _InventoryPosAppState extends State<InventoryPosApp> {
   }
 
   void _onAppDetach() {
-    if (_isExitBackupInProgress) {
-      return;
-    }
-    _isExitBackupInProgress = true;
-    unawaited(_handleAppExitSafe());
+    _scheduleBackgroundBackup(isExit: true);
   }
 
-  Future<void> _handleAppExitSafe() async {
+  void _onAppBackgrounded() {
+    _scheduleBackgroundBackup(isExit: false);
+  }
+
+  void _scheduleBackgroundBackup({required bool isExit}) {
+    if (_isBackgroundBackupInProgress) {
+      return;
+    }
+    if (isExit) {
+      if (_isExitBackupInProgress) {
+        return;
+      }
+      _isExitBackupInProgress = true;
+    }
+    final now = DateTime.now();
+    if (_lastBackgroundBackupAt != null &&
+        now.difference(_lastBackgroundBackupAt!) <
+            const Duration(minutes: 2)) {
+      return;
+    }
+    _lastBackgroundBackupAt = now;
+    _isBackgroundBackupInProgress = true;
+    unawaited(_handleBackgroundBackupSafe(isExit: isExit));
+  }
+
+  Future<void> _handleBackgroundBackupSafe({required bool isExit}) async {
     try {
-      await _backupLifecycleService.handleAppExit();
+      if (isExit) {
+        await _backupLifecycleService.handleAppExit();
+      } else {
+        await _backupLifecycleService.handleAppBackground();
+      }
     } catch (error, stackTrace) {
       assert(() {
-        debugPrint('App exit backup failed: $error\n$stackTrace');
+        debugPrint('Background backup failed: $error\n$stackTrace');
         return true;
       }());
+    } finally {
+      _isBackgroundBackupInProgress = false;
     }
   }
 
@@ -184,7 +217,7 @@ class _InventoryPosAppState extends State<InventoryPosApp> {
         bloc: _themeCubit,
         builder: (context, themeMode) {
           return MaterialApp.router(
-            title: trIfExists('Clothes Inventory POS', context: context),
+            title: trIfExists('DeltaErp', context: context),
             debugShowCheckedModeBanner: false,
             theme: AppTheme.light,
             darkTheme: AppTheme.dark,

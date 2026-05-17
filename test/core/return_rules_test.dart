@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:clothes_inventory/core/utils/return_rules.dart';
+import 'package:delta_erp/core/utils/return_rules.dart';
 
 void main() {
   group('ReturnRules.validate', () {

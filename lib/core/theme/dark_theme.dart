@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:clothes_inventory/core/theme/app_colors.dart';
-import 'package:clothes_inventory/core/theme/app_text_styles.dart';
+import 'package:delta_erp/core/theme/app_colors.dart';
+import 'package:delta_erp/core/theme/app_text_styles.dart';
 
 ThemeData buildDarkTheme() {
   const bg = Color(0xFF0B1220);

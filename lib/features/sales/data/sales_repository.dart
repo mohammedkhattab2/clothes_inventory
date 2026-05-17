@@ -1,14 +1,22 @@
-import 'package:clothes_inventory/core/utils/invoice_number_display.dart';
-import 'package:clothes_inventory/core/utils/number_utils.dart';
-import 'package:clothes_inventory/core/utils/return_rules.dart';
-import 'package:clothes_inventory/core/utils/sql_like_escape.dart';
-import 'package:clothes_inventory/features/invoices/domain/invoice_suggestion.dart';
-import 'package:clothes_inventory/features/sales/domain/sale_models.dart';
-import 'package:clothes_inventory/services/auth/session_service.dart';
-import 'package:clothes_inventory/services/database/app_database.dart';
+import 'package:delta_erp/core/utils/invoice_number_display.dart';
+import 'package:delta_erp/core/utils/number_utils.dart';
+import 'package:delta_erp/core/utils/return_rules.dart';
+import 'package:delta_erp/core/utils/sql_like_escape.dart';
+import 'package:delta_erp/features/invoices/domain/invoice_suggestion.dart';
+import 'package:delta_erp/features/sales/domain/sale_models.dart';
+import 'package:delta_erp/services/auth/session_service.dart';
+import 'package:delta_erp/services/database/app_database.dart';
 import 'package:sqflite/sqlite_api.dart';
-import 'package:clothes_inventory/services/database/db_transaction_runner.dart';
-import 'package:clothes_inventory/services/database/invoice_sequence_allocator.dart';
+import 'package:delta_erp/services/database/db_transaction_runner.dart';
+import 'package:delta_erp/services/database/invoice_sequence_allocator.dart';
+
+String _invoiceActorLabel(String? fullName, String? username) {
+  final n = (fullName ?? '').trim();
+  if (n.isNotEmpty) return n;
+  final u = (username ?? '').trim();
+  if (u.isNotEmpty) return u;
+  return '-';
+}
 
 class SalesInvoiceSummary {
   const SalesInvoiceSummary({
@@ -21,6 +29,8 @@ class SalesInvoiceSummary {
     required this.paidAmount,
     required this.outstandingAmount,
     required this.createdAt,
+    required this.createdByDisplay,
+    this.lastModifiedByDisplay,
     this.paymentMethod,
   });
 
@@ -33,6 +43,10 @@ class SalesInvoiceSummary {
   final double paidAmount;
   final double outstandingAmount;
   final DateTime createdAt;
+  /// Full name, else username, else "—" when unknown.
+  final String createdByDisplay;
+  /// Set when the invoice was changed after issue (returns, amendment, settlement, cancel).
+  final String? lastModifiedByDisplay;
   /// Distinct payment methods from SQL `GROUP_CONCAT`, or one method. Display via `invoicePaymentMethodsDisplayLabel`.
   final String? paymentMethod;
 }
@@ -193,6 +207,7 @@ class SalesRepository {
       SELECT
         s.id,
         s.invoice_number,
+        s.last_modified_by_user_id AS last_mod_uid,
         COALESCE((
           SELECT GROUP_CONCAT(p.name, ', ')
           FROM sale_items si
@@ -219,9 +234,15 @@ class SalesRepository {
           ), '')), ''),
           NULLIF(TRIM(s.primary_payment_method), '')
         ) AS last_payment_method,
-        s.created_at
+        s.created_at,
+        uc.full_name AS creator_full_name,
+        uc.username AS creator_username,
+        um.full_name AS modifier_full_name,
+        um.username AS modifier_username
       FROM sales s
       LEFT JOIN accounts a ON a.id = s.account_id
+      LEFT JOIN users uc ON uc.id = s.created_by_user_id
+      LEFT JOIN users um ON um.id = s.last_modified_by_user_id
       WHERE ${where.join(' AND ')}
       ORDER BY datetime(s.created_at) DESC, s.id DESC
       LIMIT ? OFFSET ?
@@ -243,6 +264,16 @@ class SalesRepository {
                         .clamp(0, double.infinity))
                     .toDouble(),
             createdAt: DateTime.parse(row['created_at'] as String),
+            createdByDisplay: _invoiceActorLabel(
+              row['creator_full_name'] as String?,
+              row['creator_username'] as String?,
+            ),
+            lastModifiedByDisplay: row['last_mod_uid'] == null
+                ? null
+                : _invoiceActorLabel(
+                    row['modifier_full_name'] as String?,
+                    row['modifier_username'] as String?,
+                  ),
             paymentMethod: () {
               final raw = row['last_payment_method'] as String?;
               if (raw == null || raw.trim().isEmpty) {
@@ -784,7 +815,7 @@ class SalesRepository {
     await _appDatabase.database;
 
     await _transactionRunner.run((txn) async {
-      _sessionService.requireUserId();
+      final actorUserId = _sessionService.requireUserId();
 
       final saleRows = await txn.rawQuery(
         '''
@@ -968,6 +999,7 @@ class SalesRepository {
         {
           'total_amount': totalAmount,
           'status': nextStatus,
+          'last_modified_by_user_id': actorUserId,
         },
         where: 'id = ?',
         whereArgs: [saleId],
@@ -1468,6 +1500,7 @@ class SalesRepository {
           'status': nextStatus,
           'primary_payment_method':
               _salePrimaryPaymentMethodForStorage(paymentMethod),
+          'last_modified_by_user_id': actorUserId,
         },
         where: 'id = ?',
         whereArgs: [saleId],
@@ -1568,22 +1601,35 @@ class SalesRepository {
       final unitPrice = (row['unit_price'] as num).toDouble();
       final lineDiscount = (row['discount_amount'] as num).toDouble();
       final unitDiscount = soldQty == 0 ? 0 : (lineDiscount / soldQty);
-      final returnAmount = roundCurrency(
+      final lineGross = roundCurrency(
         requestedQty * (unitPrice - unitDiscount),
       );
 
+      final subtotalRows = await txn.rawQuery(
+        '''
+        SELECT COALESCE(SUM(line_total), 0) AS subtotal
+        FROM sale_items
+        WHERE sale_id = ?
+        ''',
+        [saleId],
+      );
+      final subtotal =
+          ((subtotalRows.first['subtotal'] ?? 0) as num).toDouble();
       final oldTotalAmount = ((saleRows.first['total_amount'] ?? 0) as num)
           .toDouble();
+      final returnAmount = subtotal > 0.000001
+          ? roundCurrency(oldTotalAmount * lineGross / subtotal)
+          : lineGross;
       final newTotalAmount = roundCurrency(
         (oldTotalAmount - returnAmount).clamp(0, double.infinity).toDouble(),
       );
       final paidRows = await txn.rawQuery(
         '''
-        SELECT COALESCE(SUM(amount), 0) AS paid_amount
-        FROM payments
-        WHERE invoice_type = 'sale'
-          AND invoice_id = ?
-          AND reversal_for_id IS NULL
+        SELECT COALESCE(SUM(pp.amount), 0) AS paid_amount
+        FROM payments pp
+        WHERE pp.invoice_type = 'sale'
+          AND pp.invoice_id = ?
+          AND pp.reversal_for_id IS NULL
         ''',
         [saleId],
       );
@@ -1595,7 +1641,11 @@ class SalesRepository {
 
       await txn.update(
         'sales',
-        {'total_amount': newTotalAmount, 'status': nextStatus},
+        {
+          'total_amount': newTotalAmount,
+          'status': nextStatus,
+          'last_modified_by_user_id': actorUserId,
+        },
         where: 'id = ?',
         whereArgs: [saleId],
       );
@@ -1751,7 +1801,10 @@ class SalesRepository {
 
       await txn.update(
         'sales',
-        {'status': 'cancelled'},
+        {
+          'status': 'cancelled',
+          'last_modified_by_user_id': actorUserId,
+        },
         where: 'id = ?',
         whereArgs: [saleId],
       );

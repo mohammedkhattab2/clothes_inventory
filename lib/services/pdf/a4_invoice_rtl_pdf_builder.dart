@@ -1,5 +1,5 @@
 import 'package:intl/intl.dart';
-import 'package:clothes_inventory/features/invoices/domain/a4_invoice_view_data.dart';
+import 'package:delta_erp/features/invoices/domain/a4_invoice_view_data.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
@@ -116,6 +116,16 @@ void buildA4RtlInvoicePage({
                   padding: const pw.EdgeInsets.only(top: 2),
                   child: pw.Text(
                     'المستخدم: ${data.issuedBy}',
+                    textAlign: pw.TextAlign.right,
+                    style: const pw.TextStyle(fontSize: 11),
+                  ),
+                ),
+              if (data.lastModifiedBy != null &&
+                  data.lastModifiedBy!.trim().isNotEmpty)
+                pw.Padding(
+                  padding: const pw.EdgeInsets.only(top: 2),
+                  child: pw.Text(
+                    'آخر تعديل: ${data.lastModifiedBy}',
                     textAlign: pw.TextAlign.right,
                     style: const pw.TextStyle(fontSize: 11),
                   ),

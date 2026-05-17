@@ -1,4 +1,4 @@
-import 'package:clothes_inventory/core/utils/number_utils.dart';
+import 'package:delta_erp/core/utils/number_utils.dart';
 
 enum PaymentMethod { cash, vodafoneCash, visa, cashAndWallet }
 

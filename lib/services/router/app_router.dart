@@ -1,33 +1,45 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
-import 'package:clothes_inventory/features/accounts/presentation/account_statement_page.dart';
-import 'package:clothes_inventory/features/accounts/presentation/account_settlement_page.dart';
-import 'package:clothes_inventory/features/accounts/presentation/accounts_page.dart';
-import 'package:clothes_inventory/features/accounts/presentation/contacts_directory_page.dart';
-import 'package:clothes_inventory/features/auth/domain/auth_user.dart';
-import 'package:clothes_inventory/features/auth/presentation/user_management_page.dart';
-import 'package:clothes_inventory/features/backup/presentation/backup_page.dart';
-import 'package:clothes_inventory/features/accounts/presentation/statement_page.dart';
-import 'package:clothes_inventory/features/dashboard/presentation/dashboard_page.dart';
-import 'package:clothes_inventory/features/dashboard/presentation/dashboard_drilldown_page.dart';
-import 'package:clothes_inventory/features/expenses/presentation/expenses_page.dart';
-import 'package:clothes_inventory/features/invoices/presentation/invoices_hub_page.dart';
-import 'package:clothes_inventory/features/inventory/presentation/inventory_page.dart';
-import 'package:clothes_inventory/features/products/presentation/products_page.dart';
-import 'package:clothes_inventory/features/purchases/presentation/purchases_page.dart';
-import 'package:clothes_inventory/features/sales/presentation/sales_page.dart';
-import 'package:clothes_inventory/features/sales/presentation/sales_cubit.dart';
-import 'package:clothes_inventory/features/settings/presentation/company_settings_page.dart';
-import 'package:clothes_inventory/services/auth/session_service.dart';
-import 'package:clothes_inventory/services/di/service_locator.dart';
-import 'package:clothes_inventory/services/router/app_shell.dart';
+import 'package:delta_erp/features/accounts/presentation/account_statement_page.dart';
+import 'package:delta_erp/features/accounts/presentation/account_settlement_page.dart';
+import 'package:delta_erp/features/accounts/presentation/accounts_page.dart';
+import 'package:delta_erp/features/accounts/presentation/contacts_directory_page.dart';
+import 'package:delta_erp/features/auth/domain/auth_user.dart';
+import 'package:delta_erp/features/auth/presentation/user_management_page.dart';
+import 'package:delta_erp/features/backup/presentation/backup_page.dart';
+import 'package:delta_erp/features/accounts/presentation/statement_page.dart';
+import 'package:delta_erp/features/dashboard/presentation/dashboard_page.dart';
+import 'package:delta_erp/features/dashboard/presentation/dashboard_drilldown_page.dart';
+import 'package:delta_erp/features/expenses/presentation/expenses_page.dart';
+import 'package:delta_erp/features/invoices/presentation/invoices_hub_page.dart';
+import 'package:delta_erp/features/inventory/presentation/inventory_page.dart';
+import 'package:delta_erp/features/products/presentation/products_page.dart';
+import 'package:delta_erp/features/purchases/presentation/purchases_page.dart';
+import 'package:delta_erp/features/sales/presentation/sales_page.dart';
+import 'package:delta_erp/features/sales/presentation/sales_cubit.dart';
+import 'package:delta_erp/features/settings/presentation/company_settings_page.dart';
+import 'package:delta_erp/features/auth/domain/access_policy.dart';
+import 'package:delta_erp/services/auth/session_service.dart';
+import 'package:delta_erp/services/di/service_locator.dart';
+import 'package:delta_erp/services/router/app_shell.dart';
 
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
 
 final GoRouter appRouter = GoRouter(
   navigatorKey: _rootNavigatorKey,
   initialLocation: '/dashboard',
+  refreshListenable: getIt<SessionService>().currentUserListenable,
+  redirect: (context, state) {
+    final user = getIt<SessionService>().currentUser;
+    if (user?.role != UserRole.cashier) {
+      return null;
+    }
+    if (isCashierForbiddenLocation(state.uri.path)) {
+      return '/sales';
+    }
+    return null;
+  },
   routes: [
     ShellRoute(
       builder: (context, state, child) => AppShell(child: child),

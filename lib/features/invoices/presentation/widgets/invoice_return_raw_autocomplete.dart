@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:clothes_inventory/features/invoices/domain/invoice_suggestion.dart';
+import 'package:delta_erp/features/invoices/domain/invoice_suggestion.dart';
 
 /// Prefix search field with async suggestions for sales/purchase returns.
 class InvoiceReturnRawAutocomplete extends StatefulWidget {
@@ -112,8 +112,6 @@ class _InvoiceReturnRawAutocompleteState extends State<InvoiceReturnRawAutocompl
               extentOffset: controller.text.length,
             );
           },
-          onChanged: (_) => onFieldSubmitted(),
-          onSubmitted: (_) => onFieldSubmitted(),
         );
       },
       optionsViewBuilder: (context, onSelected, options) {

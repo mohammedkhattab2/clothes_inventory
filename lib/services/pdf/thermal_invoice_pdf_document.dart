@@ -1,7 +1,7 @@
 import 'dart:typed_data';
 
-import 'package:clothes_inventory/features/invoices/domain/invoice_print_model.dart';
-import 'package:clothes_inventory/services/pdf/thermal_invoice_pdf_builder.dart';
+import 'package:delta_erp/features/invoices/domain/invoice_print_model.dart';
+import 'package:delta_erp/services/pdf/thermal_invoice_pdf_builder.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 

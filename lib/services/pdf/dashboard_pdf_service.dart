@@ -3,9 +3,7 @@ import 'dart:typed_data';
 import 'dart:developer' as dev;
 
 import 'package:easy_localization/easy_localization.dart';
-import 'package:clothes_inventory/features/dashboard/data/dashboard_repository.dart';
-import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
+import 'package:delta_erp/features/dashboard/data/dashboard_repository.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
@@ -17,6 +15,7 @@ class DashboardPdfService {
     required DateTime fromDate,
     required DateTime toDate,
     required String granularity,
+    required String targetPath,
     bool includeOwnerAnalytics = true,
     String? preparedByName,
     String? categoryLabel,
@@ -38,13 +37,8 @@ class DashboardPdfService {
         trendChart: trendChart,
       );
 
-      final docs = await getApplicationDocumentsDirectory();
-      final exportDir = Directory(p.join(docs.path, 'exports', 'dashboard'));
-      await exportDir.create(recursive: true);
-
-      final fileName =
-          'dashboard_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.pdf';
-      final file = File(p.join(exportDir.path, fileName));
+      final file = File(targetPath);
+      await file.parent.create(recursive: true);
       await file.writeAsBytes(bytes, flush: true);
       return file.path;
     } catch (e, st) {

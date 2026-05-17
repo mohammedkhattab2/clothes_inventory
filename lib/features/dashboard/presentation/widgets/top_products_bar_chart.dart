@@ -1,8 +1,8 @@
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' as intl;
-import 'package:clothes_inventory/core/widgets/app_empty_state.dart';
-import 'package:clothes_inventory/features/dashboard/data/dashboard_repository.dart';
+import 'package:delta_erp/core/widgets/app_empty_state.dart';
+import 'package:delta_erp/features/dashboard/data/dashboard_repository.dart';
 
 class TopProductsBarChart extends StatelessWidget {
   const TopProductsBarChart({required this.products, super.key});

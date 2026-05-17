@@ -1,7 +1,7 @@
 import 'package:easy_localization/easy_localization.dart';
-import 'package:clothes_inventory/core/utils/invoice_number_display.dart';
-import 'package:clothes_inventory/features/products/domain/product.dart';
-import 'package:clothes_inventory/features/purchases/domain/purchase_models.dart';
+import 'package:delta_erp/core/utils/invoice_number_display.dart';
+import 'package:delta_erp/features/products/domain/product.dart';
+import 'package:delta_erp/features/purchases/domain/purchase_models.dart';
 
 double? parseFlexibleNumber(String raw) {
   final trimmed = raw.trim();

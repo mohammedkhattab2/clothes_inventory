@@ -90,12 +90,12 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "com.example" "\0"
-            VALUE "FileDescription", "clothes_inventory" "\0"
+            VALUE "FileDescription", "DeltaErp" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "clothes_inventory" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 com.example. All rights reserved." "\0"
-            VALUE "OriginalFilename", "clothes_inventory.exe" "\0"
-            VALUE "ProductName", "clothes_inventory" "\0"
+            VALUE "InternalName", "DeltaErp" "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 DeltaErp. All rights reserved." "\0"
+            VALUE "OriginalFilename", "DeltaErp.exe" "\0"
+            VALUE "ProductName", "DeltaErp" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

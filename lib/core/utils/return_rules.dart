@@ -1,4 +1,4 @@
-import 'package:clothes_inventory/core/utils/number_utils.dart';
+import 'package:delta_erp/core/utils/number_utils.dart';
 
 class ReturnValidationResult {
   const ReturnValidationResult({
@@ -33,7 +33,7 @@ class ReturnRules {
       return const ReturnValidationResult(
         isValid: false,
         remainingQuantity: 0,
-        error: 'Piece products require whole quantity.',
+        error: 'Piece products require integer quantity.',
       );
     }
 

@@ -1,7 +1,7 @@
 import 'dart:developer' as dev;
 
 import 'package:sqflite/sqflite.dart';
-import 'package:clothes_inventory/services/database/maintenance_coordinator.dart';
+import 'package:delta_erp/services/database/maintenance_coordinator.dart';
 
 class DbTransactionRunner {
   const DbTransactionRunner(this._db, this._maintenanceCoordinator);

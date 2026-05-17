@@ -3,8 +3,8 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:easy_localization/easy_localization.dart';
-import 'package:clothes_inventory/core/config/company_settings_service.dart';
-import 'package:clothes_inventory/features/accounts/data/cash_box_repository.dart';
+import 'package:delta_erp/core/config/company_settings_service.dart';
+import 'package:delta_erp/features/accounts/data/cash_box_repository.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';

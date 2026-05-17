@@ -3,26 +3,26 @@ import 'dart:developer' as dev;
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:clothes_inventory/features/invoices/domain/invoice_print_model.dart';
-import 'package:clothes_inventory/features/invoices/presentation/invoice_print_preview_page.dart';
-import 'package:clothes_inventory/features/license/domain/license_service.dart';
-import 'package:clothes_inventory/features/purchases/data/purchases_repository.dart';
-import 'package:clothes_inventory/features/purchases/presentation/utils/purchases_formatters.dart';
-import 'package:clothes_inventory/features/purchases/presentation/widgets/purchases_cancel_dialog.dart';
-import 'package:clothes_inventory/features/purchases/presentation/widgets/purchases_invoice_details_dialog.dart';
-import 'package:clothes_inventory/features/purchases/presentation/widgets/purchases_invoices_explorer.dart';
-import 'package:clothes_inventory/features/purchases/presentation/widgets/purchases_return_dialog.dart';
-import 'package:clothes_inventory/features/sales/data/sales_repository.dart';
-import 'package:clothes_inventory/features/sales/presentation/widgets/sales_cancel_sale_dialog.dart';
-import 'package:clothes_inventory/features/sales/presentation/widgets/sales_invoice_details_dialog.dart';
-import 'package:clothes_inventory/features/sales/presentation/widgets/sales_invoices_explorer.dart';
-import 'package:clothes_inventory/features/sales/presentation/widgets/sales_return_dialog.dart';
-import 'package:clothes_inventory/services/di/service_locator.dart';
-import 'package:clothes_inventory/services/pdf/sales_invoice_pdf_service.dart';
-import 'package:clothes_inventory/services/printing/a4_invoice_printer.dart';
-import 'package:clothes_inventory/services/printing/invoice_print_manager.dart';
-import 'package:clothes_inventory/services/printing/thermal_pdf_invoice_printer.dart';
-import 'package:clothes_inventory/services/printing/thermal_printer_preferences.dart';
+import 'package:delta_erp/features/invoices/domain/invoice_print_model.dart';
+import 'package:delta_erp/features/invoices/presentation/invoice_print_preview_page.dart';
+import 'package:delta_erp/features/license/domain/license_service.dart';
+import 'package:delta_erp/features/purchases/data/purchases_repository.dart';
+import 'package:delta_erp/features/purchases/presentation/utils/purchases_formatters.dart';
+import 'package:delta_erp/features/purchases/presentation/widgets/purchases_cancel_dialog.dart';
+import 'package:delta_erp/features/purchases/presentation/widgets/purchases_invoice_details_dialog.dart';
+import 'package:delta_erp/features/purchases/presentation/widgets/purchases_invoices_explorer.dart';
+import 'package:delta_erp/features/purchases/presentation/widgets/purchases_return_dialog.dart';
+import 'package:delta_erp/features/sales/data/sales_repository.dart';
+import 'package:delta_erp/features/sales/presentation/widgets/sales_cancel_sale_dialog.dart';
+import 'package:delta_erp/features/sales/presentation/widgets/sales_invoice_details_dialog.dart';
+import 'package:delta_erp/features/sales/presentation/widgets/sales_invoices_explorer.dart';
+import 'package:delta_erp/features/sales/presentation/widgets/sales_return_dialog.dart';
+import 'package:delta_erp/services/di/service_locator.dart';
+import 'package:delta_erp/services/pdf/sales_invoice_pdf_service.dart';
+import 'package:delta_erp/services/printing/a4_invoice_printer.dart';
+import 'package:delta_erp/services/printing/invoice_print_manager.dart';
+import 'package:delta_erp/services/printing/thermal_pdf_invoice_printer.dart';
+import 'package:delta_erp/services/printing/thermal_printer_preferences.dart';
 
 enum InvoicesHubTab { sales, purchases }
 
@@ -373,9 +373,20 @@ class _InvoicesHubPageState extends State<InvoicesHubPage>
       }
     }
 
+    SalesInvoiceSummary? refreshedSummary;
+    for (final row in _salesRows) {
+      if (row.id == saleId) {
+        refreshedSummary = row;
+        break;
+      }
+    }
+
     setState(() {
       _activeSalesInvoiceLines = lines;
       _activeSalesItemId = selectedLine?.id;
+      if (refreshedSummary != null) {
+        _activeSalesInvoiceNumber = refreshedSummary.invoiceNumber;
+      }
       if (_activeSalesInvoiceId != saleId) {
         _activeSalesInvoiceId = saleId;
       }

@@ -1,10 +1,10 @@
 import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:clothes_inventory/core/utils/number_utils.dart';
-import 'package:clothes_inventory/features/products/domain/product.dart';
-import 'package:clothes_inventory/features/purchases/data/purchases_repository.dart';
-import 'package:clothes_inventory/features/purchases/domain/purchase_models.dart';
-import 'package:clothes_inventory/features/sales/domain/sale_models.dart';
+import 'package:delta_erp/core/utils/number_utils.dart';
+import 'package:delta_erp/features/products/domain/product.dart';
+import 'package:delta_erp/features/purchases/data/purchases_repository.dart';
+import 'package:delta_erp/features/purchases/domain/purchase_models.dart';
+import 'package:delta_erp/features/sales/domain/sale_models.dart';
 
 class PurchasesState extends Equatable {
   const PurchasesState({
@@ -211,6 +211,65 @@ class PurchasesCubit extends Cubit<PurchasesState> {
     emit(state.copyWith(cart: updated));
   }
 
+  /// Adds [quantityToAdd] to the cart line for [product], or creates a new line.
+  /// Used when creating a product from the purchase entry dialog with an explicit quantity.
+  void addProductWithQuantity(Product product, double quantityToAdd) {
+    final pid = product.id;
+    if (pid == null) return;
+    final delta = roundQuantity(quantityToAdd);
+    if (delta <= 0) {
+      return;
+    }
+
+    final idx = state.cart.indexWhere((x) => x.productId == pid);
+    if (idx == -1) {
+      if (product.unitType == UnitType.piece && !isIntegerLike(delta)) {
+        emit(
+          state.copyWith(error: 'Piece products require integer quantity.'),
+        );
+        return;
+      }
+      emit(
+        state.copyWith(
+          cart: [
+            ...state.cart,
+            PurchaseDraftItem(
+              productId: pid,
+              productName: product.name,
+              unitType: product.unitType.name,
+              quantity: delta,
+              unitPrice: product.purchasePrice,
+            ),
+          ],
+          clearError: true,
+        ),
+      );
+      return;
+    }
+
+    final updated = [...state.cart];
+    final current = updated[idx];
+    final nextQty = roundQuantity(current.quantity + delta);
+    if (current.unitType == UnitType.piece.name && !isIntegerLike(nextQty)) {
+      emit(
+        state.copyWith(error: 'Piece products require integer quantity.'),
+      );
+      return;
+    }
+    updated[idx] = current.copyWith(quantity: nextQty);
+    emit(state.copyWith(cart: updated, clearError: true));
+  }
+
+  /// When an existing product is edited from the add-product dialog, keep cart line price in sync.
+  void syncCartLinePurchasePrice(int productId, double unitPrice) {
+    final updated = [...state.cart];
+    final idx = updated.indexWhere((x) => x.productId == productId);
+    if (idx == -1) return;
+    final rounded = roundCurrency(unitPrice);
+    updated[idx] = updated[idx].copyWith(unitPrice: rounded);
+    emit(state.copyWith(cart: updated, clearError: true));
+  }
+
   void updateItem(
     int productId, {
     double? quantity,
@@ -224,7 +283,7 @@ class PurchasesCubit extends Cubit<PurchasesState> {
     final current = updated[idx];
     final nextQty = roundQuantity(quantity ?? current.quantity);
     if (current.unitType == UnitType.piece.name && !isIntegerLike(nextQty)) {
-      emit(state.copyWith(error: 'Piece products require whole quantity.'));
+      emit(state.copyWith(error: 'Piece products require integer quantity.'));
       return;
     }
 

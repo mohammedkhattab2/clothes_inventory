@@ -1,11 +1,12 @@
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
-import 'package:clothes_inventory/core/widgets/app_page_shell.dart';
-import 'package:clothes_inventory/features/auth/data/auth_repository.dart';
-import 'package:clothes_inventory/features/auth/domain/auth_user.dart';
-import 'package:clothes_inventory/features/auth/domain/user_audit_log_entry.dart';
-import 'package:clothes_inventory/services/auth/session_service.dart';
-import 'package:clothes_inventory/services/di/service_locator.dart';
+import 'package:delta_erp/core/widgets/app_page_shell.dart';
+import 'package:delta_erp/features/auth/data/auth_repository.dart';
+import 'package:delta_erp/features/auth/domain/access_policy.dart';
+import 'package:delta_erp/features/auth/domain/auth_user.dart';
+import 'package:delta_erp/features/auth/domain/user_audit_log_entry.dart';
+import 'package:delta_erp/services/auth/session_service.dart';
+import 'package:delta_erp/services/di/service_locator.dart';
 
 class UserManagementPage extends StatefulWidget {
   const UserManagementPage({super.key});
@@ -406,7 +407,7 @@ class _UserManagementPageState extends State<UserManagementPage> {
                       DropdownButtonFormField<UserRole>(
                         initialValue: selectedRole,
                         decoration: InputDecoration(labelText: 'Role'.tr()),
-                        items: UserRole.values
+                        items: ownerAssignableRoles
                             .map(
                               (role) => DropdownMenuItem<UserRole>(
                                 value: role,
@@ -506,7 +507,7 @@ class _UserManagementPageState extends State<UserManagementPage> {
                       DropdownButtonFormField<UserRole>(
                         initialValue: selectedRole,
                         decoration: InputDecoration(labelText: 'Role'.tr()),
-                        items: UserRole.values
+                        items: _rolesForOwnerEditDropdown(user.role)
                             .map(
                               (role) => DropdownMenuItem<UserRole>(
                                 value: role,
@@ -710,6 +711,15 @@ class _UserManagementPageState extends State<UserManagementPage> {
       case UserRole.purchaser:
         return 'Purchaser'.tr();
     }
+  }
+
+  /// Includes [current] when it is not in [ownerAssignableRoles] (legacy users).
+  List<UserRole> _rolesForOwnerEditDropdown(UserRole current) {
+    final items = List<UserRole>.from(ownerAssignableRoles);
+    if (!items.contains(current)) {
+      items.insert(0, current);
+    }
+    return items;
   }
 
   String _actionLabel(String action) {

@@ -1,6 +1,6 @@
-import 'package:clothes_inventory/features/sales/domain/sale_models.dart';
+import 'package:delta_erp/features/sales/domain/sale_models.dart';
 
-export 'package:clothes_inventory/features/sales/domain/sale_models.dart'
+export 'package:delta_erp/features/sales/domain/sale_models.dart'
     show InvoiceHeaderDiscountKind, PaymentMethod;
 
 class PurchaseDraftItem {

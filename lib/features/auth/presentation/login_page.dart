@@ -3,10 +3,10 @@ import 'dart:typed_data';
 
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
-import 'package:clothes_inventory/core/config/company_settings_service.dart';
-import 'package:clothes_inventory/features/auth/data/auth_repository.dart';
-import 'package:clothes_inventory/services/di/service_locator.dart';
-import 'package:clothes_inventory/services/auth/session_service.dart';
+import 'package:delta_erp/core/config/company_settings_service.dart';
+import 'package:delta_erp/features/auth/data/auth_repository.dart';
+import 'package:delta_erp/services/di/service_locator.dart';
+import 'package:delta_erp/services/auth/session_service.dart';
 
 enum _LoginMethod { password, pin }
 

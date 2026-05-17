@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:clothes_inventory/features/backup/domain/backup_models.dart';
-import 'package:clothes_inventory/features/backup/domain/backup_repository.dart';
-import 'package:clothes_inventory/features/backup/presentation/backup_cubit.dart';
+import 'package:delta_erp/features/backup/domain/backup_models.dart';
+import 'package:delta_erp/features/backup/domain/backup_repository.dart';
+import 'package:delta_erp/features/backup/presentation/backup_cubit.dart';
 
 class _FakeBackupRepository implements BackupRepository {
   _FakeBackupRepository({
@@ -34,6 +34,11 @@ class _FakeBackupRepository implements BackupRepository {
   @override
   Future<BackupSummary?> getLastBackupInfo() async {
     return summary;
+  }
+
+  @override
+  Future<AutoBackupLastResult?> getLastAutoBackupResult() async {
+    return null;
   }
 
   @override

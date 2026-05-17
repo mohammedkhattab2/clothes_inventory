@@ -1,4 +1,4 @@
-import 'package:clothes_inventory/features/backup/domain/backup_models.dart';
+import 'package:delta_erp/features/backup/domain/backup_models.dart';
 
 abstract class BackupRepository {
   Future<OperationResult> createBackup({
@@ -29,6 +29,8 @@ abstract class BackupRepository {
   Future<OperationResult> deleteBackup(String path);
 
   Future<BackupSummary?> getLastBackupInfo();
+
+  Future<AutoBackupLastResult?> getLastAutoBackupResult();
 
   Future<String> getDefaultBackupDirectory();
 

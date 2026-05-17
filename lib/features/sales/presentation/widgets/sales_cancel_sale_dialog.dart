@@ -1,8 +1,8 @@
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:clothes_inventory/features/sales/presentation/widgets/sales_cancel_dialog_actions.dart';
-import 'package:clothes_inventory/features/sales/presentation/widgets/sales_cancel_dialog_header.dart';
+import 'package:delta_erp/features/sales/presentation/widgets/sales_cancel_dialog_actions.dart';
+import 'package:delta_erp/features/sales/presentation/widgets/sales_cancel_dialog_header.dart';
 
 class SalesCancelSaleDialog extends StatefulWidget {
   const SalesCancelSaleDialog({

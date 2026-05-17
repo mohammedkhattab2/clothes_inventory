@@ -1,4 +1,4 @@
-import 'package:clothes_inventory/services/database/app_database.dart';
+import 'package:delta_erp/services/database/app_database.dart';
 
 class AccountStatementTransaction {
   const AccountStatementTransaction({

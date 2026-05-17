@@ -1,9 +1,9 @@
-import 'package:clothes_inventory/features/purchase_ocr/domain/purchase_invoice_parser.dart';
-import 'package:clothes_inventory/features/purchase_ocr/domain/purchase_ocr_anomaly_detector.dart';
-import 'package:clothes_inventory/features/purchase_ocr/domain/purchase_ocr_models.dart';
-import 'package:clothes_inventory/features/purchase_ocr/domain/purchase_ocr_product_matcher.dart';
-import 'package:clothes_inventory/features/purchase_ocr/domain/purchase_ocr_temporal_intelligence.dart';
-import 'package:clothes_inventory/features/products/domain/product.dart';
+import 'package:delta_erp/features/purchase_ocr/domain/purchase_invoice_parser.dart';
+import 'package:delta_erp/features/purchase_ocr/domain/purchase_ocr_anomaly_detector.dart';
+import 'package:delta_erp/features/purchase_ocr/domain/purchase_ocr_models.dart';
+import 'package:delta_erp/features/purchase_ocr/domain/purchase_ocr_product_matcher.dart';
+import 'package:delta_erp/features/purchase_ocr/domain/purchase_ocr_temporal_intelligence.dart';
+import 'package:delta_erp/features/products/domain/product.dart';
 
 class PurchaseOcrConfidenceScores {
   const PurchaseOcrConfidenceScores({

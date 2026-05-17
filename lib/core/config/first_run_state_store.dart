@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:clothes_inventory/core/utils/app_paths.dart';
+import 'package:delta_erp/core/utils/app_paths.dart';
 
 class FirstRunStateStore {
   static const String _stateFileName = 'runtime_state.json';

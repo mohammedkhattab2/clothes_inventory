@@ -1,8 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
-import 'package:clothes_inventory/core/config/first_run_state_store.dart';
-import 'package:clothes_inventory/features/backup/data/backup_lifecycle_service.dart';
+import 'package:delta_erp/core/config/first_run_state_store.dart';
+import 'package:delta_erp/features/backup/data/backup_lifecycle_service.dart';
 
 class AppStartupCoordinator {
   AppStartupCoordinator({

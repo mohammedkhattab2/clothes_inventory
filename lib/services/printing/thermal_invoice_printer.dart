@@ -1,11 +1,11 @@
 import 'dart:typed_data';
 
-import 'package:clothes_inventory/features/invoices/domain/invoice_print_model.dart';
-import 'package:clothes_inventory/services/printing/arabic_print_mode_resolver.dart';
-import 'package:clothes_inventory/services/printing/escpos_arabic_printer_service.dart';
-import 'package:clothes_inventory/services/printing/invoice_printer.dart';
-import 'package:clothes_inventory/services/printing/printer_text_formatters.dart';
-import 'package:clothes_inventory/services/printing/rtl_printer_formatter.dart';
+import 'package:delta_erp/features/invoices/domain/invoice_print_model.dart';
+import 'package:delta_erp/services/printing/arabic_print_mode_resolver.dart';
+import 'package:delta_erp/services/printing/escpos_arabic_printer_service.dart';
+import 'package:delta_erp/services/printing/invoice_printer.dart';
+import 'package:delta_erp/services/printing/printer_text_formatters.dart';
+import 'package:delta_erp/services/printing/rtl_printer_formatter.dart';
 
 class ThermalInvoicePrinter implements InvoicePrinter {
   ThermalInvoicePrinter({

@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:clothes_inventory/features/purchase_ocr/domain/purchase_invoice_parser.dart';
-import 'package:clothes_inventory/features/purchase_ocr/domain/purchase_ocr_models.dart';
+import 'package:delta_erp/features/purchase_ocr/domain/purchase_invoice_parser.dart';
+import 'package:delta_erp/features/purchase_ocr/domain/purchase_ocr_models.dart';
 
 void main() {
   const parser = PurchaseInvoiceParser();

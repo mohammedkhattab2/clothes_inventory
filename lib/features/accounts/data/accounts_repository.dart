@@ -1,5 +1,6 @@
-import 'package:clothes_inventory/services/database/app_database.dart';
-import 'package:clothes_inventory/services/database/db_transaction_runner.dart';
+import 'package:delta_erp/services/auth/session_service.dart';
+import 'package:delta_erp/services/database/app_database.dart';
+import 'package:delta_erp/services/database/db_transaction_runner.dart';
 
 class AccountSummary {
   const AccountSummary({
@@ -46,10 +47,15 @@ class SettlementInvoiceOption {
 }
 
 class AccountsRepository {
-  const AccountsRepository(this._appDatabase, this._transactionRunner);
+  const AccountsRepository(
+    this._appDatabase,
+    this._transactionRunner,
+    this._sessionService,
+  );
 
   final AppDatabase _appDatabase;
   final DbTransactionRunner _transactionRunner;
+  final SessionService _sessionService;
   static const double _epsilon = 0.000001;
 
   Future<List<AccountLookup>> listAllAccounts() async {
@@ -350,6 +356,8 @@ class AccountsRepository {
     await _appDatabase.database;
 
     await _transactionRunner.run((txn) async {
+      final actorUserId = _sessionService.requireUserId();
+
       final accountRows = await txn.query(
         'accounts',
         columns: ['account_type'],
@@ -432,7 +440,11 @@ class AccountsRepository {
           );
 
           remainingToAllocate -= allocated;
-          await _refreshSaleInvoiceStatus(txn, saleId: invoice.id);
+          await _refreshSaleInvoiceStatus(
+            txn,
+            saleId: invoice.id,
+            modifiedByUserId: actorUserId,
+          );
         }
       }
 
@@ -485,7 +497,11 @@ class AccountsRepository {
           );
 
           remainingToAllocate -= allocated;
-          await _refreshPurchaseInvoiceStatus(txn, purchaseId: invoice.id);
+          await _refreshPurchaseInvoiceStatus(
+            txn,
+            purchaseId: invoice.id,
+            modifiedByUserId: actorUserId,
+          );
         }
       }
 
@@ -702,6 +718,7 @@ class AccountsRepository {
   Future<void> _refreshSaleInvoiceStatus(
     dynamic txn, {
     required int saleId,
+    required int modifiedByUserId,
   }) async {
     final rows = await txn.rawQuery(
       '''
@@ -731,7 +748,10 @@ class AccountsRepository {
 
     await txn.update(
       'sales',
-      <String, Object?>{'status': nextStatus},
+      <String, Object?>{
+        'status': nextStatus,
+        'last_modified_by_user_id': modifiedByUserId,
+      },
       where: 'id = ? AND status != ? AND status != ?',
       whereArgs: <Object?>[saleId, 'cancelled', 'pending'],
     );
@@ -740,6 +760,7 @@ class AccountsRepository {
   Future<void> _refreshPurchaseInvoiceStatus(
     dynamic txn, {
     required int purchaseId,
+    required int modifiedByUserId,
   }) async {
     final rows = await txn.rawQuery(
       '''
@@ -793,7 +814,10 @@ class AccountsRepository {
 
     await txn.update(
       'purchases',
-      <String, Object?>{'status': nextStatus},
+      <String, Object?>{
+        'status': nextStatus,
+        'last_modified_by_user_id': modifiedByUserId,
+      },
       where: 'id = ? AND status != ?',
       whereArgs: <Object?>[purchaseId, 'cancelled'],
     );

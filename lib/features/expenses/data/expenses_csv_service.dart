@@ -3,9 +3,7 @@ import 'dart:developer' as dev;
 import 'dart:io';
 
 import 'package:intl/intl.dart';
-import 'package:clothes_inventory/features/expenses/data/expenses_repository.dart';
-import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
+import 'package:delta_erp/features/expenses/data/expenses_repository.dart';
 
 class ExpensesCsvService {
   const ExpensesCsvService();
@@ -15,6 +13,7 @@ class ExpensesCsvService {
     required double grossExpenses,
     required double netExpenses,
     required bool includeReversals,
+    required String targetPath,
     DateTime? fromDate,
     DateTime? toDate,
     int? accountId,
@@ -50,13 +49,8 @@ class ExpensesCsvService {
         );
       }
 
-      final docsDir = await getApplicationDocumentsDirectory();
-      final exportDir = Directory(p.join(docsDir.path, 'exports'));
-      await exportDir.create(recursive: true);
-
-      final fileName = 'expenses_${DateTime.now().millisecondsSinceEpoch}.csv';
-      final file = File(p.join(exportDir.path, fileName));
-
+      final file = File(targetPath);
+      await file.parent.create(recursive: true);
       final bytes = utf8.encode('\uFEFF${buffer.toString()}');
       await file.writeAsBytes(bytes, flush: true);
       return file.path;

@@ -1,15 +1,23 @@
-import 'package:clothes_inventory/core/utils/number_utils.dart';
-import 'package:clothes_inventory/core/utils/invoice_number_display.dart';
-import 'package:clothes_inventory/core/utils/return_rules.dart';
-import 'package:clothes_inventory/core/utils/sql_like_escape.dart';
-import 'package:clothes_inventory/features/invoices/domain/invoice_suggestion.dart';
-import 'package:clothes_inventory/features/purchases/domain/purchase_models.dart';
-import 'package:clothes_inventory/features/sales/domain/sale_models.dart';
-import 'package:clothes_inventory/services/auth/session_service.dart';
-import 'package:clothes_inventory/services/database/app_database.dart';
-import 'package:clothes_inventory/services/database/db_transaction_runner.dart';
-import 'package:clothes_inventory/services/database/invoice_sequence_allocator.dart';
+import 'package:delta_erp/core/utils/number_utils.dart';
+import 'package:delta_erp/core/utils/invoice_number_display.dart';
+import 'package:delta_erp/core/utils/return_rules.dart';
+import 'package:delta_erp/core/utils/sql_like_escape.dart';
+import 'package:delta_erp/features/invoices/domain/invoice_suggestion.dart';
+import 'package:delta_erp/features/purchases/domain/purchase_models.dart';
+import 'package:delta_erp/features/sales/domain/sale_models.dart';
+import 'package:delta_erp/services/auth/session_service.dart';
+import 'package:delta_erp/services/database/app_database.dart';
+import 'package:delta_erp/services/database/db_transaction_runner.dart';
+import 'package:delta_erp/services/database/invoice_sequence_allocator.dart';
 import 'package:sqflite/sqlite_api.dart';
+
+String _purchaseInvoiceActorLabel(String? fullName, String? username) {
+  final n = (fullName ?? '').trim();
+  if (n.isNotEmpty) return n;
+  final u = (username ?? '').trim();
+  if (u.isNotEmpty) return u;
+  return '-';
+}
 
 class PurchaseInvoiceSummary {
   const PurchaseInvoiceSummary({
@@ -22,6 +30,8 @@ class PurchaseInvoiceSummary {
     required this.paidAmount,
     required this.outstandingAmount,
     required this.createdAt,
+    required this.createdByDisplay,
+    this.lastModifiedByDisplay,
     this.paymentMethod,
   });
 
@@ -34,6 +44,8 @@ class PurchaseInvoiceSummary {
   final double paidAmount;
   final double outstandingAmount;
   final DateTime createdAt;
+  final String createdByDisplay;
+  final String? lastModifiedByDisplay;
   /// Distinct payment methods from SQL `GROUP_CONCAT`, or one method. Display via `invoicePaymentMethodsDisplayLabel`.
   final String? paymentMethod;
 }
@@ -120,6 +132,7 @@ class PurchasesRepository {
       SELECT
         p.id,
         p.invoice_number,
+        p.last_modified_by_user_id AS last_mod_uid,
         COALESCE((
           SELECT GROUP_CONCAT(pr.name, ', ')
           FROM purchase_items pi
@@ -164,9 +177,15 @@ class PurchasesRepository {
             AND reversal_for_id IS NULL
             AND is_refund = 0
         ) AS last_payment_method,
-        p.created_at
+        p.created_at,
+        uc.full_name AS creator_full_name,
+        uc.username AS creator_username,
+        um.full_name AS modifier_full_name,
+        um.username AS modifier_username
       FROM purchases p
       JOIN accounts a ON a.id = p.account_id
+      LEFT JOIN users uc ON uc.id = p.created_by_user_id
+      LEFT JOIN users um ON um.id = p.last_modified_by_user_id
       WHERE ${where.join(' AND ')}
       ORDER BY datetime(p.created_at) DESC, p.id DESC
       LIMIT ? OFFSET ?
@@ -188,6 +207,16 @@ class PurchasesRepository {
                         .clamp(0, double.infinity))
                     .toDouble(),
             createdAt: DateTime.parse(row['created_at'] as String),
+            createdByDisplay: _purchaseInvoiceActorLabel(
+              row['creator_full_name'] as String?,
+              row['creator_username'] as String?,
+            ),
+            lastModifiedByDisplay: row['last_mod_uid'] == null
+                ? null
+                : _purchaseInvoiceActorLabel(
+                    row['modifier_full_name'] as String?,
+                    row['modifier_username'] as String?,
+                  ),
             paymentMethod: () {
               final raw = row['last_payment_method'] as String?;
               if (raw == null || raw.trim().isEmpty) {
@@ -789,7 +818,7 @@ class PurchasesRepository {
     }
 
     await _transactionRunner.run((txn) async {
-      _sessionService.requireUserId();
+      final actorUserId = _sessionService.requireUserId();
 
       final purchaseRows = await txn.rawQuery(
         '''
@@ -943,6 +972,7 @@ class PurchasesRepository {
         {
           'total_amount': totalAmount,
           'status': nextStatus,
+          'last_modified_by_user_id': actorUserId,
         },
         where: 'id = ?',
         whereArgs: [purchaseId],
@@ -1062,9 +1092,25 @@ class PurchasesRepository {
       final unitDiscount = purchasedQty == 0
           ? 0
           : (lineDiscount / purchasedQty);
-      final returnAmount = roundCurrency(
+      final lineGross = roundCurrency(
         requestedQty * (unitPrice - unitDiscount),
       );
+
+      final subtotalRows = await txn.rawQuery(
+        '''
+        SELECT COALESCE(SUM(line_total), 0) AS subtotal
+        FROM purchase_items
+        WHERE purchase_id = ?
+        ''',
+        [purchaseId],
+      );
+      final subtotal =
+          ((subtotalRows.first['subtotal'] ?? 0) as num).toDouble();
+      final oldTotalAmount = ((purchaseRows.first['total_amount'] ?? 0) as num)
+          .toDouble();
+      final returnAmount = subtotal > 0.000001
+          ? roundCurrency(oldTotalAmount * lineGross / subtotal)
+          : lineGross;
 
       final supplierId = purchaseRows.first['account_id'] as int;
       await txn.insert('ledger_transactions', {
@@ -1077,18 +1123,16 @@ class PurchasesRepository {
         'created_at': DateTime.now().toIso8601String(),
       });
 
-      final oldTotalAmount = ((purchaseRows.first['total_amount'] ?? 0) as num)
-          .toDouble();
       final newTotalAmount = roundCurrency(
         (oldTotalAmount - returnAmount).clamp(0, double.infinity).toDouble(),
       );
       final paidRows = await txn.rawQuery(
         '''
-        SELECT COALESCE(SUM(amount), 0) AS paid_amount
-        FROM payments
-        WHERE invoice_type = 'purchase'
-          AND invoice_id = ?
-          AND reversal_for_id IS NULL
+        SELECT COALESCE(SUM(pp.amount), 0) AS paid_amount
+        FROM payments pp
+        WHERE pp.invoice_type = 'purchase'
+          AND pp.invoice_id = ?
+          AND pp.reversal_for_id IS NULL
         ''',
         [purchaseId],
       );
@@ -1100,7 +1144,11 @@ class PurchasesRepository {
 
       await txn.update(
         'purchases',
-        {'total_amount': newTotalAmount, 'status': nextStatus},
+        {
+          'total_amount': newTotalAmount,
+          'status': nextStatus,
+          'last_modified_by_user_id': actorUserId,
+        },
         where: 'id = ?',
         whereArgs: [purchaseId],
       );
@@ -1259,7 +1307,10 @@ class PurchasesRepository {
 
       await txn.update(
         'purchases',
-        {'status': 'cancelled'},
+        {
+          'status': 'cancelled',
+          'last_modified_by_user_id': actorUserId,
+        },
         where: 'id = ?',
         whereArgs: [purchaseId],
       );

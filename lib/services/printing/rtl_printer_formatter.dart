@@ -1,5 +1,5 @@
-import 'package:clothes_inventory/services/printing/printer_text_formatters.dart';
-import 'package:clothes_inventory/services/printing/rtl_alignment_helper.dart';
+import 'package:delta_erp/services/printing/printer_text_formatters.dart';
+import 'package:delta_erp/services/printing/rtl_alignment_helper.dart';
 
 const int kThermal58mmLineWidth = 32;
 const int kThermal80mmLineWidth = 48;

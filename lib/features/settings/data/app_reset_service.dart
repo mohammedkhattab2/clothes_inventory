@@ -2,9 +2,9 @@ import 'dart:io';
 
 import 'package:path/path.dart' as p;
 
-import 'package:clothes_inventory/core/utils/app_paths.dart';
-import 'package:clothes_inventory/services/database/app_database.dart';
-import 'package:clothes_inventory/services/database/maintenance_coordinator.dart';
+import 'package:delta_erp/core/utils/app_paths.dart';
+import 'package:delta_erp/services/database/app_database.dart';
+import 'package:delta_erp/services/database/maintenance_coordinator.dart';
 
 class AppResetResult {
   const AppResetResult({required this.success, required this.message});
@@ -94,7 +94,7 @@ class AppResetService {
 
   Future<File> _resolveWindowsAppExecutable(File currentExecutable) async {
     final exeDir = currentExecutable.parent;
-    final directCandidate = File(p.join(exeDir.path, 'clothes_inventory.exe'));
+    final directCandidate = File(p.join(exeDir.path, 'DeltaErp.exe'));
     if (await directCandidate.exists()) {
       return directCandidate;
     }

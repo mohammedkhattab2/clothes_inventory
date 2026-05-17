@@ -1,4 +1,4 @@
-package com.example.clothes_inventory
+package com.example.delta_erp
 
 import io.flutter.embedding.android.FlutterActivity
 

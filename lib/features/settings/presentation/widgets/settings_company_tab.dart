@@ -1,6 +1,6 @@
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
-import 'package:clothes_inventory/features/settings/presentation/widgets/settings_luxury_components.dart';
+import 'package:delta_erp/features/settings/presentation/widgets/settings_luxury_components.dart';
 
 class SettingsCompanyTab extends StatelessWidget {
   const SettingsCompanyTab({
@@ -220,9 +220,8 @@ class SettingsCompanyTab extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             SettingsLuxurySectionCard(
-              title: 'الطابعة الحرارية',
-              subtitle:
-                  'حدد طابعة USB أو Bluetooth مربوطة بويندوز لطباعة الفواتير مباشرةً',
+              title: 'settings.thermal_printer_title'.tr(),
+              subtitle: 'settings.thermal_printer_subtitle'.tr(),
               icon: Icons.print_outlined,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -232,7 +231,7 @@ class SettingsCompanyTab extends StatelessWidget {
                       children: [
                         const Icon(
                           Icons.check_circle_outline,
-                          color: Colors.green,
+                          color: Color(0xFF16A34A),
                           size: 18,
                         ),
                         const SizedBox(width: 8),
@@ -252,12 +251,12 @@ class SettingsCompanyTab extends StatelessWidget {
                       children: [
                         const Icon(
                           Icons.warning_amber_outlined,
-                          color: Colors.orange,
+                          color: Color(0xFFF59E0B),
                           size: 18,
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          'لم يتم تحديد طابعة بعد',
+                          'settings.thermal_printer_not_selected'.tr(),
                           style: Theme.of(context).textTheme.bodyMedium,
                         ),
                       ],
@@ -273,28 +272,28 @@ class SettingsCompanyTab extends StatelessWidget {
                             ? null
                             : onSelectThermalPrinter,
                         icon: selectingPrinter
-                            ? const SizedBox(
+                            ? SizedBox(
                                 width: 14,
                                 height: 14,
                                 child: CircularProgressIndicator(
                                   strokeWidth: 2,
-                                  color: Colors.white,
+                                  color: Theme.of(context).colorScheme.onPrimary,
                                 ),
                               )
                             : const Icon(Icons.search_outlined),
                         label: Text(
                           selectingPrinter
-                              ? 'جاري البحث...'
+                              ? 'settings.searching'.tr()
                               : (currentThermalPrinterName != null
-                                    ? 'تغيير الطابعة'
-                                    : 'اختيار الطابعة'),
+                                    ? 'settings.change_printer'.tr()
+                                    : 'settings.select_printer'.tr()),
                         ),
                       ),
                       if (currentThermalPrinterName != null)
                         OutlinedButton.icon(
                           onPressed: onClearThermalPrinter,
                           icon: const Icon(Icons.link_off_outlined),
-                          label: const Text('إلغاء التحديد'),
+                          label: Text('settings.clear_selection'.tr()),
                         ),
                     ],
                   ),

@@ -50,9 +50,13 @@ class _SalesPageState extends State<SalesPage> {
   int? _activeSaleItemId;
   List<SalesInvoiceLine> _activeInvoiceLines = const [];
   final Map<int, String> _inlineQuantityDrafts = <int, String>{};
+  final Map<int, String> _inlineDiscountDrafts = <int, String>{};
   final Map<int, TextEditingController> _inlineQtyControllers =
       <int, TextEditingController>{};
   final Map<int, FocusNode> _inlineQtyFocusNodes = <int, FocusNode>{};
+  final Map<int, TextEditingController> _inlineDiscountControllers =
+      <int, TextEditingController>{};
+  final Map<int, FocusNode> _inlineDiscountFocusNodes = <int, FocusNode>{};
   _SalePriceTier _selectedSalePriceTier = _SalePriceTier.retail;
 
   void _resetCartPaymentControllers() {
@@ -115,6 +119,26 @@ class _SalesPageState extends State<SalesPage> {
     final items = await _accountsRepo.listByType('customer');
     if (!mounted) return;
     setState(() => _customers = items);
+  }
+
+  String? _phoneForCustomerId(int? customerId) {
+    if (customerId == null) return null;
+    for (final c in _customers) {
+      if (c.id == customerId) {
+        return c.phone;
+      }
+    }
+    return null;
+  }
+
+  void _backfillCustomerPhoneIfNeeded(int? customerId, String currentPhone) {
+    if (customerId == null || currentPhone.trim().isNotEmpty) return;
+    final phone = _phoneForCustomerId(customerId)?.trim() ?? '';
+    if (phone.isEmpty) return;
+    _customerPhoneController.text = phone;
+    if (mounted) {
+      context.read<SalesCubit>().setCustomerPhone(phone);
+    }
   }
 
   Future<bool> _ensureSalesWriteAllowed() async {
@@ -183,8 +207,10 @@ class _SalesPageState extends State<SalesPage> {
     if (!allowed) return;
     if (!mounted) return;
 
-    final draftsOk = _commitInlineQuantityDrafts(context, state.cart);
-    if (!draftsOk) return;
+    final qtyOk = _commitInlineQuantityDrafts(context, state.cart);
+    if (!qtyOk) return;
+    final discountOk = _commitInlineDiscountDrafts(context, state.cart);
+    if (!discountOk) return;
     cubit.checkout(pendingSaleIdOverride: _loadedPendingSaleId);
   }
 
@@ -196,8 +222,10 @@ class _SalesPageState extends State<SalesPage> {
     if (!allowed) return;
     if (!mounted) return;
 
-    final draftsOk = _commitInlineQuantityDrafts(context, state.cart);
-    if (!draftsOk) return;
+    final qtyOk = _commitInlineQuantityDrafts(context, state.cart);
+    if (!qtyOk) return;
+    final discountOk = _commitInlineDiscountDrafts(context, state.cart);
+    if (!discountOk) return;
     cubit.checkout(isPending: true);
   }
 
@@ -294,10 +322,7 @@ class _SalesPageState extends State<SalesPage> {
     if (!mounted || gen != _barcodeLookupGeneration) return;
     if (items.isEmpty) {
       if (notifyOnNoMatch && context.mounted) {
-        _showLatestSnackBar(
-          context,
-          'No product matches this barcode.'.tr(),
-        );
+        _showLatestSnackBar(context, 'No product matches this barcode.'.tr());
         refocusBarcodeForNextScan(
           focus: _barcodeFocusNode,
           controller: _barcodeController,
@@ -333,9 +358,7 @@ class _SalesPageState extends State<SalesPage> {
 
   void _onBarcodeFieldSubmitted(BuildContext context, String value) {
     _barcodeDebounce?.cancel();
-    unawaited(
-      _searchBarcodeAndAdd(context, value, notifyOnNoMatch: true),
-    );
+    unawaited(_searchBarcodeAndAdd(context, value, notifyOnNoMatch: true));
   }
 
   double _resolveSalePriceByTier(Product product) {
@@ -404,6 +427,12 @@ class _SalesPageState extends State<SalesPage> {
     for (final node in _inlineQtyFocusNodes.values) {
       node.dispose();
     }
+    for (final controller in _inlineDiscountControllers.values) {
+      controller.dispose();
+    }
+    for (final node in _inlineDiscountFocusNodes.values) {
+      node.dispose();
+    }
     super.dispose();
   }
 
@@ -455,6 +484,10 @@ class _SalesPageState extends State<SalesPage> {
       }
     }
     return item.quantity.toStringAsFixed(0);
+  }
+
+  String _formatDiscount(SaleDraftItem item) {
+    return item.discount.toStringAsFixed(2);
   }
 
   bool _applyInlineQuantityChange(
@@ -520,6 +553,55 @@ class _SalesPageState extends State<SalesPage> {
     return true;
   }
 
+  bool _applyInlineDiscountChange(
+    BuildContext context,
+    SaleDraftItem item,
+    String raw, {
+    bool showFeedback = true,
+  }) {
+    final parsed = _parseFlexibleNumber(raw);
+    if (parsed == null) {
+      if (showFeedback) {
+        _showLatestSnackBar(context, 'Enter a valid amount.'.tr());
+      }
+      return false;
+    }
+
+    final clampedDiscount = parsed < 0 ? 0.0 : parsed;
+    final gross = roundCurrency(item.quantity * item.unitPrice);
+    if (clampedDiscount > gross + 0.000001) {
+      if (showFeedback) {
+        _showLatestSnackBar(context, 'Discount cannot exceed line total.'.tr());
+      }
+      return false;
+    }
+
+    context.read<SalesCubit>().updateItem(
+      item.productId,
+      discount: clampedDiscount,
+    );
+    return true;
+  }
+
+  bool _commitInlineDiscountDrafts(
+    BuildContext context,
+    List<SaleDraftItem> cart,
+  ) {
+    if (_inlineDiscountDrafts.isEmpty) return true;
+
+    for (final item in cart) {
+      final draft = _inlineDiscountDrafts[item.productId];
+      if (draft == null || draft.trim().isEmpty) continue;
+      final ok = _applyInlineDiscountChange(context, item, draft);
+      if (!ok) {
+        return false;
+      }
+      _inlineDiscountDrafts.remove(item.productId);
+    }
+
+    return true;
+  }
+
   void _syncInlineQuantityEditors(List<SaleDraftItem> cart) {
     final activeIds = cart.map((item) => item.productId).toSet();
 
@@ -536,6 +618,25 @@ class _SalesPageState extends State<SalesPage> {
     for (final id in staleNodes) {
       _inlineQtyFocusNodes.remove(id)?.dispose();
       _inlineQuantityDrafts.remove(id);
+    }
+  }
+
+  void _syncInlineDiscountEditors(List<SaleDraftItem> cart) {
+    final activeIds = cart.map((item) => item.productId).toSet();
+
+    final staleControllers = _inlineDiscountControllers.keys
+        .where((id) => !activeIds.contains(id))
+        .toList();
+    for (final id in staleControllers) {
+      _inlineDiscountControllers.remove(id)?.dispose();
+    }
+
+    final staleNodes = _inlineDiscountFocusNodes.keys
+        .where((id) => !activeIds.contains(id))
+        .toList();
+    for (final id in staleNodes) {
+      _inlineDiscountFocusNodes.remove(id)?.dispose();
+      _inlineDiscountDrafts.remove(id);
     }
   }
 
@@ -564,6 +665,31 @@ class _SalesPageState extends State<SalesPage> {
     });
   }
 
+  TextEditingController _discountControllerFor(SaleDraftItem item) {
+    return _inlineDiscountControllers.putIfAbsent(
+      item.productId,
+      () => TextEditingController(text: _formatDiscount(item)),
+    );
+  }
+
+  FocusNode _discountFocusNodeFor(
+    SaleDraftItem item,
+    TextEditingController controller,
+  ) {
+    return _inlineDiscountFocusNodes.putIfAbsent(item.productId, () {
+      final node = FocusNode();
+      node.addListener(() {
+        if (node.hasFocus) {
+          controller.selection = TextSelection(
+            baseOffset: 0,
+            extentOffset: controller.text.length,
+          );
+        }
+      });
+      return node;
+    });
+  }
+
   bool _hasInvalidInlineDrafts(List<SaleDraftItem> cart) {
     for (final item in cart) {
       final draft = _inlineQuantityDrafts[item.productId];
@@ -578,317 +704,333 @@ class _SalesPageState extends State<SalesPage> {
       }
       if (parsed > item.availableStock + 0.000001) return true;
     }
+    for (final item in cart) {
+      final draft = _inlineDiscountDrafts[item.productId];
+      if (draft == null || draft.trim().isEmpty) continue;
+
+      final parsed = _parseFlexibleNumber(draft);
+      if (parsed == null) return true;
+      if (parsed < 0) return true;
+      final gross = roundCurrency(item.quantity * item.unitPrice);
+      if (parsed > gross + 0.000001) return true;
+    }
     return false;
   }
 
   @override
   Widget build(BuildContext context) {
-    return BlocConsumer<SalesCubit, SalesState>(
+    return BlocListener<SalesCubit, SalesState>(
       listenWhen: (previous, current) {
-        return previous.successInvoiceId != current.successInvoiceId ||
-            previous.successEvent != current.successEvent ||
-            previous.error != current.error;
+        if (previous.total == current.total) return false;
+        if (current.editingSaleId != null) return false;
+        if (current.pendingSaleId != null) return false;
+        return true;
       },
       listener: (context, state) {
-        var shouldClearTransient = false;
-        var shouldClearError = false;
+        final cubit = context.read<SalesCubit>();
+        final total = state.total;
+        cubit.setPaidAmount(total);
+        cubit.setPaidWalletAmount(0);
+        _paidController.text = total == 0 ? '' : total.toStringAsFixed(2);
+        _paidWalletController.text = '';
+      },
+      child: BlocConsumer<SalesCubit, SalesState>(
+        listenWhen: (previous, current) {
+          return previous.successInvoiceId != current.successInvoiceId ||
+              previous.successEvent != current.successEvent ||
+              previous.error != current.error;
+        },
+        listener: (context, state) {
+          var shouldClearTransient = false;
+          var shouldClearError = false;
 
-        if (state.successInvoiceId != null) {
-          final event = state.successEvent ?? 'sale_saved';
-          if (event == 'pending_completed' || event == 'sale_amended') {
-            _loadedPendingSaleId = null;
+          if (state.successInvoiceId != null) {
+            final event = state.successEvent ?? 'sale_saved';
+            if (event == 'pending_completed' || event == 'sale_amended') {
+              _loadedPendingSaleId = null;
+            }
+            if (mounted) {
+              setState(() {
+                _invoicePage = 0;
+                _activeInvoiceId = state.successInvoiceId;
+                if (event == 'sale_amended') {
+                  _activeSaleItemId = null;
+                } else {
+                  _activeInvoiceNumber = null;
+                  _activeSaleItemId = null;
+                  _activeInvoiceLines = const [];
+                }
+              });
+            }
+            if (event == 'sale_amended' && state.successInvoiceId != null) {
+              unawaited(_refreshActiveInvoiceLines(state.successInvoiceId!));
+            }
+            _loadInvoices();
+            final successMessage = switch (event) {
+              'pending_saved' =>
+                '${'Pending invoice saved'.tr()}: #${state.successInvoiceId}',
+              'pending_completed' =>
+                '${'Pending invoice completed'.tr()}: #${state.successInvoiceId}',
+              'sale_amended' => 'sale.amended_success'.tr(
+                namedArgs: {'id': '${state.successInvoiceId}'},
+              ),
+              _ => '${'Sale saved'.tr()}: #${state.successInvoiceId}',
+            };
+            _showLatestSnackBar(context, successMessage);
+            if (event != 'pending_completed') {
+              _nameSearchController.clear();
+              _barcodeController.clear();
+              refocusBarcodeForNextScan(
+                focus: _barcodeFocusNode,
+                controller: _barcodeController,
+              );
+              _paidController.clear();
+              _paidWalletController.clear();
+              _headerDiscountValueController.clear();
+              _newCustomerController.clear();
+              _customerPhoneController.clear();
+            }
+            shouldClearTransient = true;
           }
-          if (mounted) {
-            setState(() {
-              _invoicePage = 0;
-              _activeInvoiceId = state.successInvoiceId;
-              if (event == 'sale_amended') {
-                _activeSaleItemId = null;
-              } else {
+          if (state.successEvent == 'pending_loaded') {
+            _loadedPendingSaleId = state.pendingSaleId;
+            _headerDiscountValueController.text = state.headerDiscountValue == 0
+                ? ''
+                : state.headerDiscountValue.toStringAsFixed(2);
+            _paidController.text = '0';
+            _paidWalletController.text = '';
+            _newCustomerController.text = state.newCustomerName;
+            _customerPhoneController.text = state.customerPhone;
+            _backfillCustomerPhoneIfNeeded(
+              state.customerId,
+              state.customerPhone,
+            );
+            if (mounted) {
+              setState(() {
+                _activeInvoiceId = null;
                 _activeInvoiceNumber = null;
                 _activeSaleItemId = null;
                 _activeInvoiceLines = const [];
-              }
-            });
+              });
+            }
+            _showLatestSnackBar(
+              context,
+              'Pending invoice loaded to cart.'.tr(),
+            );
+            shouldClearTransient = true;
           }
-          if (event == 'sale_amended' && state.successInvoiceId != null) {
-            unawaited(
-              _refreshActiveInvoiceLines(state.successInvoiceId!),
+          if (state.successEvent == 'invoice_amendment_loaded') {
+            _loadedPendingSaleId = null;
+            _headerDiscountValueController.text = state.headerDiscountValue == 0
+                ? ''
+                : state.headerDiscountValue.toStringAsFixed(2);
+            _paidController.text = state.paidAmount == 0
+                ? ''
+                : state.paidAmount.toStringAsFixed(2);
+            _paidWalletController.text = state.paidWalletAmount == 0
+                ? ''
+                : state.paidWalletAmount.toStringAsFixed(2);
+            _newCustomerController.text = state.newCustomerName;
+            _customerPhoneController.text = state.customerPhone;
+            _backfillCustomerPhoneIfNeeded(
+              state.customerId,
+              state.customerPhone,
+            );
+            if (mounted && state.editingSaleId != null) {
+              unawaited(_refreshActiveInvoiceLines(state.editingSaleId!));
+            }
+            _showLatestSnackBar(
+              context,
+              'sale.invoice_amendment_loaded_hint'.tr(),
+            );
+            shouldClearTransient = true;
+          }
+          if (state.error != null) {
+            _showLatestSnackBar(context, state.error!.tr());
+            shouldClearTransient = true;
+            shouldClearError = true;
+          }
+          if (shouldClearTransient) {
+            context.read<SalesCubit>().clearTransientFeedback(
+              clearError: shouldClearError,
             );
           }
-          _loadInvoices();
-          final successMessage = switch (event) {
-            'pending_saved' =>
-              '${'Pending invoice saved'.tr()}: #${state.successInvoiceId}',
-            'pending_completed' =>
-              '${'Pending invoice completed'.tr()}: #${state.successInvoiceId}',
-            'sale_amended' => 'sale.amended_success'.tr(
-              namedArgs: {'id': '${state.successInvoiceId}'},
+        },
+        builder: (context, state) {
+          final cubit = context.read<SalesCubit>();
+          _syncInlineQuantityEditors(state.cart);
+          _syncInlineDiscountEditors(state.cart);
+          final hasInvalidInlineDrafts = _hasInvalidInlineDrafts(state.cart);
+          final viewport = MediaQuery.sizeOf(context);
+          final isShortViewport = viewport.height < 900;
+          final isVeryDenseViewport = viewport.height < 720;
+          final sectionGap = isVeryDenseViewport
+              ? 10.0
+              : (isShortViewport ? 12.0 : 16.0);
+          return Padding(
+            padding: EdgeInsets.fromLTRB(
+              isVeryDenseViewport ? 12 : (isShortViewport ? 16 : 24),
+              isVeryDenseViewport ? 10 : (isShortViewport ? 12 : 24),
+              isVeryDenseViewport ? 12 : (isShortViewport ? 16 : 24),
+              isVeryDenseViewport ? 10 : (isShortViewport ? 12 : 24),
             ),
-            _ =>
-              '${'Sale saved'.tr()}: #${state.successInvoiceId}',
-          };
-          _showLatestSnackBar(context, successMessage);
-          if (event != 'pending_completed') {
-            _nameSearchController.clear();
-            _barcodeController.clear();
-            refocusBarcodeForNextScan(
-              focus: _barcodeFocusNode,
-              controller: _barcodeController,
-            );
-            _paidController.clear();
-            _paidWalletController.clear();
-            _headerDiscountValueController.clear();
-            _newCustomerController.clear();
-            _customerPhoneController.clear();
-          }
-          shouldClearTransient = true;
-        }
-        if (state.successEvent == 'pending_loaded') {
-          _loadedPendingSaleId = state.pendingSaleId;
-          _headerDiscountValueController.text =
-              state.headerDiscountValue == 0
-                  ? ''
-                  : state.headerDiscountValue.toStringAsFixed(2);
-          _paidController.text = '0';
-          _paidWalletController.text = '';
-          _newCustomerController.text = state.newCustomerName;
-          _customerPhoneController.text = state.customerPhone;
-          if (mounted) {
-            setState(() {
-              _activeInvoiceId = null;
-              _activeInvoiceNumber = null;
-              _activeSaleItemId = null;
-              _activeInvoiceLines = const [];
-            });
-          }
-          _showLatestSnackBar(context, 'Pending invoice loaded to cart.'.tr());
-          shouldClearTransient = true;
-        }
-        if (state.successEvent == 'invoice_amendment_loaded') {
-          _loadedPendingSaleId = null;
-          _headerDiscountValueController.text =
-              state.headerDiscountValue == 0
-                  ? ''
-                  : state.headerDiscountValue.toStringAsFixed(2);
-          _paidController.text =
-              state.paidAmount == 0
-                  ? ''
-                  : state.paidAmount.toStringAsFixed(2);
-          _paidWalletController.text =
-              state.paidWalletAmount == 0
-                  ? ''
-                  : state.paidWalletAmount.toStringAsFixed(2);
-          _newCustomerController.text = state.newCustomerName;
-          _customerPhoneController.text = state.customerPhone;
-          if (mounted && state.editingSaleId != null) {
-            unawaited(_refreshActiveInvoiceLines(state.editingSaleId!));
-          }
-          _showLatestSnackBar(
-            context,
-            'sale.invoice_amendment_loaded_hint'.tr(),
-          );
-          shouldClearTransient = true;
-        }
-        if (state.error != null) {
-          _showLatestSnackBar(context, state.error!.tr());
-          shouldClearTransient = true;
-          shouldClearError = true;
-        }
-        if (shouldClearTransient) {
-          context.read<SalesCubit>().clearTransientFeedback(
-            clearError: shouldClearError,
-          );
-        }
-      },
-      builder: (context, state) {
-        final cubit = context.read<SalesCubit>();
-        _syncInlineQuantityEditors(state.cart);
-        final hasInvalidInlineDrafts = _hasInvalidInlineDrafts(state.cart);
-        final viewport = MediaQuery.sizeOf(context);
-        final isShortViewport = viewport.height < 900;
-        final isVeryDenseViewport = viewport.height < 720;
-        final sectionGap = isVeryDenseViewport
-            ? 10.0
-            : (isShortViewport ? 12.0 : 16.0);
-        return Padding(
-          padding: EdgeInsets.fromLTRB(
-            isVeryDenseViewport ? 12 : (isShortViewport ? 16 : 24),
-            isVeryDenseViewport ? 10 : (isShortViewport ? 12 : 24),
-            isVeryDenseViewport ? 12 : (isShortViewport ? 16 : 24),
-            isVeryDenseViewport ? 10 : (isShortViewport ? 12 : 24),
-          ),
-          child: Column(
-            children: [
-              if (_readOnlyMode) ...[
-                Container(
-                  width: double.infinity,
-                  padding: EdgeInsets.symmetric(
-                    horizontal: isVeryDenseViewport ? 10 : 12,
-                    vertical: isVeryDenseViewport ? 6 : 8,
-                  ),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(999),
-                    color: Colors.orange.shade100,
-                    border: Border.all(color: Colors.orange.shade300),
-                  ),
-                  child: Text(
-                    _readOnlyMessage ?? 'license.read_only_banner'.tr(),
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Colors.orange.shade900,
-                      fontWeight: FontWeight.w700,
+            child: Column(
+              children: [
+                if (_readOnlyMode) ...[
+                  Container(
+                    width: double.infinity,
+                    padding: EdgeInsets.symmetric(
+                      horizontal: isVeryDenseViewport ? 10 : 12,
+                      vertical: isVeryDenseViewport ? 6 : 8,
+                    ),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(999),
+                      color: Theme.of(context).colorScheme.tertiaryContainer,
+                      border: Border.all(
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.tertiary.withValues(alpha: 0.5),
+                      ),
+                    ),
+                    child: Text(
+                      _readOnlyMessage ?? 'license.read_only_banner'.tr(),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onTertiaryContainer,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
+                  SizedBox(height: sectionGap),
+                ],
+                SalesCheckoutToolbar(
+                  veryDense: isVeryDenseViewport,
+                  colorScheme: Theme.of(context).colorScheme,
+                  nameFocusNode: _nameFocusNode,
+                  nameSearchController: _nameSearchController,
+                  barcodeController: _barcodeController,
+                  barcodeFocusNode: _barcodeFocusNode,
+                  searchProducts: (q) =>
+                      _productRepo.listProducts(nameQuery: q, limit: 72),
+                  onProductSelected: (item) {
+                    _nameSearchController.clear();
+                    context.read<SalesCubit>().addProduct(
+                      item,
+                      initialUnitPrice: _resolveSalePriceByTier(item),
+                    );
+                  },
+                  onBarcodeChanged: (value) =>
+                      _onBarcodeFieldChanged(context, value),
+                  onBarcodeSubmitted: (value) =>
+                      _onBarcodeFieldSubmitted(context, value),
                 ),
                 SizedBox(height: sectionGap),
-              ],
-              SalesCheckoutToolbar(
-                veryDense: isVeryDenseViewport,
-                colorScheme: Theme.of(context).colorScheme,
-                nameFocusNode: _nameFocusNode,
-                nameSearchController: _nameSearchController,
-                barcodeController: _barcodeController,
-                barcodeFocusNode: _barcodeFocusNode,
-                searchProducts: (q) => _productRepo.listProducts(
-                  nameQuery: q,
-                  limit: 72,
-                ),
-                onProductSelected: (item) {
-                  _nameSearchController.clear();
-                  context.read<SalesCubit>().addProduct(
-                    item,
-                    initialUnitPrice: _resolveSalePriceByTier(item),
-                  );
-                },
-                onBarcodeChanged: (value) =>
-                    _onBarcodeFieldChanged(context, value),
-                onBarcodeSubmitted: (value) =>
-                    _onBarcodeFieldSubmitted(context, value),
-              ),
-              SizedBox(height: sectionGap),
-              Expanded(
-                child: SalesCartPane(
-                  veryDense: isVeryDenseViewport,
-                  total: state.total,
-                  effectivePaidTotal: state.effectivePaidTotal,
-                  loading: state.loading,
-                  hasInvalidInlineDrafts: hasInvalidInlineDrafts,
-                  successInvoiceId: state.successInvoiceId,
-                  priceTierSelector: Wrap(
-                    spacing: 8,
-                    runSpacing: 6,
-                    children: _SalePriceTier.values
-                        .map(
-                          (tier) => ChoiceChip(
-                            selected: _selectedSalePriceTier == tier,
-                            label: Text(_salePriceTierLabel(tier)),
-                            onSelected: (selected) {
-                              if (!selected) return;
-                              setState(() {
-                                _selectedSalePriceTier = tier;
-                              });
-                              _applySelectedPriceTierToCart(
-                                context,
-                                state.cart,
-                              );
-                            },
-                          ),
-                        )
-                        .toList(growable: false),
-                  ),
-                  cartContent: _buildCartTableContent(
-                    context,
-                    state,
-                    cubit,
-                  ),
-                  customers: _customers,
-                  customerId: state.customerId,
-                  newCustomerController: _newCustomerController,
-                  customerPhoneController: _customerPhoneController,
-                  headerDiscountKind: state.headerDiscountKind,
-                  headerDiscountValueController:
-                      _headerDiscountValueController,
-                  paidController: _paidController,
-                  paidWalletController: _paidWalletController,
-                  headerDiscountAmount: state.headerDiscountAmount,
-                  paymentMethod: state.paymentMethod,
-                  onCustomerChanged: (value) {
-                    final cubit = context.read<SalesCubit>();
-                    cubit.setCustomerId(value);
-                    if (value == null) {
-                      cubit.setCustomerPhone('');
-                      _customerPhoneController.clear();
-                    } else {
-                      String? phone;
-                      for (final c in _customers) {
-                        if (c.id == value) {
-                          phone = c.phone;
-                          break;
-                        }
-                      }
+                Expanded(
+                  child: SalesCartPane(
+                    veryDense: isVeryDenseViewport,
+                    total: state.total,
+                    effectivePaidTotal: state.effectivePaidTotal,
+                    loading: state.loading,
+                    hasInvalidInlineDrafts: hasInvalidInlineDrafts,
+                    successInvoiceId: state.successInvoiceId,
+                    priceTierSelector: Wrap(
+                      spacing: 8,
+                      runSpacing: 6,
+                      children: _SalePriceTier.values
+                          .map(
+                            (tier) => ChoiceChip(
+                              selected: _selectedSalePriceTier == tier,
+                              label: Text(_salePriceTierLabel(tier)),
+                              onSelected: (selected) {
+                                if (!selected) return;
+                                setState(() {
+                                  _selectedSalePriceTier = tier;
+                                });
+                                _applySelectedPriceTierToCart(
+                                  context,
+                                  state.cart,
+                                );
+                              },
+                            ),
+                          )
+                          .toList(growable: false),
+                    ),
+                    cartContent: _buildCartTableContent(context, state, cubit),
+                    customers: _customers,
+                    customerId: state.customerId,
+                    newCustomerController: _newCustomerController,
+                    customerPhoneController: _customerPhoneController,
+                    headerDiscountKind: state.headerDiscountKind,
+                    headerDiscountValueController:
+                        _headerDiscountValueController,
+                    paidController: _paidController,
+                    paidWalletController: _paidWalletController,
+                    headerDiscountAmount: state.headerDiscountAmount,
+                    paymentMethod: state.paymentMethod,
+                    onCustomerChanged: (value) {
+                      final phone = _phoneForCustomerId(value);
                       final t = phone?.trim() ?? '';
-                      cubit.setCustomerPhone(t);
+                      context.read<SalesCubit>().selectCustomer(
+                        value,
+                        phone: t,
+                      );
                       _customerPhoneController.text = t;
-                    }
-                  },
-                  onNewCustomerNameChanged: context
-                      .read<SalesCubit>()
-                      .setNewCustomerName,
-                  onCustomerPhoneChanged:
-                      context.read<SalesCubit>().setCustomerPhone,
-                  onHeaderDiscountKindChanged: (kind) => context
-                      .read<SalesCubit>()
-                      .setHeaderDiscountKind(kind),
-                  onHeaderDiscountValueChanged: (v) => context
-                      .read<SalesCubit>()
-                      .setHeaderDiscountValue(
-                        _parseFlexibleNumber(v) ?? 0,
-                      ),
-                  onPaidChanged: (v) => context
-                      .read<SalesCubit>()
-                      .setPaidAmount(_parseFlexibleNumber(v) ?? 0),
-                  onPaidWalletChanged: (v) => context
-                      .read<SalesCubit>()
-                      .setPaidWalletAmount(_parseFlexibleNumber(v) ?? 0),
-                  onPaymentMethodChanged: (value) {
-                    context.read<SalesCubit>().setPaymentMethod(value);
-                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                    },
+                    onNewCustomerNameChanged: context
+                        .read<SalesCubit>()
+                        .setNewCustomerName,
+                    onCustomerPhoneChanged: context
+                        .read<SalesCubit>()
+                        .setCustomerPhone,
+                    onHeaderDiscountKindChanged: (kind) =>
+                        context.read<SalesCubit>().setHeaderDiscountKind(kind),
+                    onHeaderDiscountValueChanged: (v) => context
+                        .read<SalesCubit>()
+                        .setHeaderDiscountValue(_parseFlexibleNumber(v) ?? 0),
+                    onPaidChanged: (v) => context
+                        .read<SalesCubit>()
+                        .setPaidAmount(_parseFlexibleNumber(v) ?? 0),
+                    onPaidWalletChanged: (v) => context
+                        .read<SalesCubit>()
+                        .setPaidWalletAmount(_parseFlexibleNumber(v) ?? 0),
+                    onPaymentMethodChanged: (value) {
+                      context.read<SalesCubit>().setPaymentMethod(value);
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (!mounted) return;
+                        final updated = context.read<SalesCubit>().state;
+                        _paidController.text = updated.paidAmount == 0
+                            ? ''
+                            : updated.paidAmount.toStringAsFixed(2);
+                        _paidWalletController.text =
+                            updated.paidWalletAmount == 0
+                            ? ''
+                            : updated.paidWalletAmount.toStringAsFixed(2);
+                      });
+                    },
+                    onCompleteSale: () => _attemptCheckout(cubit, state),
+                    onSavePendingSale: () =>
+                        _attemptSavePendingInvoice(cubit, state),
+                    onReturnFromInvoice: () => _showReturnDialog(context),
+                    onCancelInvoice: () => _showCancelSaleDialog(context),
+                    onGeneratePdf: () {
+                      final invoiceId = state.successInvoiceId;
+                      if (invoiceId == null) return;
+                      _generatePdf(context, invoiceId);
+                    },
+                    invoiceAmendmentMode: state.editingSaleId != null,
+                    onCancelInvoiceAmendment: () {
+                      cubit.clearInvoiceAmendment();
                       if (!mounted) return;
-                      final updated = context.read<SalesCubit>().state;
-                      _paidController.text =
-                          updated.paidAmount == 0
-                              ? ''
-                              : updated.paidAmount.toStringAsFixed(2);
-                      _paidWalletController.text =
-                          updated.paidWalletAmount == 0
-                              ? ''
-                              : updated.paidWalletAmount.toStringAsFixed(2);
-                    });
-                  },
-                  onCompleteSale: () => _attemptCheckout(cubit, state),
-                  onSavePendingSale: () =>
-                      _attemptSavePendingInvoice(cubit, state),
-                  onReturnFromInvoice: () => _showReturnDialog(context),
-                  onCancelInvoice: () => _showCancelSaleDialog(context),
-                  onGeneratePdf: () {
-                    final invoiceId = state.successInvoiceId;
-                    if (invoiceId == null) return;
-                    _generatePdf(context, invoiceId);
-                  },
-                  invoiceAmendmentMode: state.editingSaleId != null,
-                  onCancelInvoiceAmendment: () {
-                    cubit.clearInvoiceAmendment();
-                    if (!mounted) return;
-                    _resetCartPaymentControllers();
-                  },
-                  readOnlyMode: _readOnlyMode,
-                  readOnlyMessage: _readOnlyMessage,
+                      _resetCartPaymentControllers();
+                    },
+                    readOnlyMode: _readOnlyMode,
+                    readOnlyMessage: _readOnlyMessage,
+                  ),
                 ),
-              ),
-            ],
-          ),
-        );
-      },
+              ],
+            ),
+          );
+        },
+      ),
     );
   }
 
@@ -901,11 +1043,15 @@ class _SalesPageState extends State<SalesPage> {
       cart: state.cart,
       pieceUnitTypeName: UnitType.piece.name,
       inlineQuantityDrafts: _inlineQuantityDrafts,
+      inlineDiscountDrafts: _inlineDiscountDrafts,
       qtyControllerFor: _qtyControllerFor,
       qtyFocusNodeFor: _qtyFocusNodeFor,
+      discountControllerFor: _discountControllerFor,
+      discountFocusNodeFor: _discountFocusNodeFor,
       formatQuantity: _formatQuantity,
+      formatDiscount: _formatDiscount,
       parseFlexibleNumber: _parseFlexibleNumber,
-      onDraftChanged: (item, value) {
+      onQuantityDraftChanged: (item, value) {
         setState(() {
           _inlineQuantityDrafts[item.productId] = value;
         });
@@ -913,34 +1059,30 @@ class _SalesPageState extends State<SalesPage> {
       onApplyInlineQuantity: (item, value) {
         _applyInlineQuantityChange(context, item, value);
       },
-      onDraftCleared: (productId) {
+      onQuantityDraftCleared: (productId) {
         setState(() {
           _inlineQuantityDrafts.remove(productId);
+        });
+      },
+      onDiscountDraftChanged: (item, value) {
+        setState(() {
+          _inlineDiscountDrafts[item.productId] = value;
+        });
+      },
+      onApplyInlineDiscount: (item, value) {
+        _applyInlineDiscountChange(context, item, value);
+      },
+      onDiscountDraftCleared: (productId) {
+        setState(() {
+          _inlineDiscountDrafts.remove(productId);
         });
       },
       onRemoveItem: cubit.removeItem,
       onUpdateItemQuantity: (productId, quantity) {
         cubit.updateItem(productId, quantity: quantity);
       },
-      onEditItem: (item) => _showEditItemDialog(context, item),
-    );
-  }
-
-  Future<void> _showEditItemDialog(
-    BuildContext context,
-    SaleDraftItem item,
-  ) async {
-    await SalesEditItemDialog.show(
-      context,
-      item: item,
-      parseFlexibleNumber: _parseFlexibleNumber,
-      onApply: ({quantity, unitPrice, discount}) {
-        context.read<SalesCubit>().updateItem(
-          item.productId,
-          quantity: quantity,
-          unitPrice: unitPrice,
-          discount: discount,
-        );
+      onUpdateItemDiscount: (productId, discount) {
+        cubit.updateItem(productId, discount: discount);
       },
     );
   }
@@ -989,8 +1131,8 @@ class _SalesPageState extends State<SalesPage> {
       activeInvoiceId: _activeInvoiceId,
       activeInvoiceDisplayNumber: _activeInvoiceNumber,
       activeInvoiceLines: _activeInvoiceLines,
-      canAmendInvoiceForCart:
-          (saleId) => getIt<SalesRepository>().canAmendSaleInvoice(saleId),
+      canAmendInvoiceForCart: (saleId) =>
+          getIt<SalesRepository>().canAmendSaleInvoice(saleId),
       onInvoiceAmendedInCart: (saleId) async {
         if (!context.mounted) return;
         await salesCubit.loadInvoiceForAmendment(saleId);

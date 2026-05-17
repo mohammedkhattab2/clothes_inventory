@@ -8,12 +8,16 @@ class SalesInvoiceDetailsHeader extends StatelessWidget {
     required this.accountName,
     required this.paymentStatusLabel,
     required this.paymentStatusColor,
+    this.createdByLine,
+    this.lastModifiedByLine,
   });
 
   final String invoiceTitle;
   final String accountName;
   final String paymentStatusLabel;
   final Color paymentStatusColor;
+  final String? createdByLine;
+  final String? lastModifiedByLine;
 
   @override
   Widget build(BuildContext context) {
@@ -60,6 +64,32 @@ class SalesInvoiceDetailsHeader extends StatelessWidget {
                     ),
                   ),
                 ),
+                if (createdByLine != null &&
+                    createdByLine!.trim().isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    createdByLine!,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: colorScheme.onPrimaryContainer.withValues(
+                        alpha: 0.82,
+                      ),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+                if (lastModifiedByLine != null &&
+                    lastModifiedByLine!.trim().isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    lastModifiedByLine!,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: colorScheme.onPrimaryContainer.withValues(
+                        alpha: 0.82,
+                      ),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
               ],
             ),
           ),

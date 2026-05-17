@@ -1,9 +1,11 @@
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
-import 'package:clothes_inventory/core/config/company_settings_service.dart';
-import 'package:clothes_inventory/services/di/service_locator.dart';
+import 'package:delta_erp/core/theme/app_colors.dart';
+import 'package:delta_erp/core/config/company_settings_service.dart';
+import 'package:delta_erp/services/di/service_locator.dart';
 
 class StartupSplashOverlay extends StatefulWidget {
   const StartupSplashOverlay({super.key, required this.child});
@@ -229,7 +231,7 @@ class _SplashScene extends StatelessWidget {
                       ),
                       const SizedBox(height: 28),
                       Text(
-                        'Clothes Inventory POS',
+                        'DeltaErp'.tr(),
                         style:
                             Theme.of(context).textTheme.headlineLarge?.copyWith(
                               color: foreground,
@@ -245,7 +247,7 @@ class _SplashScene extends StatelessWidget {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'Fast. Precise. Professional.',
+                        'splash.tagline'.tr(),
                         style:
                             Theme.of(context).textTheme.titleMedium?.copyWith(
                               color: foreground.withValues(alpha: 0.8),
@@ -267,7 +269,7 @@ class _SplashScene extends StatelessWidget {
                               minHeight: 5,
                               borderRadius: BorderRadius.circular(999),
                               value: controller.value,
-                              color: const Color(0xFFFFC44D),
+                              color: AppColors.accent,
                               backgroundColor: foreground.withValues(
                                 alpha: isDark ? 0.22 : 0.3,
                               ),

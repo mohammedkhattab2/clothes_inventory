@@ -1,17 +1,18 @@
 import 'dart:typed_data';
 
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
-import 'package:clothes_inventory/features/invoices/domain/invoice_print_model.dart';
-import 'package:clothes_inventory/core/widgets/app_inline_loading_indicator.dart';
-import 'package:clothes_inventory/core/config/company_settings_service.dart';
-import 'package:clothes_inventory/features/invoices/domain/a4_invoice_view_data.dart';
-import 'package:clothes_inventory/features/invoices/presentation/invoice_print_model_mapper.dart';
-import 'package:clothes_inventory/features/invoices/presentation/widgets/a4_invoice_rtl_widget.dart';
-import 'package:clothes_inventory/services/pdf/thermal_invoice_pdf_document.dart';
-import 'package:clothes_inventory/services/printing/invoice_print_manager.dart';
-import 'package:clothes_inventory/services/printing/invoice_print_preferences.dart';
-import 'package:clothes_inventory/services/printing/invoice_printer.dart';
-import 'package:clothes_inventory/services/di/service_locator.dart';
+import 'package:delta_erp/features/invoices/domain/invoice_print_model.dart';
+import 'package:delta_erp/core/widgets/app_inline_loading_indicator.dart';
+import 'package:delta_erp/core/config/company_settings_service.dart';
+import 'package:delta_erp/features/invoices/domain/a4_invoice_view_data.dart';
+import 'package:delta_erp/features/invoices/presentation/invoice_print_model_mapper.dart';
+import 'package:delta_erp/features/invoices/presentation/widgets/a4_invoice_rtl_widget.dart';
+import 'package:delta_erp/services/pdf/thermal_invoice_pdf_document.dart';
+import 'package:delta_erp/services/printing/invoice_print_manager.dart';
+import 'package:delta_erp/services/printing/invoice_print_preferences.dart';
+import 'package:delta_erp/services/printing/invoice_printer.dart';
+import 'package:delta_erp/services/di/service_locator.dart';
 import 'package:printing/printing.dart';
 
 class InvoicePrintPreviewPage extends StatefulWidget {
@@ -67,7 +68,7 @@ class _InvoicePrintPreviewPageState extends State<InvoicePrintPreviewPage> {
     final colorScheme = Theme.of(context).colorScheme;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('معاينة الطباعة')),
+      appBar: AppBar(title: Text('invoice.print_preview_title'.tr())),
       body: Column(
         children: [
           _Toolbar(
@@ -165,13 +166,15 @@ class _InvoicePrintPreviewPageState extends State<InvoicePrintPreviewPage> {
       await widget.printManager.printInvoice(widget.invoice, config);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('تم إرسال الفاتورة للطباعة')),
+        SnackBar(content: Text('Invoice sent to printer.'.tr())),
       );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('تعذر الطباعة: $e')));
+      ).showSnackBar(
+        SnackBar(content: Text('${'invoice.print_failed_reason'.tr()}: $e')),
+      );
     } finally {
       if (mounted) {
         setState(() {
@@ -264,15 +267,15 @@ class _Toolbar extends StatelessWidget {
             children: [
               DropdownButton<PrinterType>(
                 value: printerType,
-                items: const [
-                  DropdownMenuItem(value: PrinterType.a4, child: Text('A4')),
+                items: [
+                  const DropdownMenuItem(value: PrinterType.a4, child: Text('A4')),
                   DropdownMenuItem(
                     value: PrinterType.thermal58,
-                    child: Text('Thermal 58mm'),
+                    child: Text('invoice.printer_thermal_58'.tr()),
                   ),
                   DropdownMenuItem(
                     value: PrinterType.thermal80,
-                    child: Text('Thermal 80mm'),
+                    child: Text('invoice.printer_thermal_80'.tr()),
                   ),
                 ],
                 onChanged: (value) {
@@ -284,7 +287,7 @@ class _Toolbar extends StatelessWidget {
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text('يدعم العربي'),
+                  Text('invoice.supports_arabic'.tr()),
                   Switch(
                     value: supportsArabic,
                     onChanged: onSupportsArabicChanged,
@@ -294,7 +297,7 @@ class _Toolbar extends StatelessWidget {
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text('Image fallback'),
+                  Text('invoice.image_fallback'.tr()),
                   Switch(
                     value: useImageFallback,
                     onChanged: onImageFallbackChanged,
@@ -306,7 +309,9 @@ class _Toolbar extends StatelessWidget {
                 icon: printing
                     ? const AppInlineLoadingIndicator()
                     : const Icon(Icons.print_outlined),
-                label: Text(printing ? 'جارٍ الطباعة...' : 'طباعة'),
+                label: Text(
+                  printing ? 'invoice.printing'.tr() : 'Print Invoice'.tr(),
+                ),
               ),
             ],
           ),

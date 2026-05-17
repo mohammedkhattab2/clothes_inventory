@@ -1,7 +1,7 @@
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
-import 'package:clothes_inventory/features/license/domain/license_models.dart';
-import 'package:clothes_inventory/features/settings/presentation/widgets/settings_luxury_components.dart';
+import 'package:delta_erp/features/license/domain/license_models.dart';
+import 'package:delta_erp/features/settings/presentation/widgets/settings_luxury_components.dart';
 
 enum LicenseHistoryFilter { all, success, failed }
 

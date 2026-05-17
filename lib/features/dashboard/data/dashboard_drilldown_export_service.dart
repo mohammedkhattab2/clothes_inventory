@@ -3,10 +3,7 @@ import 'dart:developer' as dev;
 import 'dart:io';
 
 import 'package:intl/intl.dart';
-import 'package:clothes_inventory/features/dashboard/data/dashboard_repository.dart';
-import 'package:clothes_inventory/features/invoices/presentation/invoice_payment_display.dart';
-import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
+import 'package:delta_erp/features/dashboard/data/dashboard_repository.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
@@ -23,6 +20,7 @@ class DashboardDrillDownExportService {
     required String accountLabel,
     required List<DashboardInvoiceRecord> invoiceRows,
     required List<DashboardProfitRecord> profitRows,
+    required String targetPath,
   }) async {
     try {
       final doc = pw.Document();
@@ -121,10 +119,11 @@ class DashboardDrillDownExportService {
                       'Invoice',
                       'Account',
                       'Status',
-                      'Payment method',
                       'Total',
-                      'Paid',
-                      'Outstanding',
+                      'Cash',
+                      'Vodafone Cash',
+                      'Visa',
+                      'Deferred',
                     ],
                     data: invoiceRows
                         .map(
@@ -133,11 +132,10 @@ class DashboardDrillDownExportService {
                             row.invoiceNumber,
                             row.accountName,
                             row.status,
-                            invoicePaymentMethodsDisplayLabel(
-                              row.paymentMethodRaw,
-                            ),
                             money.format(row.totalAmount),
-                            money.format(row.paidAmount),
+                            money.format(row.paidCash),
+                            money.format(row.paidVodafone),
+                            money.format(row.paidVisa),
                             money.format(row.outstandingAmount),
                           ],
                         )
@@ -179,10 +177,8 @@ class DashboardDrillDownExportService {
         ),
       );
 
-      final dir = await _ensureExportDir();
-      final fileName =
-          'dashboard_drilldown_${_sanitize(kind)}_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.pdf';
-      final file = File(p.join(dir.path, fileName));
+      final file = File(targetPath);
+      await file.parent.create(recursive: true);
       await file.writeAsBytes(await doc.save(), flush: true);
       return file.path;
     } catch (e, st) {
@@ -206,6 +202,7 @@ class DashboardDrillDownExportService {
     required String accountLabel,
     required List<DashboardInvoiceRecord> invoiceRows,
     required List<DashboardProfitRecord> profitRows,
+    required String targetPath,
   }) async {
     try {
       final money = NumberFormat('#,##0.00');
@@ -244,11 +241,11 @@ class DashboardDrillDownExportService {
         final salesPaymentExport = kind == 'revenue' || kind == 'customer_debt';
         if (salesPaymentExport) {
           b.writeln(
-            'Date,Invoice,Account,Status,Payment method,Total,Paid,Outstanding',
+            'Date,Invoice,Account,Status,Total,Cash,Vodafone Cash,Visa,Deferred',
           );
           for (final row in invoiceRows) {
             b.writeln(
-              '${date.format(row.createdAt)},${esc(row.invoiceNumber)},${esc(row.accountName)},${esc(row.status)},${esc(invoicePaymentMethodsDisplayLabel(row.paymentMethodRaw))},${money.format(row.totalAmount)},${money.format(row.paidAmount)},${money.format(row.outstandingAmount)}',
+              '${date.format(row.createdAt)},${esc(row.invoiceNumber)},${esc(row.accountName)},${esc(row.status)},${money.format(row.totalAmount)},${money.format(row.paidCash)},${money.format(row.paidVodafone)},${money.format(row.paidVisa)},${money.format(row.outstandingAmount)}',
             );
           }
         } else {
@@ -261,10 +258,8 @@ class DashboardDrillDownExportService {
         }
       }
 
-      final dir = await _ensureExportDir();
-      final fileName =
-          'dashboard_drilldown_${_sanitize(kind)}_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.csv';
-      final file = File(p.join(dir.path, fileName));
+      final file = File(targetPath);
+      await file.parent.create(recursive: true);
       await file.writeAsBytes(
         utf8.encode('\uFEFF${b.toString()}'),
         flush: true,
@@ -281,14 +276,4 @@ class DashboardDrillDownExportService {
     }
   }
 
-  Future<Directory> _ensureExportDir() async {
-    final docs = await getApplicationDocumentsDirectory();
-    final dir = Directory(p.join(docs.path, 'exports', 'dashboard'));
-    await dir.create(recursive: true);
-    return dir;
-  }
-
-  String _sanitize(String input) {
-    return input.replaceAll(RegExp(r'[^A-Za-z0-9_]'), '_');
-  }
 }

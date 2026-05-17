@@ -5,17 +5,17 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:path/path.dart' as p;
-import 'package:clothes_inventory/core/widgets/app_empty_state.dart';
-import 'package:clothes_inventory/core/widgets/app_error_banner.dart';
-import 'package:clothes_inventory/core/widgets/app_inline_loading_indicator.dart';
-import 'package:clothes_inventory/core/widgets/app_loading_indicator.dart';
-import 'package:clothes_inventory/features/dashboard/data/dashboard_drilldown_export_service.dart';
-import 'package:clothes_inventory/features/dashboard/data/dashboard_repository.dart';
-import 'package:clothes_inventory/features/dashboard/presentation/dashboard_cubit.dart';
-import 'package:clothes_inventory/features/dashboard/presentation/widgets/dashboard_drilldown_stretch_table.dart';
-import 'package:clothes_inventory/features/invoices/presentation/invoice_payment_display.dart';
-import 'package:clothes_inventory/services/di/service_locator.dart';
-import 'package:clothes_inventory/services/platform/folder_opener_service.dart';
+import 'package:delta_erp/core/widgets/app_empty_state.dart';
+import 'package:delta_erp/core/widgets/app_error_banner.dart';
+import 'package:delta_erp/core/widgets/app_inline_loading_indicator.dart';
+import 'package:delta_erp/core/widgets/app_loading_indicator.dart';
+import 'package:delta_erp/features/dashboard/data/dashboard_drilldown_export_service.dart';
+import 'package:delta_erp/features/dashboard/data/dashboard_repository.dart';
+import 'package:delta_erp/features/dashboard/presentation/dashboard_cubit.dart';
+import 'package:delta_erp/features/dashboard/presentation/widgets/dashboard_drilldown_stretch_table.dart';
+import 'package:delta_erp/services/di/service_locator.dart';
+import 'package:delta_erp/services/export/user_export_path_picker.dart';
+import 'package:delta_erp/services/platform/folder_opener_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class DashboardDrillDownPage extends StatefulWidget {
@@ -255,9 +255,9 @@ class _DashboardDrillDownPageState extends State<DashboardDrillDownPage> {
         children: [
           Text(
             _title(),
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-              fontWeight: FontWeight.w800,
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 4),
           Text(
@@ -423,6 +423,14 @@ class _DashboardDrillDownPageState extends State<DashboardDrillDownPage> {
   }
 
   Future<void> _exportDrillDownPdf(BuildContext context) async {
+    final targetPath = await getIt<UserExportPathPicker>().pickSavePath(
+      dialogTitle: 'export.save_dialog_title'.tr(),
+      suggestedFileName:
+          'dashboard_drilldown_${widget.kind}_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.pdf',
+      extensions: const ['pdf'],
+    );
+    if (targetPath == null) return;
+
     setState(() => _exportingPdf = true);
     try {
       final data = await _loadAllForExport();
@@ -436,6 +444,7 @@ class _DashboardDrillDownPageState extends State<DashboardDrillDownPage> {
         accountLabel: widget.accountId?.toString() ?? 'All'.tr(),
         invoiceRows: data.$1,
         profitRows: data.$2,
+        targetPath: targetPath,
       );
       if (!mounted) return;
       setState(() => _lastExportPath = path);
@@ -453,6 +462,14 @@ class _DashboardDrillDownPageState extends State<DashboardDrillDownPage> {
   }
 
   Future<void> _exportDrillDownCsv(BuildContext context) async {
+    final targetPath = await getIt<UserExportPathPicker>().pickSavePath(
+      dialogTitle: 'export.save_dialog_title'.tr(),
+      suggestedFileName:
+          'dashboard_drilldown_${widget.kind}_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.csv',
+      extensions: const ['csv'],
+    );
+    if (targetPath == null) return;
+
     setState(() => _exportingCsv = true);
     try {
       final data = await _loadAllForExport();
@@ -466,6 +483,7 @@ class _DashboardDrillDownPageState extends State<DashboardDrillDownPage> {
         accountLabel: widget.accountId?.toString() ?? 'All'.tr(),
         invoiceRows: data.$1,
         profitRows: data.$2,
+        targetPath: targetPath,
       );
       if (!mounted) return;
       setState(() => _lastExportPath = path);
@@ -552,69 +570,86 @@ class _DashboardDrillDownPageState extends State<DashboardDrillDownPage> {
   bool get _showSalesInvoicePaymentColumn =>
       widget.kind == 'revenue' || widget.kind == 'customer_debt';
 
-  Map<String, double> _revenueTotalsByPaymentRaw() {
-    final map = <String, double>{};
-    if (!_showSalesInvoicePaymentColumn) return map;
+  Map<String, double> _revenueCollectedTotals() {
+    final totals = <String, double>{'cash': 0, 'vodafone': 0, 'visa': 0};
+    if (!_showSalesInvoicePaymentColumn) return totals;
     for (final row in _invoiceRows) {
-      final key = row.paymentMethodRaw?.trim() ?? '';
-      map[key] = (map[key] ?? 0) + row.totalAmount;
+      totals['cash'] = totals['cash']! + row.paidCash;
+      totals['vodafone'] = totals['vodafone']! + row.paidVodafone;
+      totals['visa'] = totals['visa']! + row.paidVisa;
     }
-    return map;
-  }
-
-  List<MapEntry<String, double>> _sortedRevenuePaymentTotals() {
-    final entries = _revenueTotalsByPaymentRaw().entries.toList();
-    entries.sort((a, b) {
-      if (a.key.isEmpty && b.key.isNotEmpty) return 1;
-      if (a.key.isNotEmpty && b.key.isEmpty) return -1;
-      return a.key.compareTo(b.key);
-    });
-    return entries;
+    return totals;
   }
 
   Widget _buildInvoiceTable() {
     final showPayment = _showSalesInvoicePaymentColumn;
+    final deferredLabel = showPayment
+        ? 'dashboard.drilldown_deferred_short'.tr()
+        : 'Outstanding'.tr();
     final columns = <StretchDrilldownColumn>[
       StretchDrilldownColumn(label: 'Date'.tr(), flex: 11),
       StretchDrilldownColumn(label: 'Invoice'.tr(), flex: 10),
       StretchDrilldownColumn(
         label: 'Account'.tr(),
-        flex: showPayment ? 18 : 22,
+        flex: showPayment ? 16 : 22,
       ),
       StretchDrilldownColumn(label: 'Status'.tr(), flex: showPayment ? 8 : 9),
-      if (showPayment)
-        StretchDrilldownColumn(label: 'Payment method'.tr(), flex: 14),
       StretchDrilldownColumn(
         label: 'Total'.tr(),
-        flex: 10,
+        flex: 9,
         align: TextAlign.end,
         headerAlign: TextAlign.end,
       ),
-      StretchDrilldownColumn(
-        label: 'Paid'.tr(),
-        flex: 10,
-        align: TextAlign.end,
-        headerAlign: TextAlign.end,
-      ),
-      StretchDrilldownColumn(
-        label: 'Outstanding'.tr(),
-        flex: 10,
-        align: TextAlign.end,
-        headerAlign: TextAlign.end,
-      ),
+      if (showPayment) ...[
+        StretchDrilldownColumn(
+          label: 'Cash'.tr(),
+          flex: 9,
+          align: TextAlign.end,
+          headerAlign: TextAlign.end,
+        ),
+        StretchDrilldownColumn(
+          label: 'Vodafone Cash'.tr(),
+          flex: 10,
+          align: TextAlign.end,
+          headerAlign: TextAlign.end,
+        ),
+        StretchDrilldownColumn(
+          label: 'Visa'.tr(),
+          flex: 8,
+          align: TextAlign.end,
+          headerAlign: TextAlign.end,
+        ),
+        StretchDrilldownColumn(
+          label: deferredLabel,
+          flex: 10,
+          align: TextAlign.end,
+          headerAlign: TextAlign.end,
+        ),
+      ] else ...[
+        StretchDrilldownColumn(
+          label: 'Paid'.tr(),
+          flex: 10,
+          align: TextAlign.end,
+          headerAlign: TextAlign.end,
+        ),
+        StretchDrilldownColumn(
+          label: 'Outstanding'.tr(),
+          flex: 10,
+          align: TextAlign.end,
+          headerAlign: TextAlign.end,
+        ),
+      ],
     ];
     return DashboardDrilldownStretchTable(
       columns: columns,
       rowCount: _invoiceRows.length,
-      minWidthWhenScrolling: showPayment ? 1040 : 920,
+      minWidthWhenScrolling: showPayment ? 1180 : 920,
       cellBuilder: (context, rowIndex, colIndex) {
         final row = _invoiceRows[rowIndex];
         if (!showPayment) {
           switch (colIndex) {
             case 0:
-              return Text(
-                DateFormat('yyyy-MM-dd HH:mm').format(row.createdAt),
-              );
+              return Text(DateFormat('yyyy-MM-dd HH:mm').format(row.createdAt));
             case 1:
               return Text(
                 row.invoiceNumber,
@@ -654,9 +689,7 @@ class _DashboardDrillDownPageState extends State<DashboardDrillDownPage> {
         }
         switch (colIndex) {
           case 0:
-            return Text(
-              DateFormat('yyyy-MM-dd HH:mm').format(row.createdAt),
-            );
+            return Text(DateFormat('yyyy-MM-dd HH:mm').format(row.createdAt));
           case 1:
             return Text(
               row.invoiceNumber,
@@ -677,21 +710,25 @@ class _DashboardDrillDownPageState extends State<DashboardDrillDownPage> {
             );
           case 4:
             return Text(
-              invoicePaymentMethodsDisplayLabel(row.paymentMethodRaw),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
+              _currency.format(row.totalAmount),
+              textAlign: TextAlign.end,
             );
           case 5:
             return Text(
-              _currency.format(row.totalAmount),
+              _currency.format(row.paidCash),
               textAlign: TextAlign.end,
             );
           case 6:
             return Text(
-              _currency.format(row.paidAmount),
+              _currency.format(row.paidVodafone),
               textAlign: TextAlign.end,
             );
           case 7:
+            return Text(
+              _currency.format(row.paidVisa),
+              textAlign: TextAlign.end,
+            );
+          case 8:
             return Text(
               _currency.format(row.outstandingAmount),
               textAlign: TextAlign.end,
@@ -781,10 +818,7 @@ class _DashboardDrillDownPageState extends State<DashboardDrillDownPage> {
       0,
       (sum, row) => sum + row.totalAmount,
     );
-    final totalPaid = _invoiceRows.fold<double>(
-      0,
-      (sum, row) => sum + row.paidAmount,
-    );
+    final collectedByPayment = _revenueCollectedTotals();
     final totalOutstanding = _invoiceRows.fold<double>(
       0,
       (sum, row) => sum + row.outstandingAmount,
@@ -859,6 +893,30 @@ class _DashboardDrillDownPageState extends State<DashboardDrillDownPage> {
                       emphasize: true,
                     ),
                   ]
+                : _showSalesInvoicePaymentColumn
+                ? [
+                    _NetMiniMetricItem(
+                      label: 'Total'.tr(),
+                      value: _currency.format(totalAmount),
+                    ),
+                    _NetMiniMetricItem(
+                      label: 'Cash'.tr(),
+                      value: _currency.format(collectedByPayment['cash']!),
+                    ),
+                    _NetMiniMetricItem(
+                      label: 'Vodafone Cash'.tr(),
+                      value: _currency.format(collectedByPayment['vodafone']!),
+                    ),
+                    _NetMiniMetricItem(
+                      label: 'Visa'.tr(),
+                      value: _currency.format(collectedByPayment['visa']!),
+                    ),
+                    _NetMiniMetricItem(
+                      label: 'dashboard.drilldown_deferred_short'.tr(),
+                      value: _currency.format(totalOutstanding),
+                      emphasize: widget.kind == 'customer_debt',
+                    ),
+                  ]
                 : [
                     _NetMiniMetricItem(
                       label: 'Total'.tr(),
@@ -866,7 +924,12 @@ class _DashboardDrillDownPageState extends State<DashboardDrillDownPage> {
                     ),
                     _NetMiniMetricItem(
                       label: 'Paid'.tr(),
-                      value: _currency.format(totalPaid),
+                      value: _currency.format(
+                        _invoiceRows.fold<double>(
+                          0,
+                          (sum, row) => sum + row.paidAmount,
+                        ),
+                      ),
                     ),
                     _NetMiniMetricItem(
                       label: 'Outstanding'.tr(),
@@ -877,29 +940,6 @@ class _DashboardDrillDownPageState extends State<DashboardDrillDownPage> {
                     ),
                   ],
           ),
-          if (!isProfit &&
-              _showSalesInvoicePaymentColumn &&
-              _revenueTotalsByPaymentRaw().isNotEmpty) ...[
-            const SizedBox(height: 12),
-            Text(
-              'Revenue by payment method'.tr(),
-              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
-            ),
-            const SizedBox(height: 8),
-            _NetMiniMetrics(
-              items: [
-                for (final e in _sortedRevenuePaymentTotals())
-                  _NetMiniMetricItem(
-                    label: invoicePaymentMethodsDisplayLabel(
-                      e.key.isEmpty ? null : e.key,
-                    ),
-                    value: _currency.format(e.value),
-                  ),
-              ],
-            ),
-          ],
         ],
       ),
     );

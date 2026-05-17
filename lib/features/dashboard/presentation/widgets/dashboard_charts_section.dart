@@ -1,9 +1,9 @@
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
-import 'package:clothes_inventory/features/dashboard/data/dashboard_repository.dart';
-import 'package:clothes_inventory/features/dashboard/presentation/widgets/dashboard_chart_card.dart';
-import 'package:clothes_inventory/features/dashboard/presentation/widgets/sales_purchases_line_chart.dart';
-import 'package:clothes_inventory/features/dashboard/presentation/widgets/top_products_bar_chart.dart';
+import 'package:delta_erp/features/dashboard/data/dashboard_repository.dart';
+import 'package:delta_erp/features/dashboard/presentation/widgets/dashboard_chart_card.dart';
+import 'package:delta_erp/features/dashboard/presentation/widgets/sales_purchases_line_chart.dart';
+import 'package:delta_erp/features/dashboard/presentation/widgets/top_products_bar_chart.dart';
 
 class DashboardChartsSection extends StatelessWidget {
   const DashboardChartsSection({

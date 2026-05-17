@@ -3,9 +3,7 @@ import 'dart:developer' as dev;
 import 'dart:io';
 
 import 'package:intl/intl.dart';
-import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
-import 'package:clothes_inventory/features/accounts/data/account_statement_repository.dart';
+import 'package:delta_erp/features/accounts/data/account_statement_repository.dart';
 
 class AccountStatementCsvService {
   const AccountStatementCsvService();
@@ -15,6 +13,7 @@ class AccountStatementCsvService {
     required String accountType,
     required List<AccountStatementTransaction> transactions,
     required double finalBalance,
+    required String targetPath,
     DateTime? fromDate,
     DateTime? toDate,
   }) async {
@@ -50,14 +49,8 @@ class AccountStatementCsvService {
       buffer.writeln();
       buffer.writeln('Final Balance,${valueFormat.format(finalBalance)}');
 
-      final docsDir = await getApplicationDocumentsDirectory();
-      final exportDir = Directory(p.join(docsDir.path, 'exports'));
-      await exportDir.create(recursive: true);
-
-      final fileName =
-          'account_statement_${accountName.replaceAll(RegExp(r'[^A-Za-z0-9_]'), '_')}_${DateTime.now().millisecondsSinceEpoch}.csv';
-      final file = File(p.join(exportDir.path, fileName));
-
+      final file = File(targetPath);
+      await file.parent.create(recursive: true);
       final bytes = utf8.encode('\uFEFF${buffer.toString()}');
       await file.writeAsBytes(bytes, flush: true);
       return file.path;

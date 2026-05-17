@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:clothes_inventory/features/purchase_ocr/domain/purchase_ocr_models.dart';
-import 'package:clothes_inventory/features/purchase_ocr/domain/purchase_ocr_temporal_intelligence.dart';
-import 'package:clothes_inventory/features/purchase_ocr/presentation/widgets/purchase_ocr_intelligence_panel.dart';
+import 'package:delta_erp/features/purchase_ocr/domain/purchase_ocr_models.dart';
+import 'package:delta_erp/features/purchase_ocr/domain/purchase_ocr_temporal_intelligence.dart';
+import 'package:delta_erp/features/purchase_ocr/presentation/widgets/purchase_ocr_intelligence_panel.dart';
 
 Widget _wrap(Widget child) {
   return MaterialApp(home: Scaffold(body: child));

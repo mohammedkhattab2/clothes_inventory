@@ -1,9 +1,9 @@
 import 'dart:typed_data';
 
-import 'package:clothes_inventory/features/invoices/domain/invoice_print_model.dart';
-import 'package:clothes_inventory/services/pdf/thermal_invoice_pdf_document.dart';
-import 'package:clothes_inventory/services/printing/invoice_printer.dart';
-import 'package:clothes_inventory/services/printing/thermal_printer_preferences.dart';
+import 'package:delta_erp/features/invoices/domain/invoice_print_model.dart';
+import 'package:delta_erp/services/pdf/thermal_invoice_pdf_document.dart';
+import 'package:delta_erp/services/printing/invoice_printer.dart';
+import 'package:delta_erp/services/printing/thermal_printer_preferences.dart';
 import 'package:printing/printing.dart';
 
 /// Concrete thermal printer that generates a narrow receipt-style PDF

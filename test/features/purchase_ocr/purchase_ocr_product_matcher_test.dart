@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:clothes_inventory/features/products/domain/product.dart';
-import 'package:clothes_inventory/features/purchase_ocr/domain/purchase_ocr_product_matcher.dart';
+import 'package:delta_erp/features/products/domain/product.dart';
+import 'package:delta_erp/features/purchase_ocr/domain/purchase_ocr_product_matcher.dart';
 
 class _InMemoryMappingsStore implements OcrProductMappingsStore {
   _InMemoryMappingsStore({DateTime Function()? nowProvider})

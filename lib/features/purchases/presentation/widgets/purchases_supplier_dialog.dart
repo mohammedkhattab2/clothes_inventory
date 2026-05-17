@@ -1,7 +1,7 @@
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
-import 'package:clothes_inventory/core/widgets/app_inline_loading_indicator.dart';
-import 'package:clothes_inventory/features/accounts/data/accounts_repository.dart';
+import 'package:delta_erp/core/widgets/app_inline_loading_indicator.dart';
+import 'package:delta_erp/features/accounts/data/accounts_repository.dart';
 
 class PurchasesSupplierDialog {
   const PurchasesSupplierDialog._();
