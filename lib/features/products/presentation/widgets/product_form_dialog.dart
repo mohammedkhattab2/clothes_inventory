@@ -1,8 +1,10 @@
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:delta_erp/core/config/company_settings_service.dart';
 import 'package:delta_erp/features/products/domain/duplicate_product_barcode_exception.dart';
 import 'package:delta_erp/features/products/domain/product.dart';
+import 'package:delta_erp/services/di/service_locator.dart';
 import 'package:delta_erp/services/printing/product_barcode_label_printer.dart';
 import 'package:printing/printing.dart';
 
@@ -22,6 +24,7 @@ class ProductFormDialog extends StatefulWidget {
   final Future<void> Function({
     required String productName,
     required String barcode,
+    double? amount,
   })?
   onPrintBarcode;
   final ProductBarcodeLabelPrinter? barcodeLabelPrinter;
@@ -155,7 +158,14 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
       return;
     }
 
-    await widget.onPrintBarcode!(productName: name, barcode: code);
+    final salePrice = double.tryParse(
+      _normalizeDigits(_salePriceRetail.text).replaceAll(',', '.'),
+    );
+    await widget.onPrintBarcode!(
+      productName: name,
+      barcode: code,
+      amount: salePrice,
+    );
   }
 
   Future<void> _previewBarcode() async {
@@ -172,10 +182,17 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
       return;
     }
 
+    final salePrice = double.tryParse(
+      _normalizeDigits(_salePriceRetail.text).replaceAll(',', '.'),
+    );
+    final companyName = getIt<CompanySettingsService>().settings.name;
+
     try {
       final bytes = await printer.buildLabelPdfBytes(
         productName: name,
         barcodeValue: code,
+        companyName: companyName,
+        amount: salePrice,
         copies: 1,
       );
       if (!mounted) return;
@@ -412,14 +429,15 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                       onChanged: (_) => setModalState(() {}),
                       validator: (value) {
                         final sale = _parseFlexibleNumber(value ?? '');
+                        if (sale == null || sale <= 0.000001) {
+                          return 'products.retail_price_required'.tr();
+                        }
                         final purchase = _parseFlexibleNumber(
                           _purchasePrice.text,
                         );
-                        if (sale != null && purchase != null) {
-                          if (sale < purchase) {
-                            return 'Sale price cannot be less than purchase price.'
-                                .tr();
-                          }
+                        if (purchase != null && sale < purchase) {
+                          return 'Sale price cannot be less than purchase price.'
+                              .tr();
                         }
                         return null;
                       },
@@ -636,9 +654,11 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                     (parsedWholesale != null &&
                         parsedPurchasePrice != null &&
                         parsedWholesale < parsedPurchasePrice);
+                final retailMissing =
+                    parsedSalePrice == null || parsedSalePrice <= 0.000001;
 
                 return FilledButton.icon(
-                  onPressed: hasAnyBelowCost
+                  onPressed: hasAnyBelowCost || retailMissing
                       ? null
                       : () async {
                           if (!_formKey.currentState!.validate()) return;
@@ -650,7 +670,7 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                             barcode: bc.isEmpty ? null : bc,
                             categoryId: widget.product?.categoryId,
                             unitType: _unit,
-                            salePrice: parsedSalePrice ?? 0,
+                            salePrice: parsedSalePrice,
                             salePriceHalfWholesale: parsedHalfWholesale ?? 0,
                             salePriceWholesale: parsedWholesale ?? 0,
                             purchasePrice: parsedPurchasePrice ?? 0,

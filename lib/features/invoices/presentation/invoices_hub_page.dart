@@ -410,12 +410,28 @@ class _InvoicesHubPageState extends State<InvoicesHubPage>
       searchSaleInvoicesForReturn: (prefix) =>
           _salesRepo.suggestSaleInvoicesForReturn(prefix),
       loadInvoiceLines: (saleId) => _salesRepo.listInvoiceLines(saleId),
+      loadPaymentSnapshot: (saleId) =>
+          _salesRepo.loadSalePaymentSnapshot(saleId),
+      previewMaxRefund:
+          ({
+            required saleId,
+            required saleItemId,
+            required quantity,
+          }) =>
+              _salesRepo.previewMaxRefundForReturnLine(
+                saleId: saleId,
+                saleItemId: saleItemId,
+                quantity: quantity,
+              ),
       onReturnSaleItem:
           ({
             required saleId,
             required saleItemId,
             required quantity,
             required paymentMethod,
+            refundAmount,
+            refundCash,
+            refundWallet,
           }) async {
             final allowed = await _ensureWriteAllowed();
             if (!allowed) {
@@ -427,6 +443,9 @@ class _InvoicesHubPageState extends State<InvoicesHubPage>
                 saleItemId: saleItemId,
                 quantity: quantity,
                 paymentMethod: paymentMethod,
+                refundAmountOverride: refundAmount,
+                refundCashOverride: refundCash,
+                refundWalletOverride: refundWallet,
               );
               await _loadSalesInvoices();
               return null;

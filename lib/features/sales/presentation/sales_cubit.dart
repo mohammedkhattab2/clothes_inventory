@@ -168,6 +168,7 @@ class SalesCubit extends Cubit<SalesState> {
     emit(
       state.copyWith(
         customerId: accountId,
+        newCustomerName: accountId == null ? state.newCustomerName : '',
         customerPhone: accountId == null ? '' : state.customerPhone,
       ),
     );
@@ -177,12 +178,14 @@ class SalesCubit extends Cubit<SalesState> {
     emit(
       state.copyWith(
         customerId: accountId,
+        newCustomerName: accountId == null ? state.newCustomerName : '',
         customerPhone: accountId == null ? '' : (phone?.trim() ?? ''),
       ),
     );
   }
 
   void setNewCustomerName(String value) {
+    if (state.customerId != null) return;
     emit(state.copyWith(newCustomerName: value));
   }
 
@@ -365,6 +368,9 @@ class SalesCubit extends Cubit<SalesState> {
     String? notes,
     bool isPending = false,
     int? pendingSaleIdOverride,
+    double? amendRefundAmountOverride,
+    double? amendRefundCashOverride,
+    double? amendRefundWalletOverride,
   }) async {
     if (state.cart.isEmpty) {
       emit(state.copyWith(error: 'Add at least one product.'));
@@ -462,6 +468,10 @@ class SalesCubit extends Cubit<SalesState> {
             items: syncedCart,
             headerDiscountKind: state.headerDiscountKind,
             headerDiscountValue: state.headerDiscountValue,
+            paymentMethod: state.paymentMethod,
+            refundAmountOverride: amendRefundAmountOverride,
+            refundCashOverride: amendRefundCashOverride,
+            refundWalletOverride: amendRefundWalletOverride,
           ),
         );
         emit(
@@ -641,6 +651,9 @@ class SalesCubit extends Cubit<SalesState> {
     required double quantity,
     required PaymentMethod paymentMethod,
     String? reason,
+    double? refundAmountOverride,
+    double? refundCashOverride,
+    double? refundWalletOverride,
   }) async {
     emit(state.copyWith(loading: true, clearError: true));
     try {
@@ -650,6 +663,9 @@ class SalesCubit extends Cubit<SalesState> {
         quantity: quantity,
         paymentMethod: paymentMethod,
         reason: reason,
+        refundAmountOverride: refundAmountOverride,
+        refundCashOverride: refundCashOverride,
+        refundWalletOverride: refundWalletOverride,
       );
       emit(state.copyWith(loading: false));
     } catch (e) {

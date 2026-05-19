@@ -1,6 +1,10 @@
+import 'dart:async';
+
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:delta_erp/core/utils/translation_utils.dart';
+import 'package:delta_erp/core/utils/number_utils.dart';
 import 'package:delta_erp/features/invoices/domain/invoice_suggestion.dart';
 import 'package:delta_erp/features/sales/data/sales_repository.dart';
 import 'package:delta_erp/features/sales/domain/sale_models.dart';
@@ -17,6 +21,8 @@ class SalesReturnDialog extends StatefulWidget {
     required this.searchSaleInvoicesForReturn,
     required this.loadInvoiceLines,
     required this.onReturnSaleItem,
+    required this.loadPaymentSnapshot,
+    required this.previewMaxRefund,
     required this.onRefreshInvoiceLines,
     required this.animateDialogEntrance,
     required this.activeInvoiceId,
@@ -55,8 +61,19 @@ class SalesReturnDialog extends StatefulWidget {
     required int saleItemId,
     required double quantity,
     required PaymentMethod paymentMethod,
+    double? refundAmount,
+    double? refundCash,
+    double? refundWallet,
   })
   onReturnSaleItem;
+  final Future<AmendmentPaymentSnapshot> Function(int saleId)
+  loadPaymentSnapshot;
+  final Future<double> Function({
+    required int saleId,
+    required int saleItemId,
+    required double quantity,
+  })
+  previewMaxRefund;
   final Future<void> Function(int saleId, {int? preferredItemId})
   onRefreshInvoiceLines;
   final Widget Function(Widget child) animateDialogEntrance;
@@ -76,8 +93,19 @@ class SalesReturnDialog extends StatefulWidget {
       required int saleItemId,
       required double quantity,
       required PaymentMethod paymentMethod,
+      double? refundAmount,
+      double? refundCash,
+      double? refundWallet,
     })
     onReturnSaleItem,
+    required Future<AmendmentPaymentSnapshot> Function(int saleId)
+    loadPaymentSnapshot,
+    required Future<double> Function({
+      required int saleId,
+      required int saleItemId,
+      required double quantity,
+    })
+    previewMaxRefund,
     required Future<void> Function(int saleId, {int? preferredItemId})
     onRefreshInvoiceLines,
     required Widget Function(Widget child) animateDialogEntrance,
@@ -99,6 +127,8 @@ class SalesReturnDialog extends StatefulWidget {
         searchSaleInvoicesForReturn: searchSaleInvoicesForReturn,
         loadInvoiceLines: loadInvoiceLines,
         onReturnSaleItem: onReturnSaleItem,
+        loadPaymentSnapshot: loadPaymentSnapshot,
+        previewMaxRefund: previewMaxRefund,
         onRefreshInvoiceLines: onRefreshInvoiceLines,
         animateDialogEntrance: animateDialogEntrance,
         activeInvoiceId: activeInvoiceId,
@@ -130,6 +160,11 @@ class _SalesReturnDialogState extends State<SalesReturnDialog> {
   final Map<int, String> _selectedQtyByItemId = <int, String>{};
   bool _submittingReturns = false;
   PaymentMethod _method = PaymentMethod.cash;
+  AmendmentPaymentSnapshot? _paymentSnapshot;
+  final _refundAmountController = TextEditingController();
+  final _refundCashController = TextEditingController();
+  final _refundWalletController = TextEditingController();
+  bool _loadingRefundDefaults = false;
 
   bool _canAmendInCartCheck = false;
   bool _resolvingAmendEligibility = false;
@@ -243,6 +278,14 @@ class _SalesReturnDialogState extends State<SalesReturnDialog> {
       _syncSelectionForLines(_loadedInvoiceLines);
       if (_loadedInvoiceLines.isNotEmpty) {
         await _refreshAmendEligibility(resolvedInitialSaleId);
+        await _loadPaymentSnapshotForSale(resolvedInitialSaleId);
+        final selected = _loadedInvoiceLines
+            .where((line) => _selectedSaleItemIds.contains(line.id))
+            .toList();
+        await _refreshRefundDefaults(
+          saleId: resolvedInitialSaleId,
+          selectedLines: selected,
+        );
       }
       if (mounted) setState(() {});
       return;
@@ -260,6 +303,14 @@ class _SalesReturnDialogState extends State<SalesReturnDialog> {
       });
       if (fetched.isNotEmpty) {
         await _refreshAmendEligibility(resolvedInitialSaleId);
+        await _loadPaymentSnapshotForSale(resolvedInitialSaleId);
+        final selected = fetched
+            .where((line) => _selectedSaleItemIds.contains(line.id))
+            .toList();
+        await _refreshRefundDefaults(
+          saleId: resolvedInitialSaleId,
+          selectedLines: selected,
+        );
       }
     } catch (_) {
       if (!mounted) return;
@@ -269,6 +320,15 @@ class _SalesReturnDialogState extends State<SalesReturnDialog> {
         _invoiceItemsLoadError = 'Failed to load sale items.'.tr();
       });
     }
+  }
+
+  void _onSelectionOrQuantityChanged(int? saleId, List<SalesInvoiceLine> lines) {
+    setState(() {});
+    if (saleId == null) return;
+    final selected = lines
+        .where((line) => _selectedSaleItemIds.contains(line.id))
+        .toList();
+    unawaited(_refreshRefundDefaults(saleId: saleId, selectedLines: selected));
   }
 
   void _syncSelectionForLines(List<SalesInvoiceLine> lines) {
@@ -346,6 +406,11 @@ class _SalesReturnDialogState extends State<SalesReturnDialog> {
       });
       if (fetched.isNotEmpty) {
         await _refreshAmendEligibility(id);
+        await _loadPaymentSnapshotForSale(id);
+        final selected = fetched
+            .where((line) => _selectedSaleItemIds.contains(line.id))
+            .toList();
+        await _refreshRefundDefaults(saleId: id, selectedLines: selected);
       }
     } catch (_) {
       if (!mounted) return;
@@ -374,9 +439,80 @@ class _SalesReturnDialogState extends State<SalesReturnDialog> {
     return null;
   }
 
+  Future<void> _loadPaymentSnapshotForSale(int saleId) async {
+    try {
+      final snapshot = await widget.loadPaymentSnapshot(saleId);
+      if (!mounted) return;
+      setState(() {
+        _paymentSnapshot = snapshot;
+        _method = snapshot.method == PaymentMethod.cashAndWallet
+            ? PaymentMethod.cash
+            : snapshot.method;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _paymentSnapshot = null);
+    }
+  }
+
+  Future<void> _refreshRefundDefaults({
+    required int saleId,
+    required List<SalesInvoiceLine> selectedLines,
+  }) async {
+    if (selectedLines.length != 1) {
+      _refundAmountController.clear();
+      _refundCashController.clear();
+      _refundWalletController.clear();
+      return;
+    }
+
+    final line = selectedLines.first;
+    final qty = widget.parseFlexibleNumber(
+      _selectedQtyByItemId[line.id] ?? '',
+    );
+    if (qty == null || qty <= 0) return;
+
+    setState(() => _loadingRefundDefaults = true);
+    try {
+      final maxRefund = await widget.previewMaxRefund(
+        saleId: saleId,
+        saleItemId: line.id,
+        quantity: qty,
+      );
+      if (!mounted) return;
+
+      _refundAmountController.text = maxRefund.toStringAsFixed(2);
+      final snapshot = _paymentSnapshot;
+      if (snapshot?.method == PaymentMethod.cashAndWallet) {
+        final paidTotal = snapshot!.paidCash + snapshot.paidWallet;
+        if (paidTotal > 0.000001) {
+          final cashShare = roundCurrency(
+            maxRefund * snapshot.paidCash / paidTotal,
+          );
+          final walletShare = roundCurrency(maxRefund - cashShare);
+          _refundCashController.text = cashShare.toStringAsFixed(2);
+          _refundWalletController.text = walletShare.toStringAsFixed(2);
+        } else {
+          _refundCashController.text = maxRefund.toStringAsFixed(2);
+          _refundWalletController.text = '0.00';
+        }
+      } else {
+        _refundCashController.clear();
+        _refundWalletController.clear();
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _loadingRefundDefaults = false);
+      }
+    }
+  }
+
   @override
   void dispose() {
     _saleIdController.dispose();
+    _refundAmountController.dispose();
+    _refundCashController.dispose();
+    _refundWalletController.dispose();
     super.dispose();
   }
 
@@ -515,17 +651,26 @@ class _SalesReturnDialogState extends State<SalesReturnDialog> {
                                     _selectedSaleItemIds.remove(line.id);
                                     _selectedQtyByItemId.remove(line.id);
                                   }
-                                  setState(() {});
+                                  _onSelectionOrQuantityChanged(
+                                    loadedSaleId,
+                                    invoiceLinesForPicker,
+                                  );
                                 },
                                 onQuantityChanged: (value) {
                                   _selectedQtyByItemId[line.id] = value;
-                                  setState(() {});
+                                  _onSelectionOrQuantityChanged(
+                                    loadedSaleId,
+                                    invoiceLinesForPicker,
+                                  );
                                 },
                                 onUseRemaining: () {
                                   _selectedQtyByItemId[line.id] = line
                                       .remainingQuantity
                                       .toStringAsFixed(0);
-                                  setState(() {});
+                                  _onSelectionOrQuantityChanged(
+                                    loadedSaleId,
+                                    invoiceLinesForPicker,
+                                  );
                                 },
                               );
                             }).toList(),
@@ -559,31 +704,88 @@ class _SalesReturnDialogState extends State<SalesReturnDialog> {
                             ),
                           ),
                         const SizedBox(height: 8),
-                        DropdownButtonFormField<PaymentMethod>(
-                          initialValue: _method,
-                          decoration: InputDecoration(
-                            labelText: 'Refund method'.tr(),
-                          ),
-                          items: [
-                            DropdownMenuItem(
-                              value: PaymentMethod.cash,
-                              child: Text('Cash'.tr()),
+                        if (selectedLines.length == 1) ...[
+                          if (_paymentSnapshot?.method ==
+                              PaymentMethod.cashAndWallet) ...[
+                            TextField(
+                              controller: _refundCashController,
+                              enabled: !_loadingRefundDefaults,
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                decimal: true,
+                              ),
+                              inputFormatters: [
+                                FilteringTextInputFormatter.allow(
+                                  RegExp(r'[0-9٠-٩.,٫٬]'),
+                                ),
+                              ],
+                              decoration: InputDecoration(
+                                labelText: 'Paid cash amount'.tr(),
+                              ),
                             ),
-                            DropdownMenuItem(
-                              value: PaymentMethod.vodafoneCash,
-                              child: Text('Vodafone Cash'.tr()),
+                            const SizedBox(height: 8),
+                            TextField(
+                              controller: _refundWalletController,
+                              enabled: !_loadingRefundDefaults,
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                decimal: true,
+                              ),
+                              inputFormatters: [
+                                FilteringTextInputFormatter.allow(
+                                  RegExp(r'[0-9٠-٩.,٫٬]'),
+                                ),
+                              ],
+                              decoration: InputDecoration(
+                                labelText: 'Paid wallet amount'.tr(),
+                              ),
                             ),
-                            DropdownMenuItem(
-                              value: PaymentMethod.visa,
-                              child: Text('Visa'.tr()),
+                          ] else ...[
+                            TextField(
+                              controller: _refundAmountController,
+                              enabled: !_loadingRefundDefaults,
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                decimal: true,
+                              ),
+                              inputFormatters: [
+                                FilteringTextInputFormatter.allow(
+                                  RegExp(r'[0-9٠-٩.,٫٬]'),
+                                ),
+                              ],
+                              decoration: InputDecoration(
+                                labelText: 'sale.return.refund_amount'.tr(),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            DropdownButtonFormField<PaymentMethod>(
+                              key: ValueKey(_method),
+                              initialValue: _method,
+                              decoration: InputDecoration(
+                                labelText: 'Refund method'.tr(),
+                              ),
+                              items: [
+                                DropdownMenuItem(
+                                  value: PaymentMethod.cash,
+                                  child: Text('Cash'.tr()),
+                                ),
+                                DropdownMenuItem(
+                                  value: PaymentMethod.vodafoneCash,
+                                  child: Text('Vodafone Cash'.tr()),
+                                ),
+                                DropdownMenuItem(
+                                  value: PaymentMethod.visa,
+                                  child: Text('Visa'.tr()),
+                                ),
+                              ],
+                              onChanged: (value) {
+                                if (value != null) {
+                                  setState(() => _method = value);
+                                }
+                              },
                             ),
                           ],
-                          onChanged: (value) {
-                            if (value != null) {
-                              setState(() => _method = value);
-                            }
-                          },
-                        ),
+                        ],
                       ],
                     ),
                   ),
@@ -609,6 +811,24 @@ class _SalesReturnDialogState extends State<SalesReturnDialog> {
                     final selected = selectedLines
                         .where((line) => _selectedSaleItemIds.contains(line.id))
                         .toList();
+                    final isSplit = _paymentSnapshot?.method ==
+                        PaymentMethod.cashAndWallet;
+                    final singleLine = selected.length == 1;
+                    final refundAmount = singleLine && !isSplit
+                        ? widget.parseFlexibleNumber(
+                            _refundAmountController.text,
+                          )
+                        : null;
+                    final refundCash = singleLine && isSplit
+                        ? widget.parseFlexibleNumber(
+                            _refundCashController.text,
+                          )
+                        : null;
+                    final refundWallet = singleLine && isSplit
+                        ? widget.parseFlexibleNumber(
+                            _refundWalletController.text,
+                          )
+                        : null;
                     for (final line in selected) {
                       final qty = widget.parseFlexibleNumber(
                         _selectedQtyByItemId[line.id] ?? '',
@@ -620,7 +840,12 @@ class _SalesReturnDialogState extends State<SalesReturnDialog> {
                         saleId: loadedSaleId!,
                         saleItemId: line.id,
                         quantity: qty,
-                        paymentMethod: _method,
+                        paymentMethod: isSplit
+                            ? PaymentMethod.cashAndWallet
+                            : _method,
+                        refundAmount: refundAmount,
+                        refundCash: refundCash,
+                        refundWallet: refundWallet,
                       );
                       if (error != null) {
                         if (context.mounted) {

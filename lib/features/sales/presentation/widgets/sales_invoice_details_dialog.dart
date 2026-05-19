@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:delta_erp/core/config/company_settings_service.dart';
 import 'package:delta_erp/core/widgets/app_empty_state.dart';
+import 'package:delta_erp/features/invoices/data/sale_invoice_print_data_builder.dart';
 import 'package:delta_erp/features/invoices/domain/invoice_print_model.dart';
 import 'package:delta_erp/features/invoices/presentation/invoice_details_dialog_constraints.dart';
 import 'package:delta_erp/features/invoices/presentation/invoice_payment_display.dart';
@@ -219,12 +220,21 @@ class _SalesInvoiceDetailsDialogState extends State<SalesInvoiceDetailsDialog> {
   }
 
   Future<InvoicePrintModel> _buildInvoicePrintModel(double totalAmount) async {
+    final fromDb = await getIt<SaleInvoicePrintDataBuilder>()
+        .buildInvoicePrintModel(widget.invoiceId);
+    if (fromDb != null) return fromDb;
+
     final companySettings = getIt<CompanySettingsService>();
     final company = companySettings.settings;
     final footerBytes = await companySettings.loadFooterImageBytes();
+    final appIcon = await SaleInvoicePrintDataBuilder.loadAppIconBytes();
     final invoiceNo =
         _selectedInvoice?.invoiceNumber ??
         (widget.activeInvoiceNumber ?? '#${widget.invoiceId}');
+    final paid = _selectedInvoice?.paidAmount ?? 0;
+    final outstanding =
+        _selectedInvoice?.outstandingAmount ??
+        (totalAmount - paid).clamp(0, double.infinity);
     return InvoicePrintModel(
       companyName: company.name,
       address: company.address,
@@ -238,13 +248,19 @@ class _SalesInvoiceDetailsDialogState extends State<SalesInvoiceDetailsDialog> {
               productName: line.productName,
               quantity: line.quantity,
               unitPrice: line.unitPrice,
+              lineTotal: line.lineTotal,
             ),
           )
           .toList(growable: false),
       total: totalAmount,
       title: 'Sales Invoice'.tr(),
+      paidAmount: paid,
+      outstandingAmount: outstanding,
+      cashierName: _selectedInvoice?.createdByDisplay ?? '',
+      returnPolicyNote: 'invoice.print.return_policy'.tr(),
       invoiceFooterNote: company.invoiceFooterNote,
       invoiceFooterImageBytes: footerBytes,
+      appIconBytes: appIcon,
     );
   }
 

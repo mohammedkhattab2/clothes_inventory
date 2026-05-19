@@ -129,6 +129,7 @@ class SalesCartPane extends StatelessWidget {
             uniqueCustomers.any((customer) => customer.id == customerId)
         ? customerId
         : null;
+    final lockNewCustomer = lockCustPay || selectedCustomerId != null;
     final decimalInputFormatters = <TextInputFormatter>[
       FilteringTextInputFormatter.allow(RegExp(r'[0-9٠-٩.,٫٬]')),
     ];
@@ -173,11 +174,11 @@ class SalesCartPane extends StatelessWidget {
             Expanded(
               child: TextField(
                 controller: newCustomerController,
-                readOnly: lockCustPay,
+                readOnly: lockNewCustomer,
                 decoration: InputDecoration(
                   labelText: 'Or create customer name during sale'.tr(),
                 ),
-                onChanged: onNewCustomerNameChanged,
+                onChanged: lockNewCustomer ? null : onNewCustomerNameChanged,
               ),
             ),
           ],

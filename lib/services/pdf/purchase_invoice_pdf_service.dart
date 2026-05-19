@@ -69,10 +69,27 @@ class PurchaseInvoicePdfService {
         ? modName
         : (modUser.isNotEmpty ? modUser : null);
     final company = _companySettingsService.settings;
+    var sumQty = 0.0;
+    var sumLine = 0.0;
+    final lines = items.map((row) {
+      final qty = (row['quantity'] as num).toDouble();
+      final lineTotal = (row['line_total'] as num).toDouble();
+      sumQty += qty;
+      sumLine += lineTotal;
+      return A4InvoiceLine(
+        productName: row['name']?.toString() ?? '-',
+        barcode: '',
+        quantity: qty.toStringAsFixed(0),
+        unitPrice: lineTotal.toStringAsFixed(2),
+        discount: '0.00',
+        lineTotal: lineTotal.toStringAsFixed(2),
+      );
+    }).toList(growable: false);
+
     final invoiceData = A4InvoiceViewData(
       companyName: company.name,
-      address: 'العنوان: ${company.address}',
-      phone: 'التليفون: ${company.phonesText}',
+      address: company.address,
+      phone: company.phonesText,
       title: 'Purchase Invoice'.tr(),
       invoiceNumber: purchase['invoice_number']?.toString() ?? '-',
       issuedAt:
@@ -80,17 +97,16 @@ class PurchaseInvoicePdfService {
           DateTime.now(),
       partyLabel: 'Supplier'.tr(),
       partyName: purchase['supplier_name']?.toString() ?? '-',
+      cashierName: issuedBy ?? '—',
       issuedBy: issuedBy,
       lastModifiedBy: lastModifiedBy,
-      lines: items
-          .map(
-            (row) => A4InvoiceLine(
-              productName: row['name']?.toString() ?? '-',
-              quantity: (row['quantity'] as num).toStringAsFixed(0),
-              price: (row['line_total'] as num).toStringAsFixed(2),
-            ),
-          )
-          .toList(growable: false),
+      lines: lines,
+      totalsRow: A4InvoiceTotalsRow(
+        totalQuantity: sumQty.toStringAsFixed(0),
+        totalUnitPrice: '—',
+        totalDiscount: '0.00',
+        totalLineAmount: sumLine.toStringAsFixed(2),
+      ),
       total: (purchase['total_amount'] as num).toStringAsFixed(2),
       invoiceFooterNote: company.invoiceFooterNote,
       invoiceFooterImageBytes:

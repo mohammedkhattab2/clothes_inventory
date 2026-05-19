@@ -2,8 +2,9 @@ import 'dart:convert';
 import 'dart:developer' as dev;
 import 'dart:io';
 
-import 'package:intl/intl.dart';
 import 'package:delta_erp/features/dashboard/data/dashboard_repository.dart';
+import 'package:delta_erp/features/dashboard/presentation/utils/invoice_status_label.dart';
+import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
@@ -100,7 +101,7 @@ class DashboardDrillDownExportService {
                             date.format(row.createdAt),
                             row.invoiceNumber,
                             row.accountName,
-                            row.status,
+                            localizedInvoiceStatus(row.status),
                             money.format(row.totalAmount),
                           ],
                         )
@@ -120,6 +121,8 @@ class DashboardDrillDownExportService {
                       'Account',
                       'Status',
                       'Total',
+                      'Return',
+                      'Added',
                       'Cash',
                       'Vodafone Cash',
                       'Visa',
@@ -131,8 +134,10 @@ class DashboardDrillDownExportService {
                             date.format(row.createdAt),
                             row.invoiceNumber,
                             row.accountName,
-                            row.status,
+                            localizedInvoiceStatus(row.status),
                             money.format(row.totalAmount),
+                            money.format(row.returnedAmount),
+                            money.format(row.addedAmount),
                             money.format(row.paidCash),
                             money.format(row.paidVodafone),
                             money.format(row.paidVisa),
@@ -160,7 +165,7 @@ class DashboardDrillDownExportService {
                             date.format(row.createdAt),
                             row.invoiceNumber,
                             row.accountName,
-                            row.status,
+                            localizedInvoiceStatus(row.status),
                             money.format(row.totalAmount),
                             money.format(row.paidAmount),
                             money.format(row.outstandingAmount),
@@ -233,7 +238,7 @@ class DashboardDrillDownExportService {
           b.writeln('Date,Invoice,Account,Status,Total');
           for (final row in invoiceRows) {
             b.writeln(
-              '${date.format(row.createdAt)},${esc(row.invoiceNumber)},${esc(row.accountName)},${esc(row.status)},${money.format(row.totalAmount)}',
+              '${date.format(row.createdAt)},${esc(row.invoiceNumber)},${esc(row.accountName)},${esc(localizedInvoiceStatus(row.status))},${money.format(row.totalAmount)}',
             );
           }
         }
@@ -241,18 +246,18 @@ class DashboardDrillDownExportService {
         final salesPaymentExport = kind == 'revenue' || kind == 'customer_debt';
         if (salesPaymentExport) {
           b.writeln(
-            'Date,Invoice,Account,Status,Total,Cash,Vodafone Cash,Visa,Deferred',
+            'Date,Invoice,Account,Status,Total,Return,Added,Cash,Vodafone Cash,Visa,Deferred',
           );
           for (final row in invoiceRows) {
             b.writeln(
-              '${date.format(row.createdAt)},${esc(row.invoiceNumber)},${esc(row.accountName)},${esc(row.status)},${money.format(row.totalAmount)},${money.format(row.paidCash)},${money.format(row.paidVodafone)},${money.format(row.paidVisa)},${money.format(row.outstandingAmount)}',
+              '${date.format(row.createdAt)},${esc(row.invoiceNumber)},${esc(row.accountName)},${esc(localizedInvoiceStatus(row.status))},${money.format(row.totalAmount)},${money.format(row.returnedAmount)},${money.format(row.addedAmount)},${money.format(row.paidCash)},${money.format(row.paidVodafone)},${money.format(row.paidVisa)},${money.format(row.outstandingAmount)}',
             );
           }
         } else {
           b.writeln('Date,Invoice,Account,Status,Total,Paid,Outstanding');
           for (final row in invoiceRows) {
             b.writeln(
-              '${date.format(row.createdAt)},${esc(row.invoiceNumber)},${esc(row.accountName)},${esc(row.status)},${money.format(row.totalAmount)},${money.format(row.paidAmount)},${money.format(row.outstandingAmount)}',
+              '${date.format(row.createdAt)},${esc(row.invoiceNumber)},${esc(row.accountName)},${esc(localizedInvoiceStatus(row.status))},${money.format(row.totalAmount)},${money.format(row.paidAmount)},${money.format(row.outstandingAmount)}',
             );
           }
         }

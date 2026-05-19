@@ -29,7 +29,8 @@ void main() {
     expect(data.lines.first.productName, 'لبن');
     expect(data.invoiceNumber, isNotEmpty);
     expect(data.lines, hasLength(2));
-    expect(data.lines.first.price, '20.00');
+    expect(data.lines.first.lineTotal, '20.00');
+    expect(data.totalsRow.totalLineAmount, isNotEmpty);
     expect(data.total, '35.00');
     expect(data.currency, 'EGP');
   });

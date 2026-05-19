@@ -38,6 +38,15 @@ class _PurchasesPageState extends State<PurchasesPage> {
     paperWidthMm: 58,
     printerPrefs: ThermalPrinterPreferences(),
   );
+  bool? _printInvoiceAfterCheckout;
+  final _invoicePrintPreferences = const InvoicePrintPreferences();
+  late final InvoicePrintModelFactory _invoicePrintFactory =
+      InvoicePrintModelFactory(
+        getIt<SaleInvoicePrintDataBuilder>(),
+        getIt<PurchasesRepository>(),
+        getIt<AppDatabase>(),
+        getIt<CompanySettingsService>(),
+      );
 
   List<AccountLookup> _suppliers = const [];
   List<PurchaseInvoiceSummary> _invoiceRows = const [];
@@ -130,6 +139,17 @@ class _PurchasesPageState extends State<PurchasesPage> {
     setState(() => _suppliers = data);
   }
 
+  void _upsertSupplier(AccountLookup supplier) {
+    final existingIndex = _suppliers.indexWhere((s) => s.id == supplier.id);
+    if (existingIndex >= 0) {
+      final next = List<AccountLookup>.from(_suppliers);
+      next[existingIndex] = supplier;
+      setState(() => _suppliers = next);
+      return;
+    }
+    setState(() => _suppliers = [..._suppliers, supplier]);
+  }
+
   String? _phoneForSupplierId(int? supplierId) {
     if (supplierId == null) return null;
     for (final s in _suppliers) {
@@ -211,6 +231,40 @@ class _PurchasesPageState extends State<PurchasesPage> {
     }
   }
 
+  Future<bool?> _confirmPrintInvoiceAfterCheckout(BuildContext context) {
+    return showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('checkout.print_invoice_prompt'.tr()),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text('checkout.print_invoice_no'.tr()),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text('checkout.print_invoice_yes'.tr()),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _printPurchaseInvoiceDirect(int purchaseId) async {
+    try {
+      final model = await _invoicePrintFactory.buildForPurchase(purchaseId);
+      if (model == null || !mounted) return;
+      final config = await _invoicePrintPreferences.load();
+      await _invoicePrintManager.printInvoice(model, config);
+    } catch (e) {
+      if (!mounted) return;
+      _showLatestSnackBar(
+        context,
+        '${'Failed to print invoice'.tr()}: $e',
+      );
+    }
+  }
+
   Future<void> _attemptCheckout(
     PurchasesCubit cubit,
     PurchasesState state,
@@ -219,6 +273,14 @@ class _PurchasesPageState extends State<PurchasesPage> {
     if (!allowed) return;
     if (!mounted) return;
     _commitInlineQuantityDrafts(cubit, state.cart);
+
+    _printInvoiceAfterCheckout = null;
+    if (state.editingPurchaseId == null) {
+      _printInvoiceAfterCheckout = await _confirmPrintInvoiceAfterCheckout(
+        context,
+      );
+    }
+
     cubit.checkout();
   }
 
@@ -306,11 +368,15 @@ class _PurchasesPageState extends State<PurchasesPage> {
     required String productName,
     required String barcode,
     required int quantity,
+    double? amount,
   }) async {
     try {
+      final companyName = getIt<CompanySettingsService>().settings.name;
       await _barcodeLabelPrinter.printLabel(
         productName: productName,
         barcodeValue: barcode,
+        companyName: companyName,
+        amount: amount,
         copies: quantity,
       );
       if (!mounted) return;
@@ -513,6 +579,7 @@ class _PurchasesPageState extends State<PurchasesPage> {
         );
       },
       onReloadSuppliers: _loadSuppliers,
+      onSupplierCreated: _upsertSupplier,
       onSupplierSelected: (supplierId) {
         if (!mounted || !blocContext.mounted) return;
         _onSupplierChanged(blocContext, supplierId);
@@ -698,12 +765,18 @@ class _PurchasesPageState extends State<PurchasesPage> {
           }
 
           if (state.successInvoiceId != null) {
-            final msg = switch (state.successEvent) {
+            final invoiceId = state.successInvoiceId!;
+            final event = state.successEvent;
+            if (_printInvoiceAfterCheckout == true &&
+                event != 'purchase_amended') {
+              unawaited(_printPurchaseInvoiceDirect(invoiceId));
+            }
+            _printInvoiceAfterCheckout = null;
+            final msg = switch (event) {
               'purchase_amended' => 'purchase.amended_success'.tr(
-                  namedArgs: {'id': '${state.successInvoiceId}'},
+                  namedArgs: {'id': '$invoiceId'},
                 ),
-              _ =>
-                '${'Purchase saved'.tr()}: #${state.successInvoiceId}',
+              _ => '${'Purchase saved'.tr()}: #$invoiceId',
             };
             _showLatestSnackBar(context, msg);
             _paymentStatus = _PurchasePaymentStatus.full;

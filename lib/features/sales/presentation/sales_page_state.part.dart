@@ -6,6 +6,15 @@ class _SalesPageState extends State<SalesPage> {
   final _pdfService = getIt<SalesInvoicePdfService>();
   final _invoiceScrollController = ScrollController();
   final _dateFormat = DateFormat('yyyy-MM-dd HH:mm');
+  bool? _printInvoiceAfterCheckout;
+  final _invoicePrintPreferences = const InvoicePrintPreferences();
+  late final InvoicePrintModelFactory _invoicePrintFactory =
+      InvoicePrintModelFactory(
+        getIt<SaleInvoicePrintDataBuilder>(),
+        getIt<PurchasesRepository>(),
+        getIt<AppDatabase>(),
+        getIt<CompanySettingsService>(),
+      );
   final _invoicePrintManager = InvoicePrintManager(
     a4Printer: const A4InvoicePrinter(),
     thermal58Printer: ThermalPdfInvoicePrinter(
@@ -202,6 +211,37 @@ class _SalesPageState extends State<SalesPage> {
     }
   }
 
+  Future<bool?> _confirmPrintInvoiceAfterCheckout(BuildContext context) {
+    return showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('checkout.print_invoice_prompt'.tr()),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text('checkout.print_invoice_no'.tr()),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text('checkout.print_invoice_yes'.tr()),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _printSaleInvoiceDirect(int saleId) async {
+    try {
+      final model = await _invoicePrintFactory.buildForSale(saleId);
+      if (model == null || !mounted) return;
+      final config = await _invoicePrintPreferences.load();
+      await _invoicePrintManager.printInvoice(model, config);
+    } catch (e) {
+      if (!mounted) return;
+      _showLatestSnackBar(context, '${'Failed to print invoice'.tr()}: $e');
+    }
+  }
+
   Future<void> _attemptCheckout(SalesCubit cubit, SalesState state) async {
     final allowed = await _ensureSalesWriteAllowed();
     if (!allowed) return;
@@ -211,6 +251,49 @@ class _SalesPageState extends State<SalesPage> {
     if (!qtyOk) return;
     final discountOk = _commitInlineDiscountDrafts(context, state.cart);
     if (!discountOk) return;
+
+    _printInvoiceAfterCheckout = null;
+    if (state.editingSaleId == null && _loadedPendingSaleId == null) {
+      _printInvoiceAfterCheckout = await _confirmPrintInvoiceAfterCheckout(
+        context,
+      );
+    }
+
+    if (state.editingSaleId != null) {
+      final saleId = state.editingSaleId!;
+      try {
+        final preview = await getIt<SalesRepository>().previewAmendRefund(
+          SaleAmendRequest(
+            saleId: saleId,
+            items: state.cart,
+            headerDiscountKind: state.headerDiscountKind,
+            headerDiscountValue: state.headerDiscountValue,
+            paymentMethod: state.paymentMethod,
+          ),
+        );
+        if (!mounted) return;
+        AmendRefundConfirmation? refundConfirmation;
+        if (preview.maxRefundable > 0.000001) {
+          refundConfirmation = await SalesAmendRefundDialog.show(
+            context,
+            preview: preview,
+            parseFlexibleNumber: _parseFlexibleNumber,
+          );
+          if (!mounted) return;
+          if (refundConfirmation == null) return;
+        }
+        cubit.checkout(
+          amendRefundAmountOverride: refundConfirmation?.refundAmountOverride,
+          amendRefundCashOverride: refundConfirmation?.refundCashOverride,
+          amendRefundWalletOverride: refundConfirmation?.refundWalletOverride,
+        );
+      } catch (e) {
+        if (!mounted) return;
+        _showLatestSnackBar(context, e.toString());
+      }
+      return;
+    }
+
     cubit.checkout(pendingSaleIdOverride: _loadedPendingSaleId);
   }
 
@@ -746,6 +829,13 @@ class _SalesPageState extends State<SalesPage> {
 
           if (state.successInvoiceId != null) {
             final event = state.successEvent ?? 'sale_saved';
+            final invoiceId = state.successInvoiceId!;
+            if (_printInvoiceAfterCheckout == true &&
+                event != 'pending_saved' &&
+                event != 'sale_amended') {
+              unawaited(_printSaleInvoiceDirect(invoiceId));
+            }
+            _printInvoiceAfterCheckout = null;
             if (event == 'pending_completed' || event == 'sale_amended') {
               _loadedPendingSaleId = null;
             }
@@ -974,6 +1064,9 @@ class _SalesPageState extends State<SalesPage> {
                         phone: t,
                       );
                       _customerPhoneController.text = t;
+                      if (value != null) {
+                        _newCustomerController.clear();
+                      }
                     },
                     onNewCustomerNameChanged: context
                         .read<SalesCubit>()
@@ -1041,6 +1134,7 @@ class _SalesPageState extends State<SalesPage> {
   ) {
     return SalesCartTable(
       cart: state.cart,
+      invoiceAmendmentMode: state.editingSaleId != null,
       pieceUnitTypeName: UnitType.piece.name,
       inlineQuantityDrafts: _inlineQuantityDrafts,
       inlineDiscountDrafts: _inlineDiscountDrafts,
@@ -1107,12 +1201,28 @@ class _SalesPageState extends State<SalesPage> {
           getIt<SalesRepository>().suggestSaleInvoicesForReturn(prefix),
       loadInvoiceLines: (saleId) =>
           getIt<SalesRepository>().listInvoiceLines(saleId),
+      loadPaymentSnapshot: (saleId) =>
+          getIt<SalesRepository>().loadSalePaymentSnapshot(saleId),
+      previewMaxRefund:
+          ({
+            required saleId,
+            required saleItemId,
+            required quantity,
+          }) =>
+              getIt<SalesRepository>().previewMaxRefundForReturnLine(
+                saleId: saleId,
+                saleItemId: saleItemId,
+                quantity: quantity,
+              ),
       onReturnSaleItem:
           ({
             required saleId,
             required saleItemId,
             required quantity,
             required paymentMethod,
+            refundAmount,
+            refundCash,
+            refundWallet,
           }) async {
             final allowed = await _ensureSalesWriteAllowed();
             if (!allowed) {
@@ -1123,6 +1233,9 @@ class _SalesPageState extends State<SalesPage> {
               saleItemId: saleItemId,
               quantity: quantity,
               paymentMethod: paymentMethod,
+              refundAmountOverride: refundAmount,
+              refundCashOverride: refundCash,
+              refundWalletOverride: refundWallet,
             );
             return salesCubit.state.error;
           },

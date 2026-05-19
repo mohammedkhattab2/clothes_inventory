@@ -1224,22 +1224,35 @@ class _CompanySettingsPageState extends State<CompanySettingsPage> {
       invoiceNumber: 'PREVIEW-001',
       date: DateTime.now(),
       customerName: 'settings.preview_customer_name'.tr(),
+      cashierName: 'settings.preview_cashier_name'.tr(),
       items: [
         InvoiceItem(
           productName: 'settings.preview_product_a'.tr(),
+          barcode: 'P1001',
           quantity: 2,
           unitPrice: 45,
+          discount: 5,
+          lineTotal: 85,
         ),
         InvoiceItem(
           productName: 'settings.preview_product_b'.tr(),
+          barcode: 'P1002',
           quantity: 1,
           unitPrice: 60,
+          discount: 0,
+          lineTotal: 60,
         ),
       ],
       total: 150,
+      paidAmount: 100,
+      outstandingAmount: 50,
       title: 'Sales Invoice'.tr(),
+      returnPolicyNote: 'invoice.print.return_policy'.tr(),
       invoiceFooterNote: company.invoiceFooterNote,
       invoiceFooterImageBytes: footerBytes,
+      developerBrand: 'invoice.print.developer_brand'.tr(),
+      developerName: 'invoice.print.developer_name'.tr(),
+      developerPhone: 'invoice.print.developer_phone'.tr(),
     );
   }
 }

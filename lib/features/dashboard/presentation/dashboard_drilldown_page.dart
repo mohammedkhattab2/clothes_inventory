@@ -12,6 +12,7 @@ import 'package:delta_erp/core/widgets/app_loading_indicator.dart';
 import 'package:delta_erp/features/dashboard/data/dashboard_drilldown_export_service.dart';
 import 'package:delta_erp/features/dashboard/data/dashboard_repository.dart';
 import 'package:delta_erp/features/dashboard/presentation/dashboard_cubit.dart';
+import 'package:delta_erp/features/dashboard/presentation/utils/invoice_status_label.dart';
 import 'package:delta_erp/features/dashboard/presentation/widgets/dashboard_drilldown_stretch_table.dart';
 import 'package:delta_erp/services/di/service_locator.dart';
 import 'package:delta_erp/services/export/user_export_path_picker.dart';
@@ -54,6 +55,8 @@ class _DashboardDrillDownPageState extends State<DashboardDrillDownPage> {
   int _page = 0;
   int _netSectionIndex = _lastNetSectionIndex;
   List<DashboardInvoiceRecord> _invoiceRows = const [];
+  double _returnedTotalForPeriod = 0;
+  double _addedTotalForPeriod = 0;
   List<DashboardProfitRecord> _profitRows = const [];
   List<DashboardInvoiceRecord> _netExpenseRows = const [];
   List<_NetTrendPoint> _netTrendRows = const [];
@@ -151,18 +154,47 @@ class _DashboardDrillDownPageState extends State<DashboardDrillDownPage> {
           _loading = false;
         });
       } else if (widget.kind == 'revenue' || widget.kind == 'customer_debt') {
-        final rows = await repo.getSalesInvoices(
+        final onlyUnpaid = widget.kind == 'customer_debt';
+        final rowsFuture = repo.getSalesInvoices(
           from: widget.fromDate,
           to: widget.toDate,
           categoryId: widget.categoryId,
           accountId: widget.accountId,
-          onlyUnpaid: widget.kind == 'customer_debt',
+          onlyUnpaid: onlyUnpaid,
           limit: _pageSize,
           offset: offset,
         );
+        final returnedTotalFuture = widget.kind == 'revenue'
+            ? repo.getSalesInvoicesReturnedTotal(
+                from: widget.fromDate,
+                to: widget.toDate,
+                categoryId: widget.categoryId,
+                accountId: widget.accountId,
+                onlyUnpaid: onlyUnpaid,
+              )
+            : Future<double>.value(0);
+        final addedTotalFuture = widget.kind == 'revenue'
+            ? repo.getSalesInvoicesAddedTotal(
+                from: widget.fromDate,
+                to: widget.toDate,
+                categoryId: widget.categoryId,
+                accountId: widget.accountId,
+                onlyUnpaid: onlyUnpaid,
+              )
+            : Future<double>.value(0);
+        final results = await Future.wait([
+          rowsFuture,
+          returnedTotalFuture,
+          addedTotalFuture,
+        ]);
+        final rows = results[0] as List<DashboardInvoiceRecord>;
+        final returnedTotal = results[1] as double;
+        final addedTotal = results[2] as double;
         if (!mounted) return;
         setState(() {
           _invoiceRows = rows;
+          _returnedTotalForPeriod = returnedTotal;
+          _addedTotalForPeriod = addedTotal;
           _profitRows = const [];
           _netExpenseRows = const [];
           _netTrendRows = const [];
@@ -602,6 +634,18 @@ class _DashboardDrillDownPageState extends State<DashboardDrillDownPage> {
       ),
       if (showPayment) ...[
         StretchDrilldownColumn(
+          label: 'dashboard.drilldown_return_short'.tr(),
+          flex: 9,
+          align: TextAlign.end,
+          headerAlign: TextAlign.end,
+        ),
+        StretchDrilldownColumn(
+          label: 'dashboard.drilldown_added_short'.tr(),
+          flex: 9,
+          align: TextAlign.end,
+          headerAlign: TextAlign.end,
+        ),
+        StretchDrilldownColumn(
           label: 'Cash'.tr(),
           flex: 9,
           align: TextAlign.end,
@@ -643,7 +687,7 @@ class _DashboardDrillDownPageState extends State<DashboardDrillDownPage> {
     return DashboardDrilldownStretchTable(
       columns: columns,
       rowCount: _invoiceRows.length,
-      minWidthWhenScrolling: showPayment ? 1180 : 920,
+      minWidthWhenScrolling: showPayment ? 1380 : 920,
       cellBuilder: (context, rowIndex, colIndex) {
         final row = _invoiceRows[rowIndex];
         if (!showPayment) {
@@ -664,7 +708,7 @@ class _DashboardDrillDownPageState extends State<DashboardDrillDownPage> {
               );
             case 3:
               return Text(
-                row.status,
+                localizedInvoiceStatus(row.status),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               );
@@ -704,7 +748,7 @@ class _DashboardDrillDownPageState extends State<DashboardDrillDownPage> {
             );
           case 3:
             return Text(
-              row.status,
+              localizedInvoiceStatus(row.status),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             );
@@ -715,20 +759,34 @@ class _DashboardDrillDownPageState extends State<DashboardDrillDownPage> {
             );
           case 5:
             return Text(
-              _currency.format(row.paidCash),
+              row.returnedAmount <= 0.000001
+                  ? '-'
+                  : _currency.format(row.returnedAmount),
               textAlign: TextAlign.end,
             );
           case 6:
             return Text(
-              _currency.format(row.paidVodafone),
+              row.addedAmount <= 0.000001
+                  ? '-'
+                  : _currency.format(row.addedAmount),
               textAlign: TextAlign.end,
             );
           case 7:
             return Text(
-              _currency.format(row.paidVisa),
+              _currency.format(row.paidCash),
               textAlign: TextAlign.end,
             );
           case 8:
+            return Text(
+              _currency.format(row.paidVodafone),
+              textAlign: TextAlign.end,
+            );
+          case 9:
+            return Text(
+              _currency.format(row.paidVisa),
+              textAlign: TextAlign.end,
+            );
+          case 10:
             return Text(
               _currency.format(row.outstandingAmount),
               textAlign: TextAlign.end,
@@ -823,6 +881,18 @@ class _DashboardDrillDownPageState extends State<DashboardDrillDownPage> {
       0,
       (sum, row) => sum + row.outstandingAmount,
     );
+    final totalReturned = widget.kind == 'revenue'
+        ? _returnedTotalForPeriod
+        : _invoiceRows.fold<double>(
+            0,
+            (sum, row) => sum + row.returnedAmount,
+          );
+    final totalAdded = widget.kind == 'revenue'
+        ? _addedTotalForPeriod
+        : _invoiceRows.fold<double>(
+            0,
+            (sum, row) => sum + row.addedAmount,
+          );
     final grossRevenueTotal = _profitRows.fold<double>(
       0,
       (sum, row) => sum + row.revenue,
@@ -911,6 +981,17 @@ class _DashboardDrillDownPageState extends State<DashboardDrillDownPage> {
                       label: 'Visa'.tr(),
                       value: _currency.format(collectedByPayment['visa']!),
                     ),
+                    _NetMiniMetricItem(
+                      label: widget.kind == 'revenue'
+                          ? 'dashboard.drilldown_return_total'.tr()
+                          : 'dashboard.drilldown_return_short'.tr(),
+                      value: _currency.format(totalReturned),
+                    ),
+                    if (widget.kind == 'revenue')
+                      _NetMiniMetricItem(
+                        label: 'dashboard.drilldown_added_total'.tr(),
+                        value: _currency.format(totalAdded),
+                      ),
                     _NetMiniMetricItem(
                       label: 'dashboard.drilldown_deferred_short'.tr(),
                       value: _currency.format(totalOutstanding),
@@ -1317,7 +1398,7 @@ class _DashboardDrillDownPageState extends State<DashboardDrillDownPage> {
                   ),
                   DataCell(Text(row.invoiceNumber)),
                   DataCell(Text(row.accountName)),
-                  DataCell(Text(row.status)),
+                  DataCell(Text(localizedInvoiceStatus(row.status))),
                   DataCell(Text(_currency.format(row.totalAmount))),
                 ],
               ),

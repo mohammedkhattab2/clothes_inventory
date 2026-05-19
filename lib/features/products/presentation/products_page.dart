@@ -17,6 +17,7 @@ import 'package:delta_erp/features/products/presentation/widgets/products_page_l
 import 'package:delta_erp/features/products/presentation/widgets/products_table_section.dart';
 import 'package:delta_erp/features/auth/domain/access_policy.dart';
 import 'package:delta_erp/services/auth/session_service.dart';
+import 'package:delta_erp/core/config/company_settings_service.dart';
 import 'package:delta_erp/services/di/service_locator.dart';
 import 'package:delta_erp/services/export/user_export_path_picker.dart';
 import 'package:delta_erp/services/printing/product_barcode_label_printer.dart';
@@ -792,11 +793,15 @@ class _ProductsPageState extends State<ProductsPage> {
   Future<void> _printProductBarcodeLabel({
     required String productName,
     required String barcode,
+    double? amount,
   }) async {
     try {
+      final companyName = getIt<CompanySettingsService>().settings.name;
       await _barcodeLabelPrinter.printLabel(
         productName: productName,
         barcodeValue: barcode,
+        companyName: companyName,
+        amount: amount,
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

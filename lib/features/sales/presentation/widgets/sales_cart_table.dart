@@ -29,9 +29,11 @@ class SalesCartTable extends StatelessWidget {
     required this.onRemoveItem,
     required this.onUpdateItemQuantity,
     required this.onUpdateItemDiscount,
+    this.invoiceAmendmentMode = false,
   });
 
   final List<SaleDraftItem> cart;
+  final bool invoiceAmendmentMode;
   final String pieceUnitTypeName;
   final Map<int, String> inlineQuantityDrafts;
   final Map<int, String> inlineDiscountDrafts;
@@ -132,6 +134,8 @@ class SalesCartTable extends StatelessWidget {
                     ],
                   ),
                   ...cart.map((item) {
+                    final showAddedBadge = invoiceAmendmentMode &&
+                        item.amendSourceSaleItemId == null;
                     return TableRow(
                       children: [
                         Padding(
@@ -139,10 +143,42 @@ class SalesCartTable extends StatelessWidget {
                             horizontal: 8,
                             vertical: 4,
                           ),
-                          child: Text(
-                            item.productName,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                item.productName,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              if (showAddedBadge) ...[
+                                const SizedBox(height: 2),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                    vertical: 1,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: colorScheme.secondaryContainer
+                                        .withValues(alpha: 0.65),
+                                    borderRadius: BorderRadius.circular(999),
+                                    border: Border.all(
+                                      color: colorScheme.outlineVariant
+                                          .withValues(alpha: 0.6),
+                                    ),
+                                  ),
+                                  child: Text(
+                                    'sale.line_added_after_amendment'.tr(),
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: colorScheme.onSecondaryContainer,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
                           ),
                         ),
                         Padding(

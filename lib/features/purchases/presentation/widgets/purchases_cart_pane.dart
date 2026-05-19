@@ -883,8 +883,15 @@ class _PurchasesSupplierAutocompleteState
   @override
   void didUpdateWidget(covariant PurchasesSupplierAutocomplete oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.supplierId != oldWidget.supplierId ||
-        widget.suppliers != oldWidget.suppliers) {
+    if (widget.supplierId != oldWidget.supplierId) {
+      final next = _nameForId(widget.supplierId);
+      if (_controller.text != next) {
+        _controller.value = TextEditingValue(
+          text: next,
+          selection: TextSelection.collapsed(offset: next.length),
+        );
+      }
+    } else if (widget.suppliers != oldWidget.suppliers) {
       final next = _nameForId(widget.supplierId);
       if (!_focusNode.hasFocus && _controller.text != next) {
         _controller.value = TextEditingValue(

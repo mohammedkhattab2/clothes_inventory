@@ -17,6 +17,9 @@ import 'package:delta_erp/services/database/migrations/migration_v8.dart';
 import 'package:delta_erp/services/database/migrations/migration_v9.dart';
 import 'package:delta_erp/services/database/migrations/migration_v10.dart';
 import 'package:delta_erp/services/database/migrations/migration_v11.dart';
+import 'package:delta_erp/services/database/migrations/migration_v12.dart';
+import 'package:delta_erp/services/database/migrations/migration_v13.dart';
+import 'package:delta_erp/services/database/migrations/migration_v14.dart';
 
 class AppDatabase {
   AppDatabase._();
@@ -24,7 +27,7 @@ class AppDatabase {
   static final AppDatabase instance = AppDatabase._();
 
   static const _legacyDbName = 'inventory_pos.db';
-  static const _dbVersion = 11;
+  static const _dbVersion = 14;
 
   Database? _db;
 
@@ -77,6 +80,9 @@ class AppDatabase {
         await MigrationV9().up(db);
         await MigrationV10().up(db);
         await MigrationV11().up(db);
+        await MigrationV12().up(db);
+        await MigrationV13().up(db);
+        await MigrationV14().up(db);
         await _ensureProductSalePriceColumns(db);
         await _ensureStockGuards(db);
         await _normalizeStandaloneSettlementPayments(db);
@@ -112,8 +118,19 @@ class AppDatabase {
         if (oldVersion < 11) {
           await MigrationV11().up(db);
         }
+        if (oldVersion < 12) {
+          await MigrationV12().up(db);
+        }
+        if (oldVersion < 13) {
+          await MigrationV13().up(db);
+        }
+        if (oldVersion < 14) {
+          await MigrationV14().up(db);
+        }
       },
       onOpen: (db) async {
+        await ReturnReportingBackfill.ensureColumns(db);
+        await AmendmentAddedReporting.ensureColumns(db);
         await _ensureProductSalePriceColumns(db);
         await _ensureStockGuards(db);
         await _normalizeStandaloneSettlementPayments(db);

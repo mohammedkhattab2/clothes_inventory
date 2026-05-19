@@ -18,6 +18,8 @@ class ProductBarcodeLabelPrinter {
   Future<Uint8List> buildLabelPdfBytes({
     required String productName,
     required String barcodeValue,
+    String? companyName,
+    double? amount,
     int copies = 1,
   }) {
     if (barcodeValue.trim().isEmpty) {
@@ -29,6 +31,8 @@ class ProductBarcodeLabelPrinter {
     return _buildPdf(
       productName: productName.trim(),
       barcodeValue: barcodeValue.trim(),
+      companyName: companyName?.trim() ?? '',
+      amountText: amount == null ? '' : amount.toStringAsFixed(2),
       copies: copies,
     );
   }
@@ -36,6 +40,8 @@ class ProductBarcodeLabelPrinter {
   Future<void> printLabel({
     required String productName,
     required String barcodeValue,
+    String? companyName,
+    double? amount,
     int copies = 1,
   }) async {
     if (barcodeValue.trim().isEmpty) {
@@ -48,6 +54,8 @@ class ProductBarcodeLabelPrinter {
     final bytes = await buildLabelPdfBytes(
       productName: productName.trim(),
       barcodeValue: barcodeValue.trim(),
+      companyName: companyName,
+      amount: amount,
       copies: copies,
     );
     final jobName = 'barcode_${barcodeValue.trim()}';
@@ -74,6 +82,8 @@ class ProductBarcodeLabelPrinter {
   Future<Uint8List> _buildPdf({
     required String productName,
     required String barcodeValue,
+    required String companyName,
+    required String amountText,
     required int copies,
   }) async {
     final baseFont = await PdfGoogleFonts.notoNaskhArabicRegular();
@@ -91,9 +101,11 @@ class ProductBarcodeLabelPrinter {
     final pageWidthPt = paperWidthMm * PdfPageFormat.mm;
     final pageFormat = PdfPageFormat(
       pageWidthPt,
-      54 * PdfPageFormat.mm,
+      62 * PdfPageFormat.mm,
       marginAll: 2.5 * PdfPageFormat.mm,
     );
+
+    final showProductRow = productName.isNotEmpty || amountText.isNotEmpty;
 
     for (var i = 0; i < copies; i++) {
       doc.addPage(
@@ -106,28 +118,60 @@ class ProductBarcodeLabelPrinter {
                 crossAxisAlignment: pw.CrossAxisAlignment.stretch,
                 mainAxisAlignment: pw.MainAxisAlignment.center,
                 children: [
-                  if (productName.isNotEmpty)
+                  if (companyName.isNotEmpty)
                     pw.Text(
-                      productName,
+                      companyName,
                       textAlign: pw.TextAlign.center,
                       maxLines: 1,
                       style: pw.TextStyle(
-                        fontSize: 12,
+                        fontSize: 11,
                         fontWeight: pw.FontWeight.bold,
                       ),
                     ),
-                  if (productName.isNotEmpty) pw.SizedBox(height: 3),
+                  if (companyName.isNotEmpty) pw.SizedBox(height: 2),
+                  if (showProductRow)
+                    pw.Row(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        if (amountText.isNotEmpty)
+                          pw.Expanded(
+                            flex: 2,
+                            child: pw.Text(
+                              amountText,
+                              textAlign: pw.TextAlign.right,
+                              maxLines: 1,
+                              style: pw.TextStyle(
+                                fontSize: 11,
+                                fontWeight: pw.FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        if (amountText.isNotEmpty && productName.isNotEmpty)
+                          pw.SizedBox(width: 4),
+                        if (productName.isNotEmpty)
+                          pw.Expanded(
+                            flex: 3,
+                            child: pw.Text(
+                              productName,
+                              textAlign: pw.TextAlign.left,
+                              maxLines: 2,
+                              style: const pw.TextStyle(fontSize: 10),
+                            ),
+                          ),
+                      ],
+                    ),
+                  if (showProductRow) pw.SizedBox(height: 2),
                   pw.BarcodeWidget(
                     barcode: bc.Barcode.code128(),
                     data: barcodeValue,
-                    height: 18 * PdfPageFormat.mm,
+                    height: 9 * PdfPageFormat.mm,
                     drawText: false,
                   ),
                   pw.SizedBox(height: 2),
                   pw.Text(
                     barcodeValue,
                     textAlign: pw.TextAlign.center,
-                    style: const pw.TextStyle(fontSize: 11),
+                    style: const pw.TextStyle(fontSize: 10),
                   ),
                 ],
               ),

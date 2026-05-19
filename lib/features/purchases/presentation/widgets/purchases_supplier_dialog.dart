@@ -16,6 +16,7 @@ class PurchasesSupplierDialog {
     })
     onCreateSupplier,
     required Future<void> Function() onReloadSuppliers,
+    required void Function(AccountLookup supplier) onSupplierCreated,
     required void Function(int supplierId) onSupplierSelected,
   }) async {
     if (!context.mounted) return;
@@ -27,6 +28,7 @@ class PurchasesSupplierDialog {
           suppliers: suppliers,
           onCreateSupplier: onCreateSupplier,
           onReloadSuppliers: onReloadSuppliers,
+          onSupplierCreated: onSupplierCreated,
           onSupplierSelected: onSupplierSelected,
         );
       },
@@ -40,6 +42,7 @@ class _PurchasesSupplierDialogContent extends StatefulWidget {
     required this.suppliers,
     required this.onCreateSupplier,
     required this.onReloadSuppliers,
+    required this.onSupplierCreated,
     required this.onSupplierSelected,
   });
 
@@ -52,6 +55,7 @@ class _PurchasesSupplierDialogContent extends StatefulWidget {
   })
   onCreateSupplier;
   final Future<void> Function() onReloadSuppliers;
+  final void Function(AccountLookup supplier) onSupplierCreated;
   final void Function(int supplierId) onSupplierSelected;
 
   @override
@@ -171,6 +175,13 @@ class _PurchasesSupplierDialogContentState
         phone: phone.isEmpty ? null : phone,
         address: address.isEmpty ? null : address,
       );
+      final created = AccountLookup(
+        id: createdId,
+        name: name,
+        accountType: 'supplier',
+        phone: phone.isEmpty ? null : phone,
+      );
+      widget.onSupplierCreated(created);
       await widget.onReloadSuppliers();
       widget.onSupplierSelected(createdId);
       if (mounted) {

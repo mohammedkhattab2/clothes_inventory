@@ -61,6 +61,7 @@ class SaleDraftItem {
     required this.quantity,
     required this.unitPrice,
     this.discount = 0,
+    this.amendSourceSaleItemId,
   });
 
   final int productId;
@@ -71,6 +72,9 @@ class SaleDraftItem {
   final double quantity;
   final double unitPrice;
   final double discount;
+
+  /// Original [sale_items.id] when loaded for invoice amendment in cart.
+  final int? amendSourceSaleItemId;
 
   double get lineTotal => (quantity * unitPrice) - discount;
 
@@ -83,6 +87,7 @@ class SaleDraftItem {
     double? quantity,
     double? unitPrice,
     double? discount,
+    int? amendSourceSaleItemId,
   }) {
     return SaleDraftItem(
       productId: productId ?? this.productId,
@@ -93,8 +98,44 @@ class SaleDraftItem {
       quantity: quantity ?? this.quantity,
       unitPrice: unitPrice ?? this.unitPrice,
       discount: discount ?? this.discount,
+      amendSourceSaleItemId:
+          amendSourceSaleItemId ?? this.amendSourceSaleItemId,
     );
   }
+}
+
+/// Refund limits when completing an invoice amendment in cart.
+class AmendRefundPreview {
+  const AmendRefundPreview({
+    required this.returnAmountTotal,
+    required this.newTotalAmount,
+    required this.netPaidAmount,
+    required this.maxRefundable,
+    required this.paymentMethod,
+    required this.paidCash,
+    required this.paidWallet,
+  });
+
+  final double returnAmountTotal;
+  final double newTotalAmount;
+  final double netPaidAmount;
+  final double maxRefundable;
+  final PaymentMethod paymentMethod;
+  final double paidCash;
+  final double paidWallet;
+}
+
+/// User-confirmed refund amounts for [SaleAmendRequest].
+class AmendRefundConfirmation {
+  const AmendRefundConfirmation({
+    this.refundAmountOverride,
+    this.refundCashOverride,
+    this.refundWalletOverride,
+  });
+
+  final double? refundAmountOverride;
+  final double? refundCashOverride;
+  final double? refundWalletOverride;
 }
 
 class SaleCreateRequest {
@@ -130,18 +171,26 @@ class SaleCreateRequest {
   final String? notes;
 }
 
-/// Replace line items/totals of an existing completed/partial sale (no returns).
-/// Customer and existing payment rows are unchanged.
+/// Replace line items/totals of an existing completed/partial sale; records
+/// quantity reductions as returns and optional refunds when overpaid.
 class SaleAmendRequest {
   const SaleAmendRequest({
     required this.saleId,
     required this.items,
     this.headerDiscountKind = InvoiceHeaderDiscountKind.percent,
     this.headerDiscountValue = 0,
+    required this.paymentMethod,
+    this.refundAmountOverride,
+    this.refundCashOverride,
+    this.refundWalletOverride,
   });
 
   final int saleId;
   final List<SaleDraftItem> items;
   final InvoiceHeaderDiscountKind headerDiscountKind;
   final double headerDiscountValue;
+  final PaymentMethod paymentMethod;
+  final double? refundAmountOverride;
+  final double? refundCashOverride;
+  final double? refundWalletOverride;
 }

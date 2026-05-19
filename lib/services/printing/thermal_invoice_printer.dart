@@ -69,7 +69,7 @@ class ThermalInvoicePrinter implements InvoicePrinter {
         rtl.buildInvoiceRow(
           name: item.productName,
           qty: item.quantity.toStringAsFixed(0),
-          price: item.lineTotal.toStringAsFixed(2),
+          price: item.effectiveLineTotal.toStringAsFixed(2),
         ),
       );
     }

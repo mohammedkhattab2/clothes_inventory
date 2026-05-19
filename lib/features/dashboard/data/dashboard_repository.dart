@@ -2,6 +2,8 @@ import 'dart:collection';
 
 import 'package:delta_erp/services/auth/session_service.dart';
 import 'package:delta_erp/services/database/app_database.dart';
+import 'package:delta_erp/services/database/migrations/added_amount_sql.dart';
+import 'package:delta_erp/services/database/migrations/return_amount_sql.dart';
 
 class DashboardFilterOption {
   const DashboardFilterOption({required this.id, required this.name});
@@ -88,6 +90,8 @@ class DashboardInvoiceRecord {
     this.paidCash = 0,
     this.paidVodafone = 0,
     this.paidVisa = 0,
+    this.returnedAmount = 0,
+    this.addedAmount = 0,
   });
 
   final int id;
@@ -97,6 +101,12 @@ class DashboardInvoiceRecord {
   final double totalAmount;
   final double paidAmount;
   final double outstandingAmount;
+
+  /// Monetary value of returns on this invoice (ledger return credits, or refunds).
+  final double returnedAmount;
+
+  /// Value of new line items added during invoice amendment in cart.
+  final double addedAmount;
 
   /// Sale invoice totals by payment channel (excluding reversals/refunds).
   final double paidCash;
@@ -568,18 +578,16 @@ class DashboardRepository {
     return ('$alias.created_by_user_id = ?', user.id);
   }
 
-  Future<List<DashboardInvoiceRecord>> getSalesInvoices({
+  ({
+    List<String> where,
+    List<Object?> args,
+  }) _salesInvoiceFilters({
     required DateTime from,
     required DateTime to,
     int? categoryId,
     int? accountId,
     bool onlyUnpaid = false,
-    int? limit,
-    int offset = 0,
-  }) async {
-    await _ensureIndexes();
-    final db = await _dbProvider.database;
-
+  }) {
     final filter = _dateFilter(
       tableAlias: 's',
       from: from,
@@ -601,15 +609,48 @@ class DashboardRepository {
 
     if (onlyUnpaid) {
       where.add('''(
-        s.total_amount - COALESCE((
-          SELECT SUM(pp.amount)
-          FROM payments pp
-          WHERE pp.invoice_type = 'sale'
-            AND pp.invoice_id = s.id
-            AND pp.reversal_for_id IS NULL
-            AND pp.is_refund = 0
-            AND pp.amount > 0
-        ), 0)
+        CASE
+          WHEN (
+            s.total_amount - (
+              COALESCE((
+                SELECT SUM(pp.amount)
+                FROM payments pp
+                WHERE pp.invoice_type = 'sale'
+                  AND pp.invoice_id = s.id
+                  AND pp.reversal_for_id IS NULL
+                  AND pp.is_refund = 0
+                  AND pp.amount > 0
+              ), 0) - COALESCE((
+                SELECT ABS(SUM(pp.amount))
+                FROM payments pp
+                WHERE pp.invoice_type = 'sale'
+                  AND pp.invoice_id = s.id
+                  AND pp.reversal_for_id IS NULL
+                  AND pp.is_refund = 1
+              ), 0)
+            )
+          ) < 0 THEN 0
+          ELSE (
+            s.total_amount - (
+              COALESCE((
+                SELECT SUM(pp.amount)
+                FROM payments pp
+                WHERE pp.invoice_type = 'sale'
+                  AND pp.invoice_id = s.id
+                  AND pp.reversal_for_id IS NULL
+                  AND pp.is_refund = 0
+                  AND pp.amount > 0
+              ), 0) - COALESCE((
+                SELECT ABS(SUM(pp.amount))
+                FROM payments pp
+                WHERE pp.invoice_type = 'sale'
+                  AND pp.invoice_id = s.id
+                  AND pp.reversal_for_id IS NULL
+                  AND pp.is_refund = 1
+              ), 0)
+            )
+          )
+        END
       ) > 0.00001''');
 
       final endExclusive = DateTime(
@@ -642,6 +683,85 @@ class DashboardRepository {
       args.add(endExclusive.toIso8601String());
     }
 
+    return (where: where, args: args);
+  }
+
+  Future<double> getSalesInvoicesReturnedTotal({
+    required DateTime from,
+    required DateTime to,
+    int? categoryId,
+    int? accountId,
+    bool onlyUnpaid = false,
+  }) async {
+    await _ensureIndexes();
+    final db = await _dbProvider.database;
+    final filters = _salesInvoiceFilters(
+      from: from,
+      to: to,
+      categoryId: categoryId,
+      accountId: accountId,
+      onlyUnpaid: onlyUnpaid,
+    );
+
+    final rows = await db.rawQuery('''
+      SELECT COALESCE(SUM($salesInvoiceReturnedAmountSql), 0) AS total_returned
+      FROM sales s
+      LEFT JOIN accounts a ON a.id = s.account_id
+      WHERE ${filters.where.join(' AND ')}
+    ''', filters.args);
+
+    return ((rows.first['total_returned'] ?? 0) as num).toDouble();
+  }
+
+  Future<double> getSalesInvoicesAddedTotal({
+    required DateTime from,
+    required DateTime to,
+    int? categoryId,
+    int? accountId,
+    bool onlyUnpaid = false,
+  }) async {
+    await _ensureIndexes();
+    final db = await _dbProvider.database;
+    final filters = _salesInvoiceFilters(
+      from: from,
+      to: to,
+      categoryId: categoryId,
+      accountId: accountId,
+      onlyUnpaid: onlyUnpaid,
+    );
+
+    final rows = await db.rawQuery('''
+      SELECT COALESCE(SUM($salesInvoiceAddedAmountSql), 0) AS total_added
+      FROM sales s
+      LEFT JOIN accounts a ON a.id = s.account_id
+      WHERE ${filters.where.join(' AND ')}
+    ''', filters.args);
+
+    return ((rows.first['total_added'] ?? 0) as num).toDouble();
+  }
+
+  Future<List<DashboardInvoiceRecord>> getSalesInvoices({
+    required DateTime from,
+    required DateTime to,
+    int? categoryId,
+    int? accountId,
+    bool onlyUnpaid = false,
+    int? limit,
+    int offset = 0,
+  }) async {
+    await _ensureIndexes();
+    final db = await _dbProvider.database;
+
+    final filters = _salesInvoiceFilters(
+      from: from,
+      to: to,
+      categoryId: categoryId,
+      accountId: accountId,
+      onlyUnpaid: onlyUnpaid,
+    );
+    final where = filters.where;
+    final args = List<Object?>.from(filters.args);
+
     final limitClause = limit == null ? '' : ' LIMIT ? OFFSET ? ';
     if (limit != null) {
       args.add(limit);
@@ -663,17 +783,50 @@ class DashboardRepository {
             AND pp.is_refund = 0
             AND pp.amount > 0
         ), 0) AS paid_amount,
-        (
-          s.total_amount - COALESCE((
-            SELECT SUM(pp.amount)
-            FROM payments pp
-            WHERE pp.invoice_type = 'sale'
-              AND pp.invoice_id = s.id
-              AND pp.reversal_for_id IS NULL
-              AND pp.is_refund = 0
-              AND pp.amount > 0
-          ), 0)
-        ) AS outstanding_amount,
+        CASE
+          WHEN (
+            s.total_amount - (
+              COALESCE((
+                SELECT SUM(pp.amount)
+                FROM payments pp
+                WHERE pp.invoice_type = 'sale'
+                  AND pp.invoice_id = s.id
+                  AND pp.reversal_for_id IS NULL
+                  AND pp.is_refund = 0
+                  AND pp.amount > 0
+              ), 0) - COALESCE((
+                SELECT ABS(SUM(pp.amount))
+                FROM payments pp
+                WHERE pp.invoice_type = 'sale'
+                  AND pp.invoice_id = s.id
+                  AND pp.reversal_for_id IS NULL
+                  AND pp.is_refund = 1
+              ), 0)
+            )
+          ) < 0 THEN 0
+          ELSE (
+            s.total_amount - (
+              COALESCE((
+                SELECT SUM(pp.amount)
+                FROM payments pp
+                WHERE pp.invoice_type = 'sale'
+                  AND pp.invoice_id = s.id
+                  AND pp.reversal_for_id IS NULL
+                  AND pp.is_refund = 0
+                  AND pp.amount > 0
+              ), 0) - COALESCE((
+                SELECT ABS(SUM(pp.amount))
+                FROM payments pp
+                WHERE pp.invoice_type = 'sale'
+                  AND pp.invoice_id = s.id
+                  AND pp.reversal_for_id IS NULL
+                  AND pp.is_refund = 1
+              ), 0)
+            )
+          )
+        END AS outstanding_amount,
+        $salesInvoiceReturnedAmountSql AS returned_amount,
+        $salesInvoiceAddedAmountSql AS added_amount,
         COALESCE((
           SELECT SUM(pp.amount)
           FROM payments pp
@@ -739,6 +892,8 @@ class DashboardRepository {
             paidCash: ((e['paid_cash'] ?? 0) as num).toDouble(),
             paidVodafone: ((e['paid_vodafone'] ?? 0) as num).toDouble(),
             paidVisa: ((e['paid_visa'] ?? 0) as num).toDouble(),
+            returnedAmount: ((e['returned_amount'] ?? 0) as num).toDouble(),
+            addedAmount: ((e['added_amount'] ?? 0) as num).toDouble(),
             createdAt: DateTime.parse(e['created_at'] as String),
             type: 'sale',
             paymentMethodRaw: () {

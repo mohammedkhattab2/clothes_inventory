@@ -40,7 +40,38 @@ class SalesInvoiceLineTile extends StatelessWidget {
         size: 18,
         color: selected ? Theme.of(context).colorScheme.primary : statusColor,
       ),
-      title: Text(line.productName),
+      title: Row(
+        children: [
+          Expanded(
+            child: Text(
+              line.productName,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          if (line.isAddedAfterAmendment) ...[
+            const SizedBox(width: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+              decoration: BoxDecoration(
+                color: colorScheme.secondaryContainer.withValues(alpha: 0.65),
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(
+                  color: colorScheme.outlineVariant.withValues(alpha: 0.6),
+                ),
+              ),
+              child: Text(
+                'sale.line_added_after_amendment'.tr(),
+                style: TextStyle(
+                  fontSize: 10,
+                  color: colorScheme.onSecondaryContainer,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
       subtitle: Text(
         'Item ${line.id} • Qty ${line.quantity.toStringAsFixed(0)} • Returned ${line.returnedQuantity.toStringAsFixed(0)} • Remaining ${line.remainingQuantity.toStringAsFixed(0)}',
       ),

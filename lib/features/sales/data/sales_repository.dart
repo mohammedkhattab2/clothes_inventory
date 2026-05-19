@@ -60,6 +60,7 @@ class SalesInvoiceLine {
     required this.remainingQuantity,
     required this.unitPrice,
     required this.lineTotal,
+    this.isAddedAfterAmendment = false,
   });
 
   final int id;
@@ -69,6 +70,7 @@ class SalesInvoiceLine {
   final double remainingQuantity;
   final double unitPrice;
   final double lineTotal;
+  final bool isAddedAfterAmendment;
 }
 
 class AmendmentPaymentSnapshot {
@@ -418,7 +420,8 @@ class SalesRepository {
           ELSE 0
         END AS remaining_qty,
         si.unit_price,
-        si.line_total
+        si.line_total,
+        si.added_after_amendment
       FROM sale_items si
       JOIN products p ON p.id = si.product_id
       LEFT JOIN (
@@ -443,6 +446,8 @@ class SalesRepository {
             remainingQuantity: ((row['remaining_qty'] ?? 0) as num).toDouble(),
             unitPrice: ((row['unit_price'] ?? 0) as num).toDouble(),
             lineTotal: ((row['line_total'] ?? 0) as num).toDouble(),
+            isAddedAfterAmendment:
+                ((row['added_after_amendment'] ?? 0) as num).toInt() == 1,
           ),
         )
         .toList();
@@ -592,7 +597,85 @@ class SalesRepository {
         status != SaleStatus.partial.dbValue) {
       return false;
     }
-    return !(await saleInvoiceHasReturns(saleId));
+    return true;
+  }
+
+  Future<AmendmentPaymentSnapshot> loadSalePaymentSnapshot(int saleId) async {
+    final db = await _appDatabase.database;
+    return _loadAmendmentPaymentSnapshot(db, saleId);
+  }
+
+  /// Maximum refund that could be issued for returning [quantity] of [saleItemId].
+  Future<double> previewMaxRefundForReturnLine({
+    required int saleId,
+    required int saleItemId,
+    required double quantity,
+  }) async {
+    final db = await _appDatabase.database;
+    final saleRows = await db.query(
+      'sales',
+      columns: ['total_amount'],
+      where: 'id = ?',
+      whereArgs: [saleId],
+      limit: 1,
+    );
+    if (saleRows.isEmpty) return 0;
+
+    final itemRows = await db.rawQuery(
+      '''
+      SELECT si.quantity, si.unit_price, si.discount_amount
+      FROM sale_items si
+      WHERE si.id = ? AND si.sale_id = ?
+      LIMIT 1
+      ''',
+      [saleItemId, saleId],
+    );
+    if (itemRows.isEmpty) return 0;
+
+    final row = itemRows.first;
+    final soldQty = (row['quantity'] as num).toDouble();
+    final unitPrice = (row['unit_price'] as num).toDouble();
+    final lineDiscount = (row['discount_amount'] as num).toDouble();
+    final unitDiscount = soldQty == 0 ? 0 : (lineDiscount / soldQty);
+    final lineGross = roundCurrency(
+      roundQuantity(quantity) * (unitPrice - unitDiscount),
+    );
+
+    final subtotalRows = await db.rawQuery(
+      '''
+      SELECT COALESCE(SUM(line_total), 0) AS subtotal
+      FROM sale_items
+      WHERE sale_id = ?
+      ''',
+      [saleId],
+    );
+    final subtotal = ((subtotalRows.first['subtotal'] ?? 0) as num).toDouble();
+    final oldTotalAmount = ((saleRows.first['total_amount'] ?? 0) as num)
+        .toDouble();
+    final returnAmount = subtotal > 0.000001
+        ? roundCurrency(oldTotalAmount * lineGross / subtotal)
+        : lineGross;
+    final newTotalAmount = roundCurrency(
+      (oldTotalAmount - returnAmount).clamp(0, double.infinity).toDouble(),
+    );
+
+    final paidRows = await db.rawQuery(
+      '''
+      SELECT COALESCE(SUM(pp.amount), 0) AS paid_amount
+      FROM payments pp
+      WHERE pp.invoice_type = 'sale'
+        AND pp.invoice_id = ?
+        AND pp.reversal_for_id IS NULL
+      ''',
+      [saleId],
+    );
+    final netPaidAmount = ((paidRows.first['paid_amount'] ?? 0) as num)
+        .toDouble();
+    final overpaidAfterReturn = (netPaidAmount - newTotalAmount).clamp(
+      0,
+      double.infinity,
+    );
+    return roundCurrency(overpaidAfterReturn.clamp(0, returnAmount).toDouble());
   }
 
   Future<AmendmentPaymentSnapshot> _loadAmendmentPaymentSnapshot(
@@ -680,20 +763,6 @@ class SalesRepository {
     }
   }
 
-  Future<void> _assertNoReturns(DatabaseExecutor executor, int saleId) async {
-    final rows = await executor.rawQuery(
-      '''
-      SELECT COUNT(*) AS c
-      FROM returns
-      WHERE invoice_type = ? AND invoice_id = ?
-      ''',
-      ['sale', saleId],
-    );
-    if ((((rows.first['c'] ?? 0) as num).toInt() > 0)) {
-      throw StateError('Cannot amend a sale that has returns.');
-    }
-  }
-
   Future<PendingSaleDraft> loadSaleDraftForAmendment(int saleId) async {
     final db = await _appDatabase.database;
 
@@ -714,11 +783,11 @@ class SalesRepository {
 
     final sale = saleRows.first;
     _rejectIfSaleNotEligibleForAmend(status: sale['status'] as String?);
-    await _assertNoReturns(db, saleId);
 
     final itemRows = await db.rawQuery(
       '''
       SELECT
+        si.id AS sale_item_id,
         si.product_id,
         p.name AS product_name,
         p.unit_type,
@@ -767,6 +836,7 @@ class SalesRepository {
             quantity: ((row['quantity'] ?? 0) as num).toDouble(),
             unitPrice: ((row['unit_price'] ?? 0) as num).toDouble(),
             discount: ((row['discount_amount'] ?? 0) as num).toDouble(),
+            amendSourceSaleItemId: (row['sale_item_id'] as num).toInt(),
           );
         })
         .toList(growable: false);
@@ -808,10 +878,124 @@ class SalesRepository {
     );
   }
 
-  Future<void> amendSale(SaleAmendRequest request) async {
-    if (request.items.isEmpty) {
-      throw StateError('Sale must have at least one item.');
+  Future<AmendRefundPreview> previewAmendRefund(SaleAmendRequest request) async {
+    final db = await _appDatabase.database;
+    final saleRows = await db.rawQuery(
+      '''
+      SELECT s.total_amount
+      FROM sales s
+      WHERE s.id = ?
+      LIMIT 1
+      ''',
+      [request.saleId],
+    );
+    if (saleRows.isEmpty) {
+      throw StateError('Sale not found.');
     }
+    final oldTotalAmount = ((saleRows.first['total_amount'] ?? 0) as num)
+        .toDouble();
+
+    final originalItemRows = await db.rawQuery(
+      '''
+      SELECT
+        si.id,
+        si.product_id,
+        si.quantity,
+        si.unit_price,
+        si.discount_amount,
+        p.unit_type
+      FROM sale_items si
+      JOIN products p ON p.id = si.product_id
+      WHERE si.sale_id = ?
+      ORDER BY si.id ASC
+      ''',
+      [request.saleId],
+    );
+
+    final subtotalRows = await db.rawQuery(
+      '''
+      SELECT COALESCE(SUM(line_total), 0) AS subtotal
+      FROM sale_items
+      WHERE sale_id = ?
+      ''',
+      [request.saleId],
+    );
+    final oldSubtotal =
+        ((subtotalRows.first['subtotal'] ?? 0) as num).toDouble();
+
+    final cartQtyBySourceId = <int, double>{};
+    for (final item in request.items) {
+      final sourceId = item.amendSourceSaleItemId;
+      if (sourceId == null) continue;
+      cartQtyBySourceId[sourceId] = roundQuantity(
+        (cartQtyBySourceId[sourceId] ?? 0) + item.quantity,
+      );
+    }
+
+    var returnAmountTotal = 0.0;
+    for (final row in originalItemRows) {
+      final sourceId = (row['id'] as num).toInt();
+      final originalQty = ((row['quantity'] ?? 0) as num).toDouble();
+      final cartQty = cartQtyBySourceId[sourceId] ?? 0;
+      if (cartQty >= originalQty - 0.000001) continue;
+
+      final returnedQty = roundQuantity(originalQty - cartQty);
+      final unitPrice = (row['unit_price'] as num).toDouble();
+      final lineDiscount = (row['discount_amount'] as num).toDouble();
+      final unitDiscount = originalQty == 0 ? 0 : (lineDiscount / originalQty);
+      final lineGross = roundCurrency(
+        returnedQty * (unitPrice - unitDiscount),
+      );
+      final returnAmount = oldSubtotal > 0.000001
+          ? roundCurrency(oldTotalAmount * lineGross / oldSubtotal)
+          : lineGross;
+      returnAmountTotal = roundCurrency(returnAmountTotal + returnAmount);
+    }
+
+    final subtotalAmount = roundCurrency(
+      request.items.fold<double>(0, (sum, item) => sum + item.lineTotal),
+    );
+    final discountAmount = computeInvoiceHeaderDiscountAmount(
+      subtotal: subtotalAmount,
+      kind: request.headerDiscountKind,
+      value: request.headerDiscountValue,
+    );
+    final newTotalAmount = roundCurrency(subtotalAmount - discountAmount);
+
+    final paidRows = await db.rawQuery(
+      '''
+      SELECT COALESCE(SUM(amount), 0) AS paid_amount
+      FROM payments
+      WHERE invoice_type = 'sale'
+        AND invoice_id = ?
+        AND reversal_for_id IS NULL
+      ''',
+      [request.saleId],
+    );
+    final netPaidAmount = ((paidRows.first['paid_amount'] ?? 0) as num)
+        .toDouble();
+    final overpaid = (netPaidAmount - newTotalAmount).clamp(
+      0,
+      double.infinity,
+    );
+    final maxRefundable = roundCurrency(
+      overpaid.clamp(0, returnAmountTotal).toDouble(),
+    );
+    final paymentSnapshot =
+        await _loadAmendmentPaymentSnapshot(db, request.saleId);
+
+    return AmendRefundPreview(
+      returnAmountTotal: returnAmountTotal,
+      newTotalAmount: newTotalAmount,
+      netPaidAmount: netPaidAmount,
+      maxRefundable: maxRefundable,
+      paymentMethod: paymentSnapshot.method,
+      paidCash: paymentSnapshot.paidCash,
+      paidWallet: paymentSnapshot.paidWallet,
+    );
+  }
+
+  Future<void> amendSale(SaleAmendRequest request) async {
     await _appDatabase.database;
 
     await _transactionRunner.run((txn) async {
@@ -819,7 +1003,8 @@ class SalesRepository {
 
       final saleRows = await txn.rawQuery(
         '''
-        SELECT s.id, s.account_id, s.status, s.invoice_number, s.total_amount
+        SELECT s.id, s.account_id, s.status, s.invoice_number, s.total_amount,
+               s.returned_total, s.added_total
         FROM sales s
         WHERE s.id = ?
         LIMIT 1
@@ -832,7 +1017,115 @@ class SalesRepository {
       final sale = saleRows.first;
       final saleId = request.saleId;
       _rejectIfSaleNotEligibleForAmend(status: sale['status'] as String?);
-      await _assertNoReturns(txn, saleId);
+
+      final originalItemRows = await txn.rawQuery(
+        '''
+        SELECT
+          si.id,
+          si.product_id,
+          si.quantity,
+          si.unit_price,
+          si.discount_amount,
+          p.unit_type
+        FROM sale_items si
+        JOIN products p ON p.id = si.product_id
+        WHERE si.sale_id = ?
+        ORDER BY si.id ASC
+        ''',
+        [saleId],
+      );
+      if (originalItemRows.isEmpty && request.items.isEmpty) {
+        throw StateError('Invoice has no items to amend.');
+      }
+
+      final oldTotalAmount = ((sale['total_amount'] ?? 0) as num).toDouble();
+      final previousReturnedTotal =
+          ((sale['returned_total'] ?? 0) as num).toDouble();
+      final previousAddedTotal =
+          ((sale['added_total'] ?? 0) as num).toDouble();
+      final oldSubtotalRows = await txn.rawQuery(
+        '''
+        SELECT COALESCE(SUM(line_total), 0) AS subtotal
+        FROM sale_items
+        WHERE sale_id = ?
+        ''',
+        [saleId],
+      );
+      final oldSubtotal =
+          ((oldSubtotalRows.first['subtotal'] ?? 0) as num).toDouble();
+
+      final cartQtyBySourceId = <int, double>{};
+      for (final item in request.items) {
+        final sourceId = item.amendSourceSaleItemId;
+        if (sourceId == null) continue;
+        cartQtyBySourceId[sourceId] = roundQuantity(
+          (cartQtyBySourceId[sourceId] ?? 0) + item.quantity,
+        );
+      }
+
+      var amendReturnTotal = 0.0;
+      int? refundReferenceReturnId;
+
+      for (final row in originalItemRows) {
+        final sourceId = (row['id'] as num).toInt();
+        final originalQty = ((row['quantity'] ?? 0) as num).toDouble();
+        final cartQty = cartQtyBySourceId[sourceId] ?? 0;
+        if (cartQty >= originalQty - 0.000001) continue;
+
+        final returnedQty = roundQuantity(originalQty - cartQty);
+        final unitType = row['unit_type'] as String;
+        if (unitType == 'piece' && !isIntegerLike(returnedQty)) {
+          throw StateError('Piece products require integer return quantity.');
+        }
+
+        final unitPrice = (row['unit_price'] as num).toDouble();
+        final lineDiscount = (row['discount_amount'] as num).toDouble();
+        final unitDiscount =
+            originalQty == 0 ? 0 : (lineDiscount / originalQty);
+        final lineGross = roundCurrency(
+          returnedQty * (unitPrice - unitDiscount),
+        );
+        final returnAmount = oldSubtotal > 0.000001
+            ? roundCurrency(oldTotalAmount * lineGross / oldSubtotal)
+            : lineGross;
+
+        final returnId = await txn.insert('returns', {
+          'invoice_type': 'sale',
+          'invoice_id': saleId,
+          'original_line_id': sourceId,
+          'quantity': returnedQty,
+          'amount': returnAmount,
+          'reason': 'Invoice amendment (cart)',
+          'created_by_user_id': actorUserId,
+          'created_at': DateTime.now().toIso8601String(),
+        });
+        refundReferenceReturnId ??= returnId;
+
+        await txn.insert('stock_movements', {
+          'product_id': row['product_id'] as int,
+          'invoice_type': 'return',
+          'invoice_id': returnId,
+          'movement_type': 'in',
+          'quantity': returnedQty,
+          'unit_type': unitType,
+          'created_at': DateTime.now().toIso8601String(),
+        });
+
+        amendReturnTotal = roundCurrency(amendReturnTotal + returnAmount);
+
+        final accountId = sale['account_id'] as int?;
+        if (accountId != null) {
+          await txn.insert('ledger_transactions', {
+            'account_id': accountId,
+            'source_type': 'return',
+            'source_id': returnId,
+            'amount': returnAmount,
+            'entry_kind': 'credit',
+            'description': 'Sale return #$returnId (amendment)',
+            'created_at': DateTime.now().toIso8601String(),
+          });
+        }
+      }
 
       await txn.delete(
         'stock_movements',
@@ -966,6 +1259,7 @@ class SalesRepository {
           ? SaleStatus.completed.dbValue
           : SaleStatus.partial.dbValue;
 
+      var amendAddedTotal = 0.0;
       for (final item in request.items) {
         final quantity = roundQuantity(item.quantity);
         if (item.unitType == 'piece' && !isIntegerLike(quantity)) {
@@ -973,6 +1267,10 @@ class SalesRepository {
         }
 
         final lineTotal = roundCurrency(item.lineTotal);
+        final isNewLine = item.amendSourceSaleItemId == null;
+        if (isNewLine) {
+          amendAddedTotal = roundCurrency(amendAddedTotal + lineTotal);
+        }
         await txn.insert('sale_items', {
           'sale_id': saleId,
           'product_id': item.productId,
@@ -980,6 +1278,7 @@ class SalesRepository {
           'unit_price': roundCurrency(item.unitPrice),
           'discount_amount': roundCurrency(item.discount),
           'line_total': lineTotal,
+          'added_after_amendment': isNewLine ? 1 : 0,
           'created_at': DateTime.now().toIso8601String(),
         });
 
@@ -994,10 +1293,17 @@ class SalesRepository {
         });
       }
 
+      final newReturnedTotal = roundCurrency(
+        previousReturnedTotal + amendReturnTotal,
+      );
+      final newAddedTotal = roundCurrency(previousAddedTotal + amendAddedTotal);
+
       await txn.update(
         'sales',
         {
           'total_amount': totalAmount,
+          'returned_total': newReturnedTotal,
+          'added_total': newAddedTotal,
           'status': nextStatus,
           'last_modified_by_user_id': actorUserId,
         },
@@ -1029,6 +1335,28 @@ class SalesRepository {
             whereArgs: [row['id']],
           );
         }
+      }
+
+      final overpaidAfterAmend = (netPaidAmount - totalAmount).clamp(
+        0,
+        double.infinity,
+      );
+      final maxRefundable = roundCurrency(
+        overpaidAfterAmend.clamp(0, amendReturnTotal).toDouble(),
+      );
+      if (maxRefundable > 0.000001 && refundReferenceReturnId != null) {
+        await _applySaleRefunds(
+          txn: txn,
+          accountId: accountId,
+          saleId: saleId,
+          returnId: refundReferenceReturnId,
+          actorUserId: actorUserId,
+          maxRefundable: maxRefundable,
+          paymentMethod: request.paymentMethod,
+          refundAmountOverride: request.refundAmountOverride,
+          refundCashOverride: request.refundCashOverride,
+          refundWalletOverride: request.refundWalletOverride,
+        );
       }
     });
   }
@@ -1514,6 +1842,9 @@ class SalesRepository {
     required double quantity,
     required PaymentMethod paymentMethod,
     String? reason,
+    double? refundAmountOverride,
+    double? refundCashOverride,
+    double? refundWalletOverride,
   }) async {
     await _appDatabase.database;
 
@@ -1528,6 +1859,7 @@ class SalesRepository {
           'invoice_number',
           'status',
           'total_amount',
+          'returned_total',
         ],
         where: 'id = ?',
         whereArgs: [saleId],
@@ -1578,26 +1910,6 @@ class SalesRepository {
         throw StateError(validation.error!);
       }
 
-      final returnId = await txn.insert('returns', {
-        'invoice_type': 'sale',
-        'invoice_id': saleId,
-        'original_line_id': saleItemId,
-        'quantity': requestedQty,
-        'reason': reason,
-        'created_by_user_id': actorUserId,
-        'created_at': DateTime.now().toIso8601String(),
-      });
-
-      await txn.insert('stock_movements', {
-        'product_id': row['product_id'] as int,
-        'invoice_type': 'return',
-        'invoice_id': returnId,
-        'movement_type': 'in',
-        'quantity': requestedQty,
-        'unit_type': row['unit_type'] as String,
-        'created_at': DateTime.now().toIso8601String(),
-      });
-
       final unitPrice = (row['unit_price'] as num).toDouble();
       final lineDiscount = (row['discount_amount'] as num).toDouble();
       final unitDiscount = soldQty == 0 ? 0 : (lineDiscount / soldQty);
@@ -1620,6 +1932,27 @@ class SalesRepository {
       final returnAmount = subtotal > 0.000001
           ? roundCurrency(oldTotalAmount * lineGross / subtotal)
           : lineGross;
+
+      final returnId = await txn.insert('returns', {
+        'invoice_type': 'sale',
+        'invoice_id': saleId,
+        'original_line_id': saleItemId,
+        'quantity': requestedQty,
+        'amount': returnAmount,
+        'reason': reason,
+        'created_by_user_id': actorUserId,
+        'created_at': DateTime.now().toIso8601String(),
+      });
+
+      await txn.insert('stock_movements', {
+        'product_id': row['product_id'] as int,
+        'invoice_type': 'return',
+        'invoice_id': returnId,
+        'movement_type': 'in',
+        'quantity': requestedQty,
+        'unit_type': row['unit_type'] as String,
+        'created_at': DateTime.now().toIso8601String(),
+      });
       final newTotalAmount = roundCurrency(
         (oldTotalAmount - returnAmount).clamp(0, double.infinity).toDouble(),
       );
@@ -1638,11 +1971,14 @@ class SalesRepository {
       final nextStatus = netPaidAmount + 0.000001 >= newTotalAmount
           ? 'completed'
           : 'partial';
+      final currentReturnedTotal =
+          ((saleRows.first['returned_total'] ?? 0) as num).toDouble();
 
       await txn.update(
         'sales',
         {
           'total_amount': newTotalAmount,
+          'returned_total': roundCurrency(currentReturnedTotal + returnAmount),
           'status': nextStatus,
           'last_modified_by_user_id': actorUserId,
         },
@@ -1651,51 +1987,148 @@ class SalesRepository {
       );
 
       final accountId = saleRows.first['account_id'] as int?;
-      if (accountId == null) {
-        return;
+      if (accountId != null) {
+        await txn.insert('ledger_transactions', {
+          'account_id': accountId,
+          'source_type': 'return',
+          'source_id': returnId,
+          'amount': returnAmount,
+          'entry_kind': 'credit',
+          'description': 'Sale return #$returnId',
+          'created_at': DateTime.now().toIso8601String(),
+        });
       }
-
-      await txn.insert('ledger_transactions', {
-        'account_id': accountId,
-        'source_type': 'return',
-        'source_id': returnId,
-        'amount': returnAmount,
-        'entry_kind': 'credit',
-        'description': 'Sale return #$returnId',
-        'created_at': DateTime.now().toIso8601String(),
-      });
 
       final overpaidAfterReturn = (netPaidAmount - newTotalAmount).clamp(
         0,
         double.infinity,
       );
-      final refundable = roundCurrency(
+      final maxRefundable = roundCurrency(
         overpaidAfterReturn.clamp(0, returnAmount).toDouble(),
       );
-      if (refundable > 0) {
-        final paymentId = await txn.insert('payments', {
-          'account_id': accountId,
-          'invoice_type': 'sale',
-          'invoice_id': saleId,
-          'payment_method': _toDbMethod(paymentMethod),
-          'amount': -refundable,
-          'is_refund': 1,
-          'is_standalone': 0,
-          'notes': 'Refund for sale return #$returnId',
-          'created_by_user_id': actorUserId,
-          'created_at': DateTime.now().toIso8601String(),
-        });
-
-        await txn.insert('ledger_transactions', {
-          'account_id': accountId,
-          'source_type': 'payment',
-          'source_id': paymentId,
-          'amount': refundable,
-          'entry_kind': 'debit',
-          'description': 'Refund payment for return #$returnId',
-          'created_at': DateTime.now().toIso8601String(),
-        });
+      if (maxRefundable > 0.000001) {
+        await _applySaleRefunds(
+          txn: txn,
+          accountId: accountId,
+          saleId: saleId,
+          returnId: returnId,
+          actorUserId: actorUserId,
+          maxRefundable: maxRefundable,
+          paymentMethod: paymentMethod,
+          refundAmountOverride: refundAmountOverride,
+          refundCashOverride: refundCashOverride,
+          refundWalletOverride: refundWalletOverride,
+        );
       }
+    });
+  }
+
+  Future<void> _applySaleRefunds({
+    required Transaction txn,
+    required int? accountId,
+    required int saleId,
+    required int returnId,
+    required int actorUserId,
+    required double maxRefundable,
+    required PaymentMethod paymentMethod,
+    double? refundAmountOverride,
+    double? refundCashOverride,
+    double? refundWalletOverride,
+  }) async {
+    var refundableToPay = maxRefundable;
+    if (refundAmountOverride != null) {
+      refundableToPay = roundCurrency(
+        refundAmountOverride.clamp(0, maxRefundable).toDouble(),
+      );
+    }
+    if (refundableToPay <= 0.000001) return;
+
+    final useSplitRefund =
+        refundCashOverride != null || refundWalletOverride != null;
+    if (useSplitRefund) {
+      var cashRefund = roundCurrency(
+        (refundCashOverride ?? 0).clamp(0, refundableToPay),
+      );
+      var walletRefund = roundCurrency(
+        (refundWalletOverride ?? 0).clamp(0, refundableToPay),
+      );
+      final splitTotal = roundCurrency(cashRefund + walletRefund);
+      if (splitTotal > refundableToPay + 0.000001) {
+        throw StateError('Refund split exceeds allowed refund amount.');
+      }
+      if (splitTotal < refundableToPay - 0.000001 &&
+          refundAmountOverride == null) {
+        walletRefund = roundCurrency(refundableToPay - cashRefund);
+      }
+
+      if (cashRefund > 0.000001) {
+        await _insertSaleRefundPayment(
+          txn: txn,
+          accountId: accountId,
+          saleId: saleId,
+          returnId: returnId,
+          actorUserId: actorUserId,
+          amount: cashRefund,
+          method: PaymentMethod.cash,
+        );
+      }
+      if (walletRefund > 0.000001) {
+        await _insertSaleRefundPayment(
+          txn: txn,
+          accountId: accountId,
+          saleId: saleId,
+          returnId: returnId,
+          actorUserId: actorUserId,
+          amount: walletRefund,
+          method: PaymentMethod.vodafoneCash,
+        );
+      }
+      return;
+    }
+
+    await _insertSaleRefundPayment(
+      txn: txn,
+      accountId: accountId,
+      saleId: saleId,
+      returnId: returnId,
+      actorUserId: actorUserId,
+      amount: refundableToPay,
+      method: paymentMethod,
+    );
+  }
+
+  Future<void> _insertSaleRefundPayment({
+    required Transaction txn,
+    required int? accountId,
+    required int saleId,
+    required int returnId,
+    required int actorUserId,
+    required double amount,
+    required PaymentMethod method,
+  }) async {
+    final paymentId = await txn.insert('payments', {
+      'account_id': accountId,
+      'invoice_type': 'sale',
+      'invoice_id': saleId,
+      'payment_method': _toDbMethod(method),
+      'amount': -amount,
+      'is_refund': 1,
+      'is_standalone': 0,
+      'notes': 'Refund for sale return #$returnId',
+      'created_by_user_id': actorUserId,
+      'created_at': DateTime.now().toIso8601String(),
+    });
+
+    if (accountId == null) return;
+
+    await txn.insert('ledger_transactions', {
+      'account_id': accountId,
+      'source_type': 'payment',
+      'source_id': paymentId,
+      'amount': amount,
+      'entry_kind': 'debit',
+      'description': 'Refund payment for return #$returnId',
+      'created_at': DateTime.now().toIso8601String(),
     });
   }
 

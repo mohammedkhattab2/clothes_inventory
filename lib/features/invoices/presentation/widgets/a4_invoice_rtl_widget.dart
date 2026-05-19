@@ -1,5 +1,7 @@
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' as intl;
 import 'package:delta_erp/features/invoices/domain/a4_invoice_view_data.dart';
@@ -16,66 +18,85 @@ class A4InvoiceRtlWidget extends StatelessWidget {
     final timeText = intl.DateFormat('HH:mm').format(data.issuedAt);
 
     return Directionality(
-      textDirection: TextDirection.rtl,
+      textDirection: ui.TextDirection.rtl,
       child: Container(
         color: Colors.white,
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 32),
         child: DefaultTextStyle.merge(
-          style: const TextStyle(color: Color(0xFF111111)),
+          style: const TextStyle(color: Color(0xFF1A1A1A), height: 1.35),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _HeaderSection(data: data, logoBytes: logoBytes),
-              const SizedBox(height: 18),
-              _InvoiceInfoSection(
-                title: data.title,
-                invoiceNumber: data.invoiceNumber,
-                dateText: dateText,
-                timeText: timeText,
-              ),
-              const SizedBox(height: 12),
-              const Divider(thickness: 0.8, color: Color(0xFF2F2F2F)),
-              const SizedBox(height: 10),
-              Text(
-                '${data.partyLabel}: ${data.partyName}',
-                textAlign: TextAlign.right,
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 12),
-              _ItemsTable(lines: data.lines),
-              const SizedBox(height: 14),
-              _TotalSection(total: data.total, currency: data.currency),
-              const SizedBox(height: 20),
-              const Center(
+              Align(
+                alignment: Alignment.centerRight,
                 child: Text(
-                  'شكراً لتعاملكم معنا!',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF222222),
-                    fontStyle: FontStyle.italic,
+                  data.invoiceNumber,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.4,
                   ),
                 ),
               ),
+              const SizedBox(height: 10),
+              Text(
+                data.companyName,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.6,
+                  color: Color(0xFF0D0D0D),
+                ),
+              ),
+              const SizedBox(height: 12),
+              _metaLine(
+                'invoice.print.cashier'.tr(),
+                data.cashierName.isNotEmpty ? data.cashierName : '—',
+              ),
+              _metaLine('invoice.print.customer'.tr(), data.partyName),
+              _metaLine(
+                'invoice.print.datetime'.tr(),
+                '$dateText  $timeText',
+              ),
+              const SizedBox(height: 16),
+              _ItemsTable(data: data),
+              const SizedBox(height: 14),
+              _PaymentsSection(data: data),
+              const SizedBox(height: 16),
+              if (data.returnPolicyText.trim().isNotEmpty)
+                Text(
+                  data.returnPolicyText,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF333333),
+                  ),
+                ),
+              const SizedBox(height: 14),
+              if (data.address.trim().isNotEmpty)
+                Text(
+                  data.address,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 12),
+                ),
+              if (data.phone.trim().isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text(
+                  data.phone,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ],
+              const SizedBox(height: 18),
+              _FooterBrandingRow(data: data),
               if (data.invoiceFooterNote.trim().isNotEmpty) ...[
-                const SizedBox(height: 16),
+                const SizedBox(height: 12),
                 Text(
                   data.invoiceFooterNote,
                   textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 11, height: 1.35),
-                ),
-              ],
-              if (data.invoiceFooterImageBytes != null) ...[
-                const SizedBox(height: 12),
-                Center(
-                  child: Image.memory(
-                    data.invoiceFooterImageBytes!,
-                    height: 72,
-                    fit: BoxFit.contain,
-                  ),
+                  style: const TextStyle(fontSize: 10, height: 1.35),
                 ),
               ],
             ],
@@ -84,153 +105,81 @@ class A4InvoiceRtlWidget extends StatelessWidget {
       ),
     );
   }
-}
 
-class _HeaderSection extends StatelessWidget {
-  const _HeaderSection({required this.data, this.logoBytes});
-  final A4InvoiceViewData data;
-  final Uint8List? logoBytes;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (logoBytes != null) ...[
-          Center(
-            child: Image.memory(
-              logoBytes!,
-              height: 54,
-              width: 54,
-              fit: BoxFit.contain,
-            ),
-          ),
-          const SizedBox(height: 6),
-        ],
-        Text(
-          data.companyName,
-          textAlign: TextAlign.center,
-          style: const TextStyle(
-            fontSize: 24,
-            fontWeight: FontWeight.bold,
-            letterSpacing: 1.2,
-            color: Color(0xFF111111),
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          data.address,
-          textAlign: TextAlign.center,
-          style: const TextStyle(fontSize: 12),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          data.phone,
-          textAlign: TextAlign.center,
-          style: const TextStyle(fontSize: 12),
-        ),
-        const SizedBox(height: 6),
-        const Divider(thickness: 1.1, color: Color(0xFF2F2F2F)),
-      ],
-    );
-  }
-}
-
-class _InvoiceInfoSection extends StatelessWidget {
-  const _InvoiceInfoSection({
-    required this.title,
-    required this.invoiceNumber,
-    required this.dateText,
-    required this.timeText,
-  });
-
-  final String title;
-  final String invoiceNumber;
-  final String dateText;
-  final String timeText;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      textDirection: TextDirection.rtl,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                title,
-                textAlign: TextAlign.right,
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 0.5,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                'رقم الفاتورة: $invoiceNumber',
-                textAlign: TextAlign.right,
-                style: const TextStyle(fontSize: 13),
-              ),
-            ],
-          ),
-        ),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                'التاريخ: $dateText',
-                textAlign: TextAlign.right,
-                style: const TextStyle(fontSize: 13),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                'الوقت: $timeText',
-                textAlign: TextAlign.right,
-                style: const TextStyle(fontSize: 13),
-              ),
-            ],
-          ),
-        ),
-      ],
+  Widget _metaLine(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Text(
+        '$label: $value',
+        textAlign: TextAlign.right,
+        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+      ),
     );
   }
 }
 
 class _ItemsTable extends StatelessWidget {
-  const _ItemsTable({required this.lines});
-  final List<A4InvoiceLine> lines;
+  const _ItemsTable({required this.data});
+  final A4InvoiceViewData data;
 
   @override
   Widget build(BuildContext context) {
+    const borderColor = Color(0xFF3A3A3A);
+    const headerBg = Color(0xFFE8E8E8);
+
+    Widget headerCell(String text) => _Cell(text, bold: true);
+    Widget bodyCell(
+      String text, {
+      TextAlign align = TextAlign.center,
+      bool bold = false,
+    }) =>
+        _Cell(text, textAlign: align, bold: bold);
+
     return Table(
-      border: TableBorder.all(color: const Color(0xFF3A3A3A), width: 0.8),
-      textDirection: TextDirection.rtl,
+      border: TableBorder.all(color: borderColor, width: 0.8),
+      textDirection: ui.TextDirection.rtl,
       columnWidths: const {
-        0: FlexColumnWidth(1.5),
-        1: FlexColumnWidth(1.2),
-        2: FlexColumnWidth(4),
+        0: FlexColumnWidth(1.1),
+        1: FlexColumnWidth(1.1),
+        2: FlexColumnWidth(1.2),
+        3: FlexColumnWidth(0.9),
+        4: FlexColumnWidth(2.4),
+        5: FlexColumnWidth(1.2),
       },
       children: [
-        const TableRow(
-          decoration: BoxDecoration(color: Color(0xFFE3E3E3)),
+        TableRow(
+          decoration: const BoxDecoration(color: headerBg),
           children: [
-            _Cell('السعر', textAlign: TextAlign.center, bold: true),
-            _Cell('الكمية', textAlign: TextAlign.center, bold: true),
-            _Cell('المنتج', textAlign: TextAlign.right, bold: true),
+            headerCell('invoice.print.col_price'.tr()),
+            headerCell('invoice.print.col_discount'.tr()),
+            headerCell('invoice.print.col_total'.tr()),
+            headerCell('invoice.print.col_qty'.tr()),
+            headerCell('invoice.print.col_description'.tr()),
+            headerCell('invoice.print.col_barcode'.tr()),
           ],
         ),
-        ...lines.map(
+        ...data.lines.map(
           (line) => TableRow(
             children: [
-              _Cell(line.price, textAlign: TextAlign.center),
-              _Cell(line.quantity, textAlign: TextAlign.center),
-              _Cell(line.productName, textAlign: TextAlign.right),
+              bodyCell(line.unitPrice),
+              bodyCell(line.discount),
+              bodyCell(line.lineTotal),
+              bodyCell(line.quantity),
+              bodyCell(line.productName, align: TextAlign.right),
+              bodyCell(line.barcode.isEmpty ? '—' : line.barcode),
             ],
           ),
+        ),
+        TableRow(
+          decoration: const BoxDecoration(color: Color(0xFFF4F4F4)),
+          children: [
+            bodyCell(data.totalsRow.totalUnitPrice),
+            bodyCell(data.totalsRow.totalDiscount, bold: true),
+            bodyCell(data.totalsRow.totalLineAmount, bold: true),
+            bodyCell(data.totalsRow.totalQuantity, bold: true),
+            bodyCell('—'),
+            bodyCell('—'),
+          ],
         ),
       ],
     );
@@ -238,51 +187,146 @@ class _ItemsTable extends StatelessWidget {
 }
 
 class _Cell extends StatelessWidget {
-  const _Cell(this.text, {required this.textAlign, this.bold = false});
+  const _Cell(
+    this.text, {
+    this.bold = false,
+    this.textAlign = TextAlign.center,
+  });
+
   final String text;
-  final TextAlign textAlign;
   final bool bold;
+  final TextAlign textAlign;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 7),
       child: Text(
         text,
         textAlign: textAlign,
         softWrap: true,
         style: TextStyle(
-          fontSize: bold ? 13 : 12,
+          fontSize: bold ? 12.5 : 11.5,
           fontWeight: bold ? FontWeight.bold : FontWeight.normal,
-          color: bold ? const Color(0xFF111111) : const Color(0xFF1A1A1A),
         ),
       ),
     );
   }
 }
 
-class _TotalSection extends StatelessWidget {
-  const _TotalSection({required this.total, required this.currency});
-  final String total;
-  final String currency;
+class _PaymentsSection extends StatelessWidget {
+  const _PaymentsSection({required this.data});
+  final A4InvoiceViewData data;
 
   @override
   Widget build(BuildContext context) {
-    final value = currency.trim().isEmpty ? total : '$total $currency';
-    return Row(
-      textDirection: TextDirection.rtl,
-      mainAxisAlignment: MainAxisAlignment.end,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(
-          'الإجمالي:',
-          textAlign: TextAlign.right,
-          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+        Row(
+          textDirection: ui.TextDirection.rtl,
+          children: [
+            Expanded(
+              child: Text(
+                '${'invoice.print.paid'.tr()}: ${data.paidAmount}',
+                textAlign: TextAlign.right,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Text(
+                '${'invoice.print.outstanding'.tr()}: ${data.outstandingAmount}',
+                textAlign: TextAlign.right,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
         ),
-        const SizedBox(width: 8),
-        Text(
-          value,
-          textAlign: TextAlign.right,
-          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+        const SizedBox(height: 6),
+        Align(
+          alignment: Alignment.centerRight,
+          child: Text(
+            '${'Total'.tr()}: ${data.currency.trim().isEmpty ? data.total : '${data.total} ${data.currency}'}',
+            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _FooterBrandingRow extends StatelessWidget {
+  const _FooterBrandingRow({required this.data});
+  final A4InvoiceViewData data;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      textDirection: ui.TextDirection.rtl,
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        if (data.invoiceFooterImageBytes != null)
+          Expanded(
+            flex: 2,
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: Image.memory(
+                data.invoiceFooterImageBytes!,
+                height: 72,
+                fit: BoxFit.contain,
+              ),
+            ),
+          ),
+        if (data.invoiceFooterImageBytes != null) const SizedBox(width: 16),
+        Expanded(
+          flex: 2,
+          child: Row(
+            textDirection: ui.TextDirection.rtl,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              if (data.appIconBytes != null)
+                Image.memory(
+                  data.appIconBytes!,
+                  width: 44,
+                  height: 44,
+                  fit: BoxFit.contain,
+                ),
+              if (data.appIconBytes != null) const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      data.developerBrand,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                    Text(
+                      data.developerName,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    Text(
+                      data.developerPhone,
+                      style: const TextStyle(fontSize: 11),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ],
     );

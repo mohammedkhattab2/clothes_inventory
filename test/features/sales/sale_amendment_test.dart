@@ -150,6 +150,7 @@ void main() {
         ],
         headerDiscountKind: draft.headerDiscountKind,
         headerDiscountValue: draft.headerDiscountValue,
+        paymentMethod: PaymentMethod.cash,
       ),
     );
 
@@ -276,6 +277,7 @@ void main() {
               unitPrice: product.salePrice,
             ),
           ],
+          paymentMethod: PaymentMethod.cash,
         ),
       ),
       throwsA(isA<StateError>()),

@@ -3,8 +3,11 @@ import 'dart:async';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:delta_erp/core/config/company_settings_service.dart';
 import 'package:delta_erp/features/products/domain/duplicate_product_barcode_exception.dart';
 import 'package:delta_erp/features/products/domain/product.dart';
+import 'package:delta_erp/features/products/domain/product_price_validators.dart';
+import 'package:delta_erp/services/di/service_locator.dart';
 import 'package:delta_erp/services/printing/product_barcode_label_printer.dart';
 import 'package:printing/printing.dart';
 
@@ -42,6 +45,7 @@ class PurchasesProductDialog {
       required String productName,
       required String barcode,
       required int quantity,
+      double? amount,
     })?
     onPrintBarcode,
     ProductBarcodeLabelPrinter? barcodeLabelPrinter,
@@ -240,7 +244,6 @@ class PurchasesProductDialog {
                     parsedSalePriceWholesale != null &&
                     parsedPurchasePrice != null &&
                     parsedSalePriceWholesale < parsedPurchasePrice;
-
                 return ConstrainedBox(
                   constraints: BoxConstraints(maxWidth: dialogWidth),
                   child: SingleChildScrollView(
@@ -419,17 +422,21 @@ class PurchasesProductDialog {
                             ),
                             onChanged: (_) => setDialogState(() {}),
                             validator: (value) {
-                              final sale = parseFlexibleNumber(value ?? '');
                               final purchase = parseFlexibleNumber(
                                 purchasePriceController.text,
                               );
-                              if (sale != null &&
-                                  purchase != null &&
-                                  sale < purchase) {
-                                return 'Sale price cannot be less than purchase price.'
-                                    .tr();
-                              }
-                              return null;
+                              final msg = ProductPriceValidators
+                                  .retailPriceValidator(
+                                value,
+                                (raw) => parseFlexibleNumber(raw),
+                                requiredMessage:
+                                    'products.retail_price_required'.tr(),
+                                purchasePrice: purchase,
+                                belowCostMessage:
+                                    'Sale price cannot be less than purchase price.'
+                                        .tr(),
+                              );
+                              return msg;
                             },
                           ),
                           SizedBox(height: veryDense ? 6 : 8),
@@ -565,10 +572,18 @@ class PurchasesProductDialog {
                           final copies = effectiveBarcodeLabelCopies();
                           final printer = barcodeLabelPrinter;
 
+                          final salePrice = parseFlexibleNumber(
+                            salePriceRetailController.text,
+                          );
+                          final companyName =
+                              getIt<CompanySettingsService>().settings.name;
+
                           try {
                             final bytes = await printer.buildLabelPdfBytes(
                               productName: productName,
                               barcodeValue: productBarcode,
+                              companyName: companyName,
+                              amount: salePrice,
                               copies: copies,
                             );
                             if (!dialogContext.mounted) return;
@@ -667,10 +682,14 @@ class PurchasesProductDialog {
 
                           notifyIfBarcodeLabelCopiesCapped(dialogContext);
                           final printQuantity = effectiveBarcodeLabelCopies();
+                          final salePrice = parseFlexibleNumber(
+                            salePriceRetailController.text,
+                          );
                           await onPrintBarcode(
                             productName: productName,
                             barcode: productBarcode,
                             quantity: printQuantity,
+                            amount: salePrice,
                           );
                         },
                   icon: const Icon(Icons.print_outlined),
@@ -688,6 +707,11 @@ class PurchasesProductDialog {
                   final parsedSalePrice = parseFlexibleNumber(
                     salePriceRetailController.text,
                   );
+                  if (ProductPriceValidators.isRetailPriceMissing(
+                    parsedSalePrice,
+                  )) {
+                    return;
+                  }
                   final parsedSalePriceHalfWholesale = parseFlexibleNumber(
                     salePriceHalfWholesaleController.text,
                   );
@@ -749,8 +773,9 @@ class PurchasesProductDialog {
                   }
 
                   try {
-                    final resolvedSalePrice =
-                        parsedSalePrice ?? (existingProduct?.salePrice ?? 0);
+                    final resolvedSalePrice = existingProduct == null
+                        ? parsedSalePrice!
+                        : (parsedSalePrice ?? existingProduct.salePrice);
                     final resolvedHalfWholesalePrice =
                         parsedSalePriceHalfWholesale ??
                         (existingProduct?.salePriceHalfWholesale ?? 0);

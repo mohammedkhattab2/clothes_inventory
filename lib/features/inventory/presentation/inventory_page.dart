@@ -20,6 +20,8 @@ import 'package:delta_erp/features/products/data/products_import_service.dart';
 import 'package:delta_erp/features/products/data/product_repository.dart';
 import 'package:delta_erp/features/products/domain/duplicate_product_barcode_exception.dart';
 import 'package:delta_erp/features/products/domain/product.dart';
+import 'package:delta_erp/features/products/domain/product_price_validators.dart';
+import 'package:delta_erp/core/config/company_settings_service.dart';
 import 'package:delta_erp/services/di/service_locator.dart';
 import 'package:delta_erp/services/printing/product_barcode_label_printer.dart';
 import 'package:delta_erp/services/printing/thermal_printer_preferences.dart';
@@ -694,12 +696,16 @@ class _InventoryViewState extends State<_InventoryView> {
     required String productName,
     required String barcode,
     required int quantity,
+    double? amount,
   }) async {
     final copies = quantity < 1 ? 1 : quantity;
     try {
+      final companyName = getIt<CompanySettingsService>().settings.name;
       await _barcodeLabelPrinter.printLabel(
         productName: productName,
         barcodeValue: barcode,
+        companyName: companyName,
+        amount: amount,
         copies: copies,
       );
       if (!mounted) return;
@@ -941,6 +947,23 @@ class _InventoryViewState extends State<_InventoryView> {
                                     labelText: 'Retail Price'.tr(),
                                     hintText: '0',
                                   ),
+                                  validator: (value) {
+                                    final purchase = _parseFlexibleNumber(
+                                      purchasePrice.text,
+                                    );
+                                    return ProductPriceValidators
+                                        .retailPriceValidator(
+                                      value,
+                                      _parseFlexibleNumber,
+                                      requiredMessage:
+                                          'products.retail_price_required'
+                                              .tr(),
+                                      purchasePrice: purchase,
+                                      belowCostMessage:
+                                          'Sale price cannot be less than purchase price.'
+                                              .tr(),
+                                    );
+                                  },
                                 ),
                                 const SizedBox(height: 10),
                                 TextFormField(
@@ -1047,10 +1070,14 @@ class _InventoryViewState extends State<_InventoryView> {
                                       final quantity = parsedQty < 1
                                           ? 1
                                           : parsedQty.round();
+                                      final salePrice = _parseFlexibleNumber(
+                                        salePriceRetail.text,
+                                      );
                                       await _printProductBarcodeLabel(
                                         productName: productName,
                                         barcode: productBarcode,
                                         quantity: quantity,
+                                        amount: salePrice,
                                       );
                                     },
                               icon: const Icon(Icons.print_outlined),
@@ -1079,6 +1106,11 @@ class _InventoryViewState extends State<_InventoryView> {
                                       final sale = _parseFlexibleNumber(
                                         salePriceRetail.text,
                                       );
+                                      if (ProductPriceValidators.isRetailPriceMissing(
+                                        sale,
+                                      )) {
+                                        return;
+                                      }
                                       final half = _parseFlexibleNumber(
                                         salePriceHalfWholesale.text,
                                       );
@@ -1104,7 +1136,7 @@ class _InventoryViewState extends State<_InventoryView> {
                                             : normalizedBc,
                                         categoryId: null,
                                         unitType: unit,
-                                        salePrice: sale ?? 0,
+                                        salePrice: sale!,
                                         salePriceHalfWholesale: half ?? 0,
                                         salePriceWholesale: whole ?? 0,
                                         purchasePrice: purchase ?? 0,
@@ -1217,6 +1249,14 @@ class _InventoryViewState extends State<_InventoryView> {
     final lowStock = TextEditingController(
       text: existing.lowStockThreshold.toStringAsFixed(0),
     );
+    final currentStock = TextEditingController(
+      text: row.currentStock.toStringAsFixed(
+        (row.currentStock - row.currentStock.roundToDouble()).abs() < 0.000001
+            ? 0
+            : 2,
+      ),
+    );
+    final initialStock = row.currentStock;
     var unit = existing.unitType;
 
     try {
@@ -1309,6 +1349,26 @@ class _InventoryViewState extends State<_InventoryView> {
                                 ),
                                 const SizedBox(height: 10),
                                 TextFormField(
+                                  controller: currentStock,
+                                  keyboardType:
+                                      const TextInputType.numberWithOptions(
+                                        decimal: true,
+                                      ),
+                                  inputFormatters: [
+                                    FilteringTextInputFormatter.allow(
+                                      RegExp(r'[0-9٠-٩.,٫٬]'),
+                                    ),
+                                  ],
+                                  decoration: InputDecoration(
+                                    labelText:
+                                        'inventory.current_quantity'.tr(),
+                                    helperText:
+                                        'inventory.quantity_increase_only_hint'
+                                            .tr(),
+                                  ),
+                                ),
+                                const SizedBox(height: 10),
+                                TextFormField(
                                   controller: salePriceRetail,
                                   keyboardType:
                                       const TextInputType.numberWithOptions(
@@ -1323,6 +1383,23 @@ class _InventoryViewState extends State<_InventoryView> {
                                     labelText: 'Retail Price'.tr(),
                                     hintText: '0',
                                   ),
+                                  validator: (value) {
+                                    final purchase = _parseFlexibleNumber(
+                                      purchasePrice.text,
+                                    );
+                                    return ProductPriceValidators
+                                        .retailPriceValidator(
+                                      value,
+                                      _parseFlexibleNumber,
+                                      requiredMessage:
+                                          'products.retail_price_required'
+                                              .tr(),
+                                      purchasePrice: purchase,
+                                      belowCostMessage:
+                                          'Sale price cannot be less than purchase price.'
+                                              .tr(),
+                                    );
+                                  },
                                 ),
                                 const SizedBox(height: 10),
                                 TextFormField(
@@ -1422,6 +1499,11 @@ class _InventoryViewState extends State<_InventoryView> {
                                       final sale = _parseFlexibleNumber(
                                         salePriceRetail.text,
                                       );
+                                      if (ProductPriceValidators.isRetailPriceMissing(
+                                        sale,
+                                      )) {
+                                        return;
+                                      }
                                       final half = _parseFlexibleNumber(
                                         salePriceHalfWholesale.text,
                                       );
@@ -1434,12 +1516,16 @@ class _InventoryViewState extends State<_InventoryView> {
                                       final low = _parseFlexibleNumber(
                                         lowStock.text,
                                       );
+                                      final newStock = _parseFlexibleNumber(
+                                        currentStock.text,
+                                      );
 
                                       if (sale == null ||
                                           half == null ||
                                           whole == null ||
                                           purchase == null ||
-                                          low == null) {
+                                          low == null ||
+                                          newStock == null) {
                                         setDialogState(() {
                                           submitError =
                                               'Please enter valid numeric values.'
@@ -1455,6 +1541,15 @@ class _InventoryViewState extends State<_InventoryView> {
                                         setDialogState(() {
                                           submitError =
                                               'Sale price cannot be less than purchase price.'
+                                                  .tr();
+                                        });
+                                        return;
+                                      }
+
+                                      if (newStock + 0.000001 < initialStock) {
+                                        setDialogState(() {
+                                          submitError =
+                                              'inventory.quantity_increase_only_hint'
                                                   .tr();
                                         });
                                         return;
@@ -1480,6 +1575,16 @@ class _InventoryViewState extends State<_InventoryView> {
                                             lowStockThreshold: low,
                                           ),
                                         );
+                                        final stockDelta =
+                                            newStock - initialStock;
+                                        if (stockDelta > 0.000001) {
+                                          await _productRepository
+                                              .addOpeningStockMovement(
+                                            productId: existing.id!,
+                                            unitType: unit,
+                                            quantity: stockDelta,
+                                          );
+                                        }
                                         if (!dialogContext.mounted) return;
                                         Navigator.of(dialogContext).pop(true);
                                       } catch (e) {
@@ -1513,12 +1618,14 @@ class _InventoryViewState extends State<_InventoryView> {
       );
 
       if (saved == true && mounted) {
+        await _refreshRows();
         _showLatestSnackBar('Product updated'.tr());
       }
     } finally {
       _disposeControllersSafely(<TextEditingController>[
         name,
         barcode,
+        currentStock,
         salePriceRetail,
         salePriceHalfWholesale,
         salePriceWholesale,
@@ -2175,6 +2282,23 @@ class _InventoryViewState extends State<_InventoryView> {
                                     labelText: 'Retail Price'.tr(),
                                     hintText: '0',
                                   ),
+                                  validator: (value) {
+                                    final purchase = _parseFlexibleNumber(
+                                      purchasePrice.text,
+                                    );
+                                    return ProductPriceValidators
+                                        .retailPriceValidator(
+                                      value,
+                                      _parseFlexibleNumber,
+                                      requiredMessage:
+                                          'products.retail_price_required'
+                                              .tr(),
+                                      purchasePrice: purchase,
+                                      belowCostMessage:
+                                          'Sale price cannot be less than purchase price.'
+                                              .tr(),
+                                    );
+                                  },
                                 ),
                                 const SizedBox(height: 10),
                                 TextFormField(
@@ -2273,6 +2397,11 @@ class _InventoryViewState extends State<_InventoryView> {
                                 final sale = _parseFlexibleNumber(
                                   salePriceRetail.text,
                                 );
+                                if (ProductPriceValidators.isRetailPriceMissing(
+                                  sale,
+                                )) {
+                                  return;
+                                }
                                 final half = _parseFlexibleNumber(
                                   salePriceHalfWholesale.text,
                                 );

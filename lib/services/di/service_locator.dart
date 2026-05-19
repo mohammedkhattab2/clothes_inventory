@@ -58,6 +58,7 @@ import 'package:delta_erp/services/pdf/cash_box_pdf_service.dart';
 import 'package:delta_erp/services/pdf/dashboard_pdf_service.dart';
 import 'package:delta_erp/services/pdf/expenses_pdf_service.dart';
 import 'package:delta_erp/services/pdf/purchase_invoice_pdf_service.dart';
+import 'package:delta_erp/features/invoices/data/sale_invoice_print_data_builder.dart';
 import 'package:delta_erp/services/pdf/sales_invoice_pdf_service.dart';
 
 final getIt = GetIt.instance;
@@ -382,12 +383,18 @@ Future<void> setupServiceLocator() async {
     );
   }
 
-  if (!getIt.isRegistered<SalesInvoicePdfService>()) {
-    getIt.registerLazySingleton<SalesInvoicePdfService>(
-      () => SalesInvoicePdfService(
+  if (!getIt.isRegistered<SaleInvoicePrintDataBuilder>()) {
+    getIt.registerLazySingleton<SaleInvoicePrintDataBuilder>(
+      () => SaleInvoicePrintDataBuilder(
         getIt<AppDatabase>(),
         getIt<CompanySettingsService>(),
       ),
+    );
+  }
+
+  if (!getIt.isRegistered<SalesInvoicePdfService>()) {
+    getIt.registerLazySingleton<SalesInvoicePdfService>(
+      () => SalesInvoicePdfService(getIt<SaleInvoicePrintDataBuilder>()),
     );
   }
 
