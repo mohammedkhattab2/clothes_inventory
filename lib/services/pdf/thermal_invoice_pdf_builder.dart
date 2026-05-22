@@ -17,7 +17,7 @@ void buildThermalRtlInvoicePage({
   final marginPt = marginMm * PdfPageFormat.mm;
   final pageFormat = PdfPageFormat(
     pageWidthPt,
-    400 * PdfPageFormat.mm,
+    3000 * PdfPageFormat.mm,
     marginAll: marginPt,
   );
   final contentWidthPt = pageWidthPt - marginPt * 2;

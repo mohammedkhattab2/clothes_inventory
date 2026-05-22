@@ -193,6 +193,7 @@ class PurchasesCubit extends Cubit<PurchasesState> {
             PurchaseDraftItem(
               productId: product.id!,
               productName: product.name,
+              barcode: product.barcode,
               unitType: product.unitType.name,
               quantity: 1,
               unitPrice: product.purchasePrice,
@@ -236,6 +237,7 @@ class PurchasesCubit extends Cubit<PurchasesState> {
             PurchaseDraftItem(
               productId: pid,
               productName: product.name,
+              barcode: product.barcode,
               unitType: product.unitType.name,
               quantity: delta,
               unitPrice: product.purchasePrice,

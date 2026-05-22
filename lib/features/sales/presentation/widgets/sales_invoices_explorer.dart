@@ -24,6 +24,10 @@ class SalesInvoicesExplorer extends StatelessWidget {
     required this.activeSaleItemId,
     required this.selectedTypeFilter,
     required this.invoiceTypeCounts,
+    required this.searchController,
+    required this.searchQuery,
+    required this.onSearchChanged,
+    required this.onClearSearch,
     required this.invoicePage,
     required this.invoicePageSize,
     required this.onSelectInvoice,
@@ -50,6 +54,10 @@ class SalesInvoicesExplorer extends StatelessWidget {
   final int? activeSaleItemId;
   final SalesInvoiceTypeFilter selectedTypeFilter;
   final Map<SalesInvoiceTypeFilter, int> invoiceTypeCounts;
+  final TextEditingController searchController;
+  final String searchQuery;
+  final ValueChanged<String> onSearchChanged;
+  final VoidCallback onClearSearch;
   final int invoicePage;
   final int invoicePageSize;
   final ValueChanged<SalesInvoiceSummary> onSelectInvoice;
@@ -128,6 +136,23 @@ class SalesInvoicesExplorer extends StatelessWidget {
               style: Theme.of(context).textTheme.bodySmall,
             ),
             const SizedBox(height: 8),
+            TextField(
+              controller: searchController,
+              onChanged: onSearchChanged,
+              textInputAction: TextInputAction.search,
+              decoration: InputDecoration(
+                labelText: 'invoices.hub.search_by_customer_or_invoice'.tr(),
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: searchQuery.isEmpty
+                    ? null
+                    : IconButton(
+                        onPressed: onClearSearch,
+                        icon: const Icon(Icons.clear),
+                        tooltip: 'Clear'.tr(),
+                      ),
+              ),
+            ),
+            const SizedBox(height: 8),
             Wrap(
               spacing: 8,
               runSpacing: 8,
@@ -154,10 +179,9 @@ class SalesInvoicesExplorer extends StatelessWidget {
                         final highlighted = row.id == activeInvoiceId;
                         final statusText = _statusLabel(row.status);
                         final statusColor = _statusColor(context, row.status);
-                        final payLabel =
-                            invoicePaymentMethodsDisplayLabel(
-                              row.paymentMethod,
-                            );
+                        final payLabel = invoicePaymentMethodsDisplayLabel(
+                          row.paymentMethod,
+                        );
                         final invLabel =
                             '${'Invoice'.tr()} ${displaySaleInvoiceNumber(id: row.id, rawInvoiceNumber: row.invoiceNumber)}';
                         return Padding(

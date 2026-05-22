@@ -46,6 +46,7 @@ class PurchaseInvoiceSummary {
   final DateTime createdAt;
   final String createdByDisplay;
   final String? lastModifiedByDisplay;
+
   /// Distinct payment methods from SQL `GROUP_CONCAT`, or one method. Display via `invoicePaymentMethodsDisplayLabel`.
   final String? paymentMethod;
 }
@@ -88,6 +89,8 @@ class PurchasesRepository {
     DateTime? toDate,
     int? accountId,
     int? categoryId,
+    List<String>? statuses,
+    String? searchQuery,
     int limit = 50,
     int offset = 0,
   }) async {
@@ -123,6 +126,30 @@ class PurchasesRepository {
         'EXISTS (SELECT 1 FROM purchase_items pi JOIN products pr ON pr.id = pi.product_id WHERE pi.purchase_id = p.id AND pr.category_id = ?)',
       );
       args.add(categoryId);
+    }
+
+    if (statuses != null && statuses.isNotEmpty) {
+      final normalized = statuses
+          .map((e) => e.trim().toLowerCase())
+          .where((e) => e.isNotEmpty && e != 'cancelled')
+          .toSet()
+          .toList(growable: false);
+      if (normalized.isNotEmpty) {
+        final placeholders = List.filled(normalized.length, '?').join(',');
+        where.add('p.status IN ($placeholders)');
+        args.addAll(normalized);
+      }
+    }
+
+    final normalizedSearch = searchQuery?.trim() ?? '';
+    if (normalizedSearch.isNotEmpty) {
+      final pattern = '%${escapeSqlLikeLiteral(normalizedSearch)}%';
+      where.add(
+        r"(p.invoice_number LIKE ? ESCAPE '\' OR CAST(p.id AS TEXT) LIKE ? ESCAPE '\' OR COALESCE(a.name, '-') LIKE ? ESCAPE '\')",
+      );
+      args.add(pattern);
+      args.add(pattern);
+      args.add(pattern);
     }
 
     args.add(limit);
@@ -229,6 +256,78 @@ class PurchasesRepository {
         .toList();
   }
 
+  Future<Map<String, int>> countInvoicesByStatus({
+    DateTime? fromDate,
+    DateTime? toDate,
+    int? accountId,
+    int? categoryId,
+    String? searchQuery,
+  }) async {
+    final db = await _appDatabase.database;
+
+    final where = <String>['p.status != ?'];
+    final args = <Object?>['cancelled'];
+    final currentUser = _sessionService.currentUser;
+
+    if (currentUser != null && !_sessionService.canViewAllInvoices) {
+      where.add('p.created_by_user_id = ?');
+      args.add(currentUser.id);
+    }
+
+    if (fromDate != null) {
+      where.add('datetime(p.created_at) >= datetime(?)');
+      args.add(fromDate.toIso8601String());
+    }
+    if (toDate != null) {
+      final endExclusive = DateTime(
+        toDate.year,
+        toDate.month,
+        toDate.day,
+      ).add(const Duration(days: 1));
+      where.add('datetime(p.created_at) < datetime(?)');
+      args.add(endExclusive.toIso8601String());
+    }
+    if (accountId != null) {
+      where.add('p.account_id = ?');
+      args.add(accountId);
+    }
+    if (categoryId != null) {
+      where.add(
+        'EXISTS (SELECT 1 FROM purchase_items pi JOIN products pr ON pr.id = pi.product_id WHERE pi.purchase_id = p.id AND pr.category_id = ?)',
+      );
+      args.add(categoryId);
+    }
+
+    final normalizedSearch = searchQuery?.trim() ?? '';
+    if (normalizedSearch.isNotEmpty) {
+      final pattern = '%${escapeSqlLikeLiteral(normalizedSearch)}%';
+      where.add(
+        r"(p.invoice_number LIKE ? ESCAPE '\' OR CAST(p.id AS TEXT) LIKE ? ESCAPE '\' OR COALESCE(a.name, '-') LIKE ? ESCAPE '\')",
+      );
+      args.add(pattern);
+      args.add(pattern);
+      args.add(pattern);
+    }
+
+    final rows = await db.rawQuery('''
+      SELECT p.status, COUNT(*) AS cnt
+      FROM purchases p
+      JOIN accounts a ON a.id = p.account_id
+      WHERE ${where.join(' AND ')}
+      GROUP BY p.status
+      ''', args);
+
+    final result = <String, int>{};
+    for (final row in rows) {
+      final key = ((row['status'] as String?) ?? '').trim().toLowerCase();
+      if (key.isEmpty) {
+        continue;
+      }
+      result[key] = ((row['cnt'] ?? 0) as num).toInt();
+    }
+    return result;
+  }
+
   Future<InvoiceSuggestion?> lookupPurchaseInvoiceSuggestionForReturn(
     int purchaseId,
   ) async {
@@ -243,16 +342,13 @@ class PurchasesRepository {
       args.add(currentUser.id);
     }
 
-    final rows = await db.rawQuery(
-      '''
+    final rows = await db.rawQuery('''
       SELECT p.id, p.invoice_number, a.name AS account_name
       FROM purchases p
       JOIN accounts a ON a.id = p.account_id
       WHERE ${where.join(' AND ')}
       LIMIT 1
-      ''',
-      args,
-    );
+      ''', args);
 
     if (rows.isEmpty) return null;
     final row = rows.first;
@@ -260,8 +356,10 @@ class PurchasesRepository {
     final rawNo = (row['invoice_number'] as String?) ?? '-';
     return InvoiceSuggestion(
       id: id,
-      invoiceNumber:
-          displayPurchaseInvoiceNumber(id: id, rawInvoiceNumber: rawNo),
+      invoiceNumber: displayPurchaseInvoiceNumber(
+        id: id,
+        rawInvoiceNumber: rawNo,
+      ),
       accountLabel: (row['account_name'] as String?) ?? '-',
     );
   }
@@ -292,32 +390,27 @@ class PurchasesRepository {
     args.add(pattern);
     args.add(limit);
 
-    final rows = await db.rawQuery(
-      '''
+    final rows = await db.rawQuery('''
       SELECT p.id, p.invoice_number, a.name AS account_name
       FROM purchases p
       JOIN accounts a ON a.id = p.account_id
       WHERE ${where.join(' AND ')}
       ORDER BY datetime(p.created_at) DESC, p.id DESC
       LIMIT ?
-      ''',
-      args,
-    );
+      ''', args);
 
-    return rows
-        .map(
-          (row) {
-            final id = (row['id'] as num).toInt();
-            final rawNo = (row['invoice_number'] as String?) ?? '-';
-            return InvoiceSuggestion(
-              id: id,
-              invoiceNumber:
-                  displayPurchaseInvoiceNumber(id: id, rawInvoiceNumber: rawNo),
-              accountLabel: (row['account_name'] as String?) ?? '-',
-            );
-          },
-        )
-        .toList();
+    return rows.map((row) {
+      final id = (row['id'] as num).toInt();
+      final rawNo = (row['invoice_number'] as String?) ?? '-';
+      return InvoiceSuggestion(
+        id: id,
+        invoiceNumber: displayPurchaseInvoiceNumber(
+          id: id,
+          rawInvoiceNumber: rawNo,
+        ),
+        accountLabel: (row['account_name'] as String?) ?? '-',
+      );
+    }).toList();
   }
 
   Future<double?> averagePurchasedUnitPrice(int productId) async {
@@ -584,7 +677,9 @@ class PurchasesRepository {
       [purchaseId],
     );
     if (rows.isEmpty) return false;
-    final status = ((rows.first['status'] as String?) ?? '').trim().toLowerCase();
+    final status = ((rows.first['status'] as String?) ?? '')
+        .trim()
+        .toLowerCase();
     if (status == 'cancelled') return false;
     if (status != 'completed' && status != 'partial') return false;
     return !(await purchaseInvoiceHasReturns(purchaseId));
@@ -617,7 +712,8 @@ class PurchasesRepository {
     }
   }
 
-  Future<PurchaseAmendmentPaymentSnapshot> _loadPurchaseAmendmentPaymentSnapshot(
+  Future<PurchaseAmendmentPaymentSnapshot>
+  _loadPurchaseAmendmentPaymentSnapshot(
     DatabaseExecutor executor,
     int purchaseId,
   ) async {
@@ -717,6 +813,7 @@ class PurchasesRepository {
       SELECT
         pi.product_id,
         p.name AS product_name,
+        p.barcode AS barcode,
         p.unit_type,
         pi.quantity,
         pi.unit_price,
@@ -737,8 +834,9 @@ class PurchasesRepository {
     for (final row in itemRows) {
       final productId = (row['product_id'] as num).toInt();
       final q = ((row['quantity'] ?? 0) as num).toDouble();
-      qtyOnInvoiceByProduct[productId] =
-          roundQuantity((qtyOnInvoiceByProduct[productId] ?? 0) + q);
+      qtyOnInvoiceByProduct[productId] = roundQuantity(
+        (qtyOnInvoiceByProduct[productId] ?? 0) + q,
+      );
     }
 
     final items = itemRows
@@ -746,6 +844,7 @@ class PurchasesRepository {
           (row) => PurchaseDraftItem(
             productId: (row['product_id'] as num).toInt(),
             productName: (row['product_name'] as String?) ?? 'Product',
+            barcode: (row['barcode'] as String?)?.trim(),
             unitType: (row['unit_type'] as String?) ?? 'piece',
             quantity: ((row['quantity'] ?? 0) as num).toDouble(),
             unitPrice: ((row['unit_price'] ?? 0) as num).toDouble(),
@@ -768,8 +867,10 @@ class PurchasesRepository {
       headerValue = 0;
     }
 
-    final amendmentPayments =
-        await _loadPurchaseAmendmentPaymentSnapshot(db, purchaseId);
+    final amendmentPayments = await _loadPurchaseAmendmentPaymentSnapshot(
+      db,
+      purchaseId,
+    );
 
     return PendingPurchaseDraft(
       purchaseId: (purchase['id'] as num).toInt(),
@@ -778,7 +879,9 @@ class PurchasesRepository {
       headerDiscountValue: headerValue,
       items: items,
       amendmentPayments: amendmentPayments,
-      amendmentStockCreditByProduct: Map<int, double>.from(qtyOnInvoiceByProduct),
+      amendmentStockCreditByProduct: Map<int, double>.from(
+        qtyOnInvoiceByProduct,
+      ),
     );
   }
 
@@ -788,8 +891,7 @@ class PurchasesRepository {
   ) async {
     if (productIds.isEmpty) return const <int, double>{};
     final placeholders = List.filled(productIds.length, '?').join(',');
-    final rows = await executor.rawQuery(
-      '''
+    final rows = await executor.rawQuery('''
       SELECT
         p.id,
         COALESCE(SUM(
@@ -803,9 +905,7 @@ class PurchasesRepository {
       LEFT JOIN stock_movements sm ON sm.product_id = p.id
       WHERE p.id IN ($placeholders)
       GROUP BY p.id
-      ''',
-      productIds,
-    );
+      ''', productIds);
     return {
       for (final r in rows)
         (r['id'] as num).toInt(): ((r['balance'] ?? 0) as num).toDouble(),
@@ -856,8 +956,7 @@ class PurchasesRepository {
 
       await txn.delete(
         'stock_movements',
-        where:
-            'invoice_type = ? AND invoice_id = ? AND movement_type = ?',
+        where: 'invoice_type = ? AND invoice_id = ? AND movement_type = ?',
         whereArgs: ['purchase', purchaseId, 'in'],
       );
 
@@ -873,8 +972,9 @@ class PurchasesRepository {
         if (quantity <= 0) {
           throw StateError('Quantity must be greater than zero.');
         }
-        requestedByProduct[item.productId] =
-            roundQuantity((requestedByProduct[item.productId] ?? 0) + quantity);
+        requestedByProduct[item.productId] = roundQuantity(
+          (requestedByProduct[item.productId] ?? 0) + quantity,
+        );
       }
 
       for (final entry in oldQtyByProduct.entries) {
@@ -930,8 +1030,8 @@ class PurchasesRepository {
         ''',
         [purchaseId],
       );
-      final netPaidAmount =
-          ((paidRows.first['paid_amount'] ?? 0) as num).toDouble();
+      final netPaidAmount = ((paidRows.first['paid_amount'] ?? 0) as num)
+          .toDouble();
 
       final nextStatus = netPaidAmount + 0.000001 >= totalAmount
           ? 'completed'
@@ -993,10 +1093,7 @@ class PurchasesRepository {
       for (final row in ledgerRows) {
         await txn.update(
           'ledger_transactions',
-          {
-            'amount': totalAmount,
-            'description': 'Purchase invoice $invoiceNo',
-          },
+          {'amount': totalAmount, 'description': 'Purchase invoice $invoiceNo'},
           where: 'id = ?',
           whereArgs: [row['id']],
         );
@@ -1104,8 +1201,8 @@ class PurchasesRepository {
         ''',
         [purchaseId],
       );
-      final subtotal =
-          ((subtotalRows.first['subtotal'] ?? 0) as num).toDouble();
+      final subtotal = ((subtotalRows.first['subtotal'] ?? 0) as num)
+          .toDouble();
       final oldTotalAmount = ((purchaseRows.first['total_amount'] ?? 0) as num)
           .toDouble();
       final returnAmount = subtotal > 0.000001
@@ -1307,10 +1404,7 @@ class PurchasesRepository {
 
       await txn.update(
         'purchases',
-        {
-          'status': 'cancelled',
-          'last_modified_by_user_id': actorUserId,
-        },
+        {'status': 'cancelled', 'last_modified_by_user_id': actorUserId},
         where: 'id = ?',
         whereArgs: [purchaseId],
       );
@@ -1322,8 +1416,9 @@ class PurchasesRepository {
       PaymentMethod.cash => 'cash',
       PaymentMethod.vodafoneCash => 'vodafone_cash',
       PaymentMethod.visa => 'visa',
-      PaymentMethod.cashAndWallet =>
-        throw StateError('Purchases cannot use split cash+wallet payment.'),
+      PaymentMethod.cashAndWallet => throw StateError(
+        'Purchases cannot use split cash+wallet payment.',
+      ),
     };
   }
 }

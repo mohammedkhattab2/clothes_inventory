@@ -43,10 +43,13 @@ class SalesInvoiceSummary {
   final double paidAmount;
   final double outstandingAmount;
   final DateTime createdAt;
+
   /// Full name, else username, else "—" when unknown.
   final String createdByDisplay;
+
   /// Set when the invoice was changed after issue (returns, amendment, settlement, cancel).
   final String? lastModifiedByDisplay;
+
   /// Distinct payment methods from SQL `GROUP_CONCAT`, or one method. Display via `invoicePaymentMethodsDisplayLabel`.
   final String? paymentMethod;
 }
@@ -188,6 +191,7 @@ class SalesRepository {
     int? accountId,
     int? categoryId,
     List<String>? statuses,
+    String? searchQuery,
     int limit = 50,
     int offset = 0,
   }) async {
@@ -199,8 +203,19 @@ class SalesRepository {
       categoryId: categoryId,
       statuses: statuses,
     );
-    final where = filters.where;
+    final where = <String>[...filters.where];
     final args = <Object?>[...filters.args];
+
+    final normalizedSearch = searchQuery?.trim() ?? '';
+    if (normalizedSearch.isNotEmpty) {
+      final pattern = '%${escapeSqlLikeLiteral(normalizedSearch)}%';
+      where.add(
+        r"(s.invoice_number LIKE ? ESCAPE '\' OR CAST(s.id AS TEXT) LIKE ? ESCAPE '\' OR COALESCE(a.name, 'Walk-in') LIKE ? ESCAPE '\')",
+      );
+      args.add(pattern);
+      args.add(pattern);
+      args.add(pattern);
+    }
 
     args.add(limit);
     args.add(offset);
@@ -288,7 +303,9 @@ class SalesRepository {
         .toList();
   }
 
-  Future<InvoiceSuggestion?> lookupSaleInvoiceSuggestionForReturn(int saleId) async {
+  Future<InvoiceSuggestion?> lookupSaleInvoiceSuggestionForReturn(
+    int saleId,
+  ) async {
     final db = await _appDatabase.database;
     final filters = _buildInvoiceFilters(
       fromDate: null,
@@ -345,32 +362,27 @@ class SalesRepository {
     args.add(pattern);
     args.add(limit);
 
-    final rows = await db.rawQuery(
-      '''
+    final rows = await db.rawQuery('''
       SELECT s.id, s.invoice_number, COALESCE(a.name, 'Walk-in') AS account_name
       FROM sales s
       LEFT JOIN accounts a ON a.id = s.account_id
       WHERE ${where.join(' AND ')}
       ORDER BY datetime(s.created_at) DESC, s.id DESC
       LIMIT ?
-      ''',
-      args,
-    );
+      ''', args);
 
-    return rows
-        .map(
-          (row) {
-            final id = (row['id'] as num).toInt();
-            final rawNo = (row['invoice_number'] as String?) ?? '-';
-            return InvoiceSuggestion(
-              id: id,
-              invoiceNumber:
-                  displaySaleInvoiceNumber(id: id, rawInvoiceNumber: rawNo),
-              accountLabel: (row['account_name'] as String?) ?? 'Walk-in',
-            );
-          },
-        )
-        .toList();
+    return rows.map((row) {
+      final id = (row['id'] as num).toInt();
+      final rawNo = (row['invoice_number'] as String?) ?? '-';
+      return InvoiceSuggestion(
+        id: id,
+        invoiceNumber: displaySaleInvoiceNumber(
+          id: id,
+          rawInvoiceNumber: rawNo,
+        ),
+        accountLabel: (row['account_name'] as String?) ?? 'Walk-in',
+      );
+    }).toList();
   }
 
   Future<Map<String, int>> countInvoicesByStatus({
@@ -378,6 +390,7 @@ class SalesRepository {
     DateTime? toDate,
     int? accountId,
     int? categoryId,
+    String? searchQuery,
   }) async {
     final db = await _appDatabase.database;
     final filters = _buildInvoiceFilters(
@@ -386,13 +399,27 @@ class SalesRepository {
       accountId: accountId,
       categoryId: categoryId,
     );
+    final where = <String>[...filters.where];
+    final args = <Object?>[...filters.args];
+
+    final normalizedSearch = searchQuery?.trim() ?? '';
+    if (normalizedSearch.isNotEmpty) {
+      final pattern = '%${escapeSqlLikeLiteral(normalizedSearch)}%';
+      where.add(
+        r"(s.invoice_number LIKE ? ESCAPE '\' OR CAST(s.id AS TEXT) LIKE ? ESCAPE '\' OR COALESCE(a.name, 'Walk-in') LIKE ? ESCAPE '\')",
+      );
+      args.add(pattern);
+      args.add(pattern);
+      args.add(pattern);
+    }
 
     final rows = await db.rawQuery('''
       SELECT s.status, COUNT(*) AS cnt
       FROM sales s
-      WHERE ${filters.where.join(' AND ')}
+      LEFT JOIN accounts a ON a.id = s.account_id
+      WHERE ${where.join(' AND ')}
       GROUP BY s.status
-      ''', filters.args);
+      ''', args);
 
     final result = <String, int>{};
     for (final row in rows) {
@@ -495,6 +522,7 @@ class SalesRepository {
       SELECT
         si.product_id,
         p.name AS product_name,
+        p.barcode AS barcode,
         p.unit_type,
         p.purchase_price,
         si.quantity,
@@ -524,6 +552,7 @@ class SalesRepository {
           return SaleDraftItem(
             productId: productId,
             productName: (row['product_name'] as String?) ?? 'Product',
+            barcode: (row['barcode'] as String?)?.trim(),
             unitType: (row['unit_type'] as String?) ?? 'piece',
             availableStock: stockByProduct[productId] ?? 0,
             minUnitPrice: ((row['purchase_price'] ?? 0) as num).toDouble(),
@@ -549,8 +578,8 @@ class SalesRepository {
     }
 
     final accountPhoneRaw = sale['account_phone'] as String?;
-    final accountPhone = (accountPhoneRaw != null &&
-            accountPhoneRaw.trim().isNotEmpty)
+    final accountPhone =
+        (accountPhoneRaw != null && accountPhoneRaw.trim().isNotEmpty)
         ? accountPhoneRaw.trim()
         : null;
 
@@ -587,8 +616,9 @@ class SalesRepository {
       [saleId],
     );
     if (rows.isEmpty) return false;
-    final status =
-        ((rows.first['status'] as String?) ?? '').trim().toLowerCase();
+    final status = ((rows.first['status'] as String?) ?? '')
+        .trim()
+        .toLowerCase();
     if (status == SaleStatus.cancelled.dbValue ||
         status == SaleStatus.pending.dbValue) {
       return false;
@@ -722,9 +752,7 @@ class SalesRepository {
         method: method,
       );
     }
-    if (visa > 0.000001 &&
-        cash < 0.000001 &&
-        wallet < 0.000001) {
+    if (visa > 0.000001 && cash < 0.000001 && wallet < 0.000001) {
       method = PaymentMethod.visa;
       return AmendmentPaymentSnapshot(
         paidCash: visa,
@@ -749,9 +777,7 @@ class SalesRepository {
     );
   }
 
-  void _rejectIfSaleNotEligibleForAmend({
-    required String? status,
-  }) {
+  void _rejectIfSaleNotEligibleForAmend({required String? status}) {
     final normalized = (status ?? '').trim().toLowerCase();
     if (normalized == SaleStatus.cancelled.dbValue ||
         normalized == SaleStatus.pending.dbValue) {
@@ -790,6 +816,7 @@ class SalesRepository {
         si.id AS sale_item_id,
         si.product_id,
         p.name AS product_name,
+        p.barcode AS barcode,
         p.unit_type,
         p.purchase_price,
         si.quantity,
@@ -811,8 +838,9 @@ class SalesRepository {
     for (final row in itemRows) {
       final productId = (row['product_id'] as num).toInt();
       final q = ((row['quantity'] ?? 0) as num).toDouble();
-      qtyOnInvoiceByProduct[productId] =
-          roundQuantity((qtyOnInvoiceByProduct[productId] ?? 0) + q);
+      qtyOnInvoiceByProduct[productId] = roundQuantity(
+        (qtyOnInvoiceByProduct[productId] ?? 0) + q,
+      );
     }
 
     final productIds = itemRows
@@ -829,10 +857,10 @@ class SalesRepository {
           return SaleDraftItem(
             productId: productId,
             productName: (row['product_name'] as String?) ?? 'Product',
+            barcode: (row['barcode'] as String?)?.trim(),
             unitType: (row['unit_type'] as String?) ?? 'piece',
             availableStock: roundQuantity(current + invoicedQty),
-            minUnitPrice:
-                ((row['purchase_price'] ?? 0) as num).toDouble(),
+            minUnitPrice: ((row['purchase_price'] ?? 0) as num).toDouble(),
             quantity: ((row['quantity'] ?? 0) as num).toDouble(),
             unitPrice: ((row['unit_price'] ?? 0) as num).toDouble(),
             discount: ((row['discount_amount'] ?? 0) as num).toDouble(),
@@ -878,7 +906,9 @@ class SalesRepository {
     );
   }
 
-  Future<AmendRefundPreview> previewAmendRefund(SaleAmendRequest request) async {
+  Future<AmendRefundPreview> previewAmendRefund(
+    SaleAmendRequest request,
+  ) async {
     final db = await _appDatabase.database;
     final saleRows = await db.rawQuery(
       '''
@@ -920,8 +950,8 @@ class SalesRepository {
       ''',
       [request.saleId],
     );
-    final oldSubtotal =
-        ((subtotalRows.first['subtotal'] ?? 0) as num).toDouble();
+    final oldSubtotal = ((subtotalRows.first['subtotal'] ?? 0) as num)
+        .toDouble();
 
     final cartQtyBySourceId = <int, double>{};
     for (final item in request.items) {
@@ -943,9 +973,7 @@ class SalesRepository {
       final unitPrice = (row['unit_price'] as num).toDouble();
       final lineDiscount = (row['discount_amount'] as num).toDouble();
       final unitDiscount = originalQty == 0 ? 0 : (lineDiscount / originalQty);
-      final lineGross = roundCurrency(
-        returnedQty * (unitPrice - unitDiscount),
-      );
+      final lineGross = roundCurrency(returnedQty * (unitPrice - unitDiscount));
       final returnAmount = oldSubtotal > 0.000001
           ? roundCurrency(oldTotalAmount * lineGross / oldSubtotal)
           : lineGross;
@@ -974,20 +1002,26 @@ class SalesRepository {
     );
     final netPaidAmount = ((paidRows.first['paid_amount'] ?? 0) as num)
         .toDouble();
-    final overpaid = (netPaidAmount - newTotalAmount).clamp(
-      0,
-      double.infinity,
+    final totalDelta = roundCurrency(newTotalAmount - oldTotalAmount);
+    final outstandingAfterAmend = roundCurrency(
+      (newTotalAmount - netPaidAmount).clamp(0, double.infinity).toDouble(),
     );
+    final overpaid = (netPaidAmount - newTotalAmount).clamp(0, double.infinity);
     final maxRefundable = roundCurrency(
       overpaid.clamp(0, returnAmountTotal).toDouble(),
     );
-    final paymentSnapshot =
-        await _loadAmendmentPaymentSnapshot(db, request.saleId);
+    final paymentSnapshot = await _loadAmendmentPaymentSnapshot(
+      db,
+      request.saleId,
+    );
 
     return AmendRefundPreview(
+      oldTotalAmount: oldTotalAmount,
       returnAmountTotal: returnAmountTotal,
       newTotalAmount: newTotalAmount,
+      totalDelta: totalDelta,
       netPaidAmount: netPaidAmount,
+      outstandingAfterAmend: outstandingAfterAmend,
       maxRefundable: maxRefundable,
       paymentMethod: paymentSnapshot.method,
       paidCash: paymentSnapshot.paidCash,
@@ -1039,10 +1073,9 @@ class SalesRepository {
       }
 
       final oldTotalAmount = ((sale['total_amount'] ?? 0) as num).toDouble();
-      final previousReturnedTotal =
-          ((sale['returned_total'] ?? 0) as num).toDouble();
-      final previousAddedTotal =
-          ((sale['added_total'] ?? 0) as num).toDouble();
+      final previousReturnedTotal = ((sale['returned_total'] ?? 0) as num)
+          .toDouble();
+      final previousAddedTotal = ((sale['added_total'] ?? 0) as num).toDouble();
       final oldSubtotalRows = await txn.rawQuery(
         '''
         SELECT COALESCE(SUM(line_total), 0) AS subtotal
@@ -1051,8 +1084,8 @@ class SalesRepository {
         ''',
         [saleId],
       );
-      final oldSubtotal =
-          ((oldSubtotalRows.first['subtotal'] ?? 0) as num).toDouble();
+      final oldSubtotal = ((oldSubtotalRows.first['subtotal'] ?? 0) as num)
+          .toDouble();
 
       final cartQtyBySourceId = <int, double>{};
       for (final item in request.items) {
@@ -1080,8 +1113,9 @@ class SalesRepository {
 
         final unitPrice = (row['unit_price'] as num).toDouble();
         final lineDiscount = (row['discount_amount'] as num).toDouble();
-        final unitDiscount =
-            originalQty == 0 ? 0 : (lineDiscount / originalQty);
+        final unitDiscount = originalQty == 0
+            ? 0
+            : (lineDiscount / originalQty);
         final lineGross = roundCurrency(
           returnedQty * (unitPrice - unitDiscount),
         );
@@ -1101,16 +1135,6 @@ class SalesRepository {
         });
         refundReferenceReturnId ??= returnId;
 
-        await txn.insert('stock_movements', {
-          'product_id': row['product_id'] as int,
-          'invoice_type': 'return',
-          'invoice_id': returnId,
-          'movement_type': 'in',
-          'quantity': returnedQty,
-          'unit_type': unitType,
-          'created_at': DateTime.now().toIso8601String(),
-        });
-
         amendReturnTotal = roundCurrency(amendReturnTotal + returnAmount);
 
         final accountId = sale['account_id'] as int?;
@@ -1129,16 +1153,11 @@ class SalesRepository {
 
       await txn.delete(
         'stock_movements',
-        where:
-            'invoice_type = ? AND invoice_id = ? AND movement_type = ?',
+        where: 'invoice_type = ? AND invoice_id = ? AND movement_type = ?',
         whereArgs: ['sale', saleId, 'out'],
       );
 
-      await txn.delete(
-        'sale_items',
-        where: 'sale_id = ?',
-        whereArgs: [saleId],
-      );
+      await txn.delete('sale_items', where: 'sale_id = ?', whereArgs: [saleId]);
 
       final requestedByProduct = <int, double>{};
       for (final item in request.items) {
@@ -1153,8 +1172,7 @@ class SalesRepository {
       final productIds = requestedByProduct.keys.toList();
       if (productIds.isNotEmpty) {
         final placeholders = List.filled(productIds.length, '?').join(',');
-        final stockRows = await txn.rawQuery(
-          '''
+        final stockRows = await txn.rawQuery('''
           SELECT
             p.id,
             p.name,
@@ -1172,23 +1190,18 @@ class SalesRepository {
           LEFT JOIN stock_movements sm ON sm.product_id = p.id
           WHERE p.id IN ($placeholders)
           GROUP BY p.id, p.name
-          ''',
-          productIds,
-        );
+          ''', productIds);
 
-        final pricingRows = await txn.rawQuery(
-          '''
+        final pricingRows = await txn.rawQuery('''
           SELECT id, purchase_price
           FROM products
           WHERE id IN ($placeholders)
-          ''',
-          productIds,
-        );
+          ''', productIds);
 
         final minPriceByProduct = <int, double>{
           for (final row in pricingRows)
-            (row['id'] as num).toInt():
-                ((row['purchase_price'] ?? 0) as num).toDouble(),
+            (row['id'] as num).toInt(): ((row['purchase_price'] ?? 0) as num)
+                .toDouble(),
         };
 
         final stockByProduct = <int, ({String name, double stock})>{
@@ -1221,15 +1234,12 @@ class SalesRepository {
             throw StateError('Product not found (id: ${item.productId}).');
           }
           if (item.unitPrice < minAllowed - 0.000001) {
-            throw StateError(
-              'Sale price cannot be less than purchase price.',
-            );
+            throw StateError('Sale price cannot be less than purchase price.');
           }
         }
       }
 
-      final invoiceNo =
-          (sale['invoice_number'] as String?) ?? 'S-$saleId';
+      final invoiceNo = (sale['invoice_number'] as String?) ?? 'S-$saleId';
       final accountId = (sale['account_id'] as num?)?.toInt();
 
       final subtotalAmount = roundCurrency(
@@ -1252,12 +1262,10 @@ class SalesRepository {
         ''',
         [saleId],
       );
-      final netPaidAmount =
-          ((paidRows.first['paid_amount'] ?? 0) as num).toDouble();
-
-      final nextStatus = netPaidAmount + 0.000001 >= totalAmount
-          ? SaleStatus.completed.dbValue
-          : SaleStatus.partial.dbValue;
+      final netPaidAmount = ((paidRows.first['paid_amount'] ?? 0) as num)
+          .toDouble();
+      final totalDelta = roundCurrency(totalAmount - oldTotalAmount);
+      final positiveDelta = totalDelta > 0 ? totalDelta : 0.0;
 
       var amendAddedTotal = 0.0;
       for (final item in request.items) {
@@ -1298,19 +1306,6 @@ class SalesRepository {
       );
       final newAddedTotal = roundCurrency(previousAddedTotal + amendAddedTotal);
 
-      await txn.update(
-        'sales',
-        {
-          'total_amount': totalAmount,
-          'returned_total': newReturnedTotal,
-          'added_total': newAddedTotal,
-          'status': nextStatus,
-          'last_modified_by_user_id': actorUserId,
-        },
-        where: 'id = ?',
-        whereArgs: [saleId],
-      );
-
       if (accountId != null) {
         final ledgerRows = await txn.query(
           'ledger_transactions',
@@ -1327,10 +1322,7 @@ class SalesRepository {
         for (final row in ledgerRows) {
           await txn.update(
             'ledger_transactions',
-            {
-              'amount': totalAmount,
-              'description': 'Sale invoice $invoiceNo',
-            },
+            {'amount': totalAmount, 'description': 'Sale invoice $invoiceNo'},
             where: 'id = ?',
             whereArgs: [row['id']],
           );
@@ -1358,6 +1350,95 @@ class SalesRepository {
           refundWalletOverride: request.refundWalletOverride,
         );
       }
+
+      if (positiveDelta > 0.000001) {
+        final handling =
+            request.positiveAmendmentHandling ??
+            PositiveAmendmentHandling.defer;
+        if (handling == PositiveAmendmentHandling.collectNow) {
+          final collectAmountRaw = request.collectAmount ?? positiveDelta;
+          if (collectAmountRaw - positiveDelta > 0.000001) {
+            throw StateError('Collected amount exceeds amendment increase.');
+          }
+          final collectAmount = roundCurrency(
+            collectAmountRaw.clamp(0, positiveDelta).toDouble(),
+          );
+          if (collectAmount <= 0.000001) {
+            throw StateError('Collected amount must be greater than zero.');
+          }
+
+          final collectMethod =
+              request.collectPaymentMethod ?? request.paymentMethod;
+          if (collectMethod == PaymentMethod.cashAndWallet) {
+            final walletRaw = request.collectWalletAmount ?? 0;
+            if (walletRaw < -0.000001 || walletRaw - collectAmount > 0.000001) {
+              throw StateError('Cash + wallet must equal collected amount.');
+            }
+            final walletAmount = roundCurrency(
+              walletRaw.clamp(0, collectAmount).toDouble(),
+            );
+            final cashAmount = roundCurrency(collectAmount - walletAmount);
+            if (cashAmount > 0.000001) {
+              await _insertSaleCollectionPayment(
+                txn: txn,
+                accountId: accountId,
+                saleId: saleId,
+                actorUserId: actorUserId,
+                amount: cashAmount,
+                method: PaymentMethod.cash,
+              );
+            }
+            if (walletAmount > 0.000001) {
+              await _insertSaleCollectionPayment(
+                txn: txn,
+                accountId: accountId,
+                saleId: saleId,
+                actorUserId: actorUserId,
+                amount: walletAmount,
+                method: PaymentMethod.vodafoneCash,
+              );
+            }
+          } else {
+            await _insertSaleCollectionPayment(
+              txn: txn,
+              accountId: accountId,
+              saleId: saleId,
+              actorUserId: actorUserId,
+              amount: collectAmount,
+              method: collectMethod,
+            );
+          }
+        }
+      }
+
+      final finalPaidRows = await txn.rawQuery(
+        '''
+        SELECT COALESCE(SUM(amount), 0) AS paid_amount
+        FROM payments
+        WHERE invoice_type = 'sale'
+          AND invoice_id = ?
+          AND reversal_for_id IS NULL
+        ''',
+        [saleId],
+      );
+      final finalNetPaidAmount =
+          ((finalPaidRows.first['paid_amount'] ?? 0) as num).toDouble();
+      final nextStatus = finalNetPaidAmount + 0.000001 >= totalAmount
+          ? SaleStatus.completed.dbValue
+          : SaleStatus.partial.dbValue;
+
+      await txn.update(
+        'sales',
+        {
+          'total_amount': totalAmount,
+          'returned_total': newReturnedTotal,
+          'added_total': newAddedTotal,
+          'status': nextStatus,
+          'last_modified_by_user_id': actorUserId,
+        },
+        where: 'id = ?',
+        whereArgs: [saleId],
+      );
     });
   }
 
@@ -1541,8 +1622,9 @@ class SalesRepository {
         'notes': request.notes,
         'created_by_user_id': actorUserId,
         'created_at': DateTime.now().toIso8601String(),
-        'primary_payment_method':
-            _salePrimaryPaymentMethodForStorage(request.paymentMethod),
+        'primary_payment_method': _salePrimaryPaymentMethodForStorage(
+          request.paymentMethod,
+        ),
       });
 
       for (final item in request.items) {
@@ -1826,8 +1908,9 @@ class SalesRepository {
         'sales',
         {
           'status': nextStatus,
-          'primary_payment_method':
-              _salePrimaryPaymentMethodForStorage(paymentMethod),
+          'primary_payment_method': _salePrimaryPaymentMethodForStorage(
+            paymentMethod,
+          ),
           'last_modified_by_user_id': actorUserId,
         },
         where: 'id = ?',
@@ -1925,8 +2008,8 @@ class SalesRepository {
         ''',
         [saleId],
       );
-      final subtotal =
-          ((subtotalRows.first['subtotal'] ?? 0) as num).toDouble();
+      final subtotal = ((subtotalRows.first['subtotal'] ?? 0) as num)
+          .toDouble();
       final oldTotalAmount = ((saleRows.first['total_amount'] ?? 0) as num)
           .toDouble();
       final returnAmount = subtotal > 0.000001
@@ -2097,6 +2180,43 @@ class SalesRepository {
     );
   }
 
+  Future<void> _insertSaleCollectionPayment({
+    required Transaction txn,
+    required int? accountId,
+    required int saleId,
+    required int actorUserId,
+    required double amount,
+    required PaymentMethod method,
+  }) async {
+    final rounded = roundCurrency(amount);
+    if (rounded <= 0.000001) return;
+
+    final paymentId = await txn.insert('payments', {
+      'account_id': accountId,
+      'invoice_type': 'sale',
+      'invoice_id': saleId,
+      'payment_method': _toDbMethod(method),
+      'amount': rounded,
+      'is_refund': 0,
+      'is_standalone': 0,
+      'notes': 'Additional payment for invoice amendment',
+      'created_by_user_id': actorUserId,
+      'created_at': DateTime.now().toIso8601String(),
+    });
+
+    if (accountId == null) return;
+
+    await txn.insert('ledger_transactions', {
+      'account_id': accountId,
+      'source_type': 'payment',
+      'source_id': paymentId,
+      'amount': rounded,
+      'entry_kind': 'credit',
+      'description': 'Additional payment for sale amendment',
+      'created_at': DateTime.now().toIso8601String(),
+    });
+  }
+
   Future<void> _insertSaleRefundPayment({
     required Transaction txn,
     required int? accountId,
@@ -2234,10 +2354,7 @@ class SalesRepository {
 
       await txn.update(
         'sales',
-        {
-          'status': 'cancelled',
-          'last_modified_by_user_id': actorUserId,
-        },
+        {'status': 'cancelled', 'last_modified_by_user_id': actorUserId},
         where: 'id = ?',
         whereArgs: [saleId],
       );

@@ -1,12 +1,13 @@
 import 'dart:developer' as dev;
 
 import 'package:sqflite/sqflite.dart';
+import 'package:delta_erp/services/database/app_database.dart';
 import 'package:delta_erp/services/database/maintenance_coordinator.dart';
 
 class DbTransactionRunner {
-  const DbTransactionRunner(this._db, this._maintenanceCoordinator);
+  DbTransactionRunner(this._appDatabase, this._maintenanceCoordinator);
 
-  final Database _db;
+  final AppDatabase _appDatabase;
   final MaintenanceCoordinator _maintenanceCoordinator;
 
   Future<T> run<T>(Future<T> Function(Transaction txn) action) async {
@@ -14,7 +15,8 @@ class DbTransactionRunner {
       throw StateError('Database write is blocked during maintenance mode.');
     }
     try {
-      return await _db.transaction((txn) => action(txn));
+      final db = await _appDatabase.database;
+      return await db.transaction((txn) => action(txn));
     } catch (e, st) {
       if (e is StateError) {
         rethrow;

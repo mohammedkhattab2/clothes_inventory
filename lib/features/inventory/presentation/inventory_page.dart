@@ -109,8 +109,8 @@ class _InventoryViewState extends State<_InventoryView> {
       _handleProductsRevisionChanged,
     );
     _gridScrollController
-        ..removeListener(_handleGridScroll)
-        ..dispose();
+      ..removeListener(_handleGridScroll)
+      ..dispose();
     _searchController.dispose();
     _inventoryBarcodeController.dispose();
     _inventoryBarcodeFocusNode.dispose();
@@ -172,8 +172,7 @@ class _InventoryViewState extends State<_InventoryView> {
     String raw, {
     required bool notifyOnNoMatch,
   }) async {
-    final trimmed =
-        _normalizeDigits(normalizePosBarcodeInput(raw)).trim();
+    final trimmed = _normalizeDigits(normalizePosBarcodeInput(raw)).trim();
     if (trimmed.isEmpty) return;
 
     final gen = ++_inventoryBarcodeLookupGeneration;
@@ -249,10 +248,7 @@ class _InventoryViewState extends State<_InventoryView> {
   void _onInventoryBarcodeFieldSubmitted(String value) {
     _inventoryBarcodeDebounce?.cancel();
     unawaited(
-      _lookupInventoryBarcodeAndHighlight(
-        value,
-        notifyOnNoMatch: true,
-      ),
+      _lookupInventoryBarcodeAndHighlight(value, notifyOnNoMatch: true),
     );
   }
 
@@ -668,8 +664,8 @@ class _InventoryViewState extends State<_InventoryView> {
   String _normalizeBarcodeForSave(String raw) {
     final t = _normalizeDigits(raw).trim();
     if (t.isEmpty) return '';
-    if (t.length == 5 && RegExp(r'^[A-Za-z]\d{4}$').hasMatch(t)) {
-      return '${t[0].toUpperCase()}${t.substring(1)}';
+    if (t.length == 4 && RegExp(r'^\d{4}$').hasMatch(t)) {
+      return t;
     }
     return t;
   }
@@ -788,409 +784,413 @@ class _InventoryViewState extends State<_InventoryView> {
                           'Add Product'.tr(),
                           style: Theme.of(dialogContext).textTheme.titleLarge,
                         ),
-                      if (submitError != null) ...[
-                        const SizedBox(height: 8),
-                        Text(
-                          submitError!,
-                          style: TextStyle(
-                            color: Theme.of(dialogContext).colorScheme.error,
-                            fontWeight: FontWeight.w600,
+                        if (submitError != null) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            submitError!,
+                            style: TextStyle(
+                              color: Theme.of(dialogContext).colorScheme.error,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
-                        ),
-                      ],
-                      const SizedBox(height: 12),
-                      Flexible(
-                        child: SingleChildScrollView(
-                          child: Form(
-                            key: formKey,
-                            autovalidateMode:
-                                AutovalidateMode.onUserInteraction,
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                TextFormField(
-                                  controller: name,
-                                  decoration: InputDecoration(
-                                    labelText: 'Name'.tr(),
-                                  ),
-                                  validator: (value) =>
-                                      (value == null || value.trim().isEmpty)
-                                      ? 'Name is required'.tr()
-                                      : null,
-                                ),
-                                const SizedBox(height: 10),
-                                TextFormField(
-                                  controller: barcode,
-                                  focusNode: barcodeFocus,
-                                  textInputAction: TextInputAction.next,
-                                  maxLength: 5,
-                                  inputFormatters: [
-                                    FilteringTextInputFormatter.allow(
-                                      RegExp(r'[A-Za-z0-9٠-٩]'),
+                        ],
+                        const SizedBox(height: 12),
+                        Flexible(
+                          child: SingleChildScrollView(
+                            child: Form(
+                              key: formKey,
+                              autovalidateMode:
+                                  AutovalidateMode.onUserInteraction,
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  TextFormField(
+                                    controller: name,
+                                    decoration: InputDecoration(
+                                      labelText: 'Name'.tr(),
                                     ),
-                                  ],
-                                  onEditingComplete: () {
-                                    FocusScope.of(dialogContext).nextFocus();
-                                  },
-                                  validator: (value) {
-                                    final t =
-                                        _normalizeBarcodeForSave(value ?? '');
-                                    if (t.isEmpty) return null;
-                                    if (!RegExp(
-                                      r'^[A-Za-z]\d{4}$',
-                                    ).hasMatch(t)) {
-                                      return 'products.barcode_short_invalid'
-                                          .tr();
-                                    }
-                                    return null;
-                                  },
-                                  buildCounter: (_, {required currentLength,
+                                    validator: (value) =>
+                                        (value == null || value.trim().isEmpty)
+                                        ? 'Name is required'.tr()
+                                        : null,
+                                  ),
+                                  const SizedBox(height: 10),
+                                  TextFormField(
+                                    controller: barcode,
+                                    focusNode: barcodeFocus,
+                                    textInputAction: TextInputAction.next,
+                                    maxLength: 4,
+                                    inputFormatters: [
+                                      FilteringTextInputFormatter.allow(
+                                        RegExp(r'[0-9٠-٩]'),
+                                      ),
+                                    ],
+                                    onEditingComplete: () {
+                                      FocusScope.of(dialogContext).nextFocus();
+                                    },
+                                    validator: (value) {
+                                      final t = _normalizeBarcodeForSave(
+                                        value ?? '',
+                                      );
+                                      if (t.isEmpty) return null;
+                                      if (!RegExp(r'^\d{4}$').hasMatch(t)) {
+                                        return 'products.barcode_short_invalid'
+                                            .tr();
+                                      }
+                                      return null;
+                                    },
+                                    buildCounter:
+                                        (
+                                          _, {
+                                          required currentLength,
 
-                                      required isFocused,
-                                      required maxLength}) =>
-                                      null,
-                                  decoration: InputDecoration(
-                                    labelText: 'Barcode (optional)'.tr(),
-                                    helperText:
-                                        'products.barcode_short_helper'.tr(),
-                                    suffixIcon: generatingBarcode
-                                        ? const Padding(
-                                            padding: EdgeInsets.all(10),
-                                            child: SizedBox(
-                                              width: 16,
-                                              height: 16,
-                                              child: CircularProgressIndicator(
-                                                strokeWidth: 2,
+                                          required isFocused,
+                                          required maxLength,
+                                        }) => null,
+                                    decoration: InputDecoration(
+                                      labelText: 'Barcode (optional)'.tr(),
+                                      helperText:
+                                          'products.barcode_short_helper'.tr(),
+                                      suffixIcon: generatingBarcode
+                                          ? const Padding(
+                                              padding: EdgeInsets.all(10),
+                                              child: SizedBox(
+                                                width: 16,
+                                                height: 16,
+                                                child:
+                                                    CircularProgressIndicator(
+                                                      strokeWidth: 2,
+                                                    ),
+                                              ),
+                                            )
+                                          : IconButton(
+                                              tooltip: 'Regenerate'.tr(),
+                                              onPressed: () =>
+                                                  tryAutoGenerateBarcode(
+                                                    setDialogState,
+                                                  ),
+                                              icon: const Icon(
+                                                Icons.refresh_rounded,
                                               ),
                                             ),
-                                          )
-                                        : IconButton(
-                                            tooltip: 'Regenerate'.tr(),
-                                            onPressed: () =>
-                                                tryAutoGenerateBarcode(
-                                                  setDialogState,
-                                                ),
-                                            icon: const Icon(
-                                              Icons.refresh_rounded,
-                                            ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 10),
+                                  DropdownButtonFormField<UnitType>(
+                                    initialValue: unit,
+                                    decoration: InputDecoration(
+                                      labelText: 'Unit Type'.tr(),
+                                    ),
+                                    items: UnitType.values
+                                        .map(
+                                          (e) => DropdownMenuItem<UnitType>(
+                                            value: e,
+                                            child: Text(e.name),
                                           ),
-                                  ),
-                                ),
-                                const SizedBox(height: 10),
-                                DropdownButtonFormField<UnitType>(
-                                  initialValue: unit,
-                                  decoration: InputDecoration(
-                                    labelText: 'Unit Type'.tr(),
-                                  ),
-                                  items: UnitType.values
-                                      .map(
-                                        (e) => DropdownMenuItem<UnitType>(
-                                          value: e,
-                                          child: Text(e.name),
-                                        ),
-                                      )
-                                      .toList(),
-                                  onChanged: (value) {
-                                    if (value != null) {
-                                      setDialogState(() => unit = value);
-                                    }
-                                  },
-                                ),
-                                const SizedBox(height: 10),
-                                TextFormField(
-                                  controller: openingQty,
-                                  keyboardType:
-                                      const TextInputType.numberWithOptions(
-                                        decimal: true,
-                                      ),
-                                  inputFormatters: [
-                                    FilteringTextInputFormatter.allow(
-                                      RegExp(r'[0-9٠-٩.,٫٬]'),
-                                    ),
-                                  ],
-                                  decoration: InputDecoration(
-                                    labelText: 'Opening Quantity'.tr(),
-                                  ),
-                                  validator: (value) {
-                                    final qty = _parseFlexibleNumber(
-                                      value ?? '',
-                                    );
-                                    if (qty == null) {
-                                      return 'Enter a valid quantity.'.tr();
-                                    }
-                                    if (qty < 0) {
-                                      return 'Quantity must be zero or greater.'
-                                          .tr();
-                                    }
-                                    if (unit == UnitType.piece &&
-                                        (qty - qty.roundToDouble()).abs() >
-                                            0.000001) {
-                                      return 'Piece products require integer quantity.'
-                                          .tr();
-                                    }
-                                    return null;
-                                  },
-                                ),
-                                const SizedBox(height: 10),
-                                TextFormField(
-                                  controller: salePriceRetail,
-                                  keyboardType:
-                                      const TextInputType.numberWithOptions(
-                                        decimal: true,
-                                      ),
-                                  inputFormatters: [
-                                    FilteringTextInputFormatter.allow(
-                                      RegExp(r'[0-9٠-٩.,٫٬]'),
-                                    ),
-                                  ],
-                                  decoration: InputDecoration(
-                                    labelText: 'Retail Price'.tr(),
-                                    hintText: '0',
-                                  ),
-                                  validator: (value) {
-                                    final purchase = _parseFlexibleNumber(
-                                      purchasePrice.text,
-                                    );
-                                    return ProductPriceValidators
-                                        .retailPriceValidator(
-                                      value,
-                                      _parseFlexibleNumber,
-                                      requiredMessage:
-                                          'products.retail_price_required'
-                                              .tr(),
-                                      purchasePrice: purchase,
-                                      belowCostMessage:
-                                          'Sale price cannot be less than purchase price.'
-                                              .tr(),
-                                    );
-                                  },
-                                ),
-                                const SizedBox(height: 10),
-                                TextFormField(
-                                  controller: salePriceHalfWholesale,
-                                  keyboardType:
-                                      const TextInputType.numberWithOptions(
-                                        decimal: true,
-                                      ),
-                                  inputFormatters: [
-                                    FilteringTextInputFormatter.allow(
-                                      RegExp(r'[0-9٠-٩.,٫٬]'),
-                                    ),
-                                  ],
-                                  decoration: InputDecoration(
-                                    labelText: 'Half Wholesale Price'.tr(),
-                                    hintText: '0',
-                                  ),
-                                ),
-                                const SizedBox(height: 10),
-                                TextFormField(
-                                  controller: salePriceWholesale,
-                                  keyboardType:
-                                      const TextInputType.numberWithOptions(
-                                        decimal: true,
-                                      ),
-                                  inputFormatters: [
-                                    FilteringTextInputFormatter.allow(
-                                      RegExp(r'[0-9٠-٩.,٫٬]'),
-                                    ),
-                                  ],
-                                  decoration: InputDecoration(
-                                    labelText: 'Wholesale Price'.tr(),
-                                    hintText: '0',
-                                  ),
-                                ),
-                                const SizedBox(height: 10),
-                                TextFormField(
-                                  controller: purchasePrice,
-                                  keyboardType:
-                                      const TextInputType.numberWithOptions(
-                                        decimal: true,
-                                      ),
-                                  inputFormatters: [
-                                    FilteringTextInputFormatter.allow(
-                                      RegExp(r'[0-9٠-٩.,٫٬]'),
-                                    ),
-                                  ],
-                                  decoration: InputDecoration(
-                                    labelText: 'Purchase Price'.tr(),
-                                    hintText: '0',
-                                  ),
-                                ),
-                                const SizedBox(height: 10),
-                                TextFormField(
-                                  controller: lowStock,
-                                  keyboardType:
-                                      const TextInputType.numberWithOptions(
-                                        decimal: true,
-                                      ),
-                                  inputFormatters: [
-                                    FilteringTextInputFormatter.allow(
-                                      RegExp(r'[0-9٠-٩.,٫٬]'),
-                                    ),
-                                  ],
-                                  decoration: InputDecoration(
-                                    labelText: 'Low Stock Threshold'.tr(),
-                                    hintText: '0',
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      Align(
-                        alignment: AlignmentDirectional.centerEnd,
-                        child: Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: [
-                            OutlinedButton.icon(
-                              onPressed: submitting || generatingBarcode
-                                  ? null
-                                  : () async {
-                                      final productName = name.text.trim();
-                                      final productBarcode = _normalizeBarcodeForSave(
-                                        barcode.text,
-                                      );
-                                      if (productName.isEmpty ||
-                                          productBarcode.isEmpty) {
-                                        _showLatestSnackBar(
-                                          'Enter product name and barcode first'
-                                              .tr(),
-                                        );
-                                        return;
+                                        )
+                                        .toList(),
+                                    onChanged: (value) {
+                                      if (value != null) {
+                                        setDialogState(() => unit = value);
                                       }
-
-                                      final parsedQty =
-                                          _parseFlexibleNumber(
-                                            openingQty.text,
-                                          ) ??
-                                          1;
-                                      final quantity = parsedQty < 1
-                                          ? 1
-                                          : parsedQty.round();
-                                      final salePrice = _parseFlexibleNumber(
-                                        salePriceRetail.text,
-                                      );
-                                      await _printProductBarcodeLabel(
-                                        productName: productName,
-                                        barcode: productBarcode,
-                                        quantity: quantity,
-                                        amount: salePrice,
-                                      );
                                     },
-                              icon: const Icon(Icons.print_outlined),
-                              label: Text('Print Barcode'.tr()),
-                            ),
-                            TextButton(
-                              onPressed: submitting
-                                  ? null
-                                  : () =>
-                                        Navigator.of(dialogContext).pop(false),
-                              child: Text('Cancel'.tr()),
-                            ),
-                            FilledButton(
-                              onPressed: submitting
-                                  ? null
-                                  : () async {
-                                      if (!formKey.currentState!.validate()) {
-                                        return;
+                                  ),
+                                  const SizedBox(height: 10),
+                                  TextFormField(
+                                    controller: openingQty,
+                                    keyboardType:
+                                        const TextInputType.numberWithOptions(
+                                          decimal: true,
+                                        ),
+                                    inputFormatters: [
+                                      FilteringTextInputFormatter.allow(
+                                        RegExp(r'[0-9٠-٩.,٫٬]'),
+                                      ),
+                                    ],
+                                    decoration: InputDecoration(
+                                      labelText: 'Opening Quantity'.tr(),
+                                    ),
+                                    validator: (value) {
+                                      final qty = _parseFlexibleNumber(
+                                        value ?? '',
+                                      );
+                                      if (qty == null) {
+                                        return 'Enter a valid quantity.'.tr();
                                       }
-
-                                      final qty =
-                                          _parseFlexibleNumber(
-                                            openingQty.text,
-                                          ) ??
-                                          0;
-                                      final sale = _parseFlexibleNumber(
-                                        salePriceRetail.text,
-                                      );
-                                      if (ProductPriceValidators.isRetailPriceMissing(
-                                        sale,
-                                      )) {
-                                        return;
+                                      if (qty < 0) {
+                                        return 'Quantity must be zero or greater.'
+                                            .tr();
                                       }
-                                      final half = _parseFlexibleNumber(
-                                        salePriceHalfWholesale.text,
-                                      );
-                                      final whole = _parseFlexibleNumber(
-                                        salePriceWholesale.text,
-                                      );
+                                      if (unit == UnitType.piece &&
+                                          (qty - qty.roundToDouble()).abs() >
+                                              0.000001) {
+                                        return 'Piece products require integer quantity.'
+                                            .tr();
+                                      }
+                                      return null;
+                                    },
+                                  ),
+                                  const SizedBox(height: 10),
+                                  TextFormField(
+                                    controller: salePriceRetail,
+                                    keyboardType:
+                                        const TextInputType.numberWithOptions(
+                                          decimal: true,
+                                        ),
+                                    inputFormatters: [
+                                      FilteringTextInputFormatter.allow(
+                                        RegExp(r'[0-9٠-٩.,٫٬]'),
+                                      ),
+                                    ],
+                                    decoration: InputDecoration(
+                                      labelText: 'Retail Price'.tr(),
+                                      hintText: '0',
+                                    ),
+                                    validator: (value) {
                                       final purchase = _parseFlexibleNumber(
                                         purchasePrice.text,
                                       );
-                                      final low = _parseFlexibleNumber(
-                                        lowStock.text,
+                                      return ProductPriceValidators.retailPriceValidator(
+                                        value,
+                                        _parseFlexibleNumber,
+                                        requiredMessage:
+                                            'products.retail_price_required'
+                                                .tr(),
+                                        purchasePrice: purchase,
+                                        belowCostMessage:
+                                            'Sale price cannot be less than purchase price.'
+                                                .tr(),
                                       );
-
-                                      final normalizedBc =
-                                          _normalizeBarcodeForSave(
-                                            barcode.text,
-                                          );
-                                      final product = Product(
-                                        id: null,
-                                        name: name.text.trim(),
-                                        barcode: normalizedBc.isEmpty
-                                            ? null
-                                            : normalizedBc,
-                                        categoryId: null,
-                                        unitType: unit,
-                                        salePrice: sale!,
-                                        salePriceHalfWholesale: half ?? 0,
-                                        salePriceWholesale: whole ?? 0,
-                                        purchasePrice: purchase ?? 0,
-                                        lowStockThreshold: low ?? 0,
-                                      );
-
-                                      setDialogState(() {
-                                        submitting = true;
-                                        submitError = null;
-                                      });
-
-                                      try {
-                                        await _productRepository
-                                            .createProductWithInitialStock(
-                                              product,
-                                              initialQuantity: qty,
-                                            );
-                                        if (!dialogContext.mounted) return;
-                                        Navigator.of(dialogContext).pop(true);
-                                      } on DuplicateProductBarcodeException {
-                                        if (!dialogContext.mounted) return;
-                                        setDialogState(() {
-                                          submitError =
-                                              'products.duplicate_barcode'
-                                                  .tr();
-                                          submitting = false;
-                                        });
-                                      } catch (e) {
-                                        if (!dialogContext.mounted) return;
-                                        final errorText = e.toString();
-                                        setDialogState(() {
-                                          submitError =
-                                              errorText.contains(
-                                                'UNIQUE constraint failed: products.barcode',
-                                              )
-                                              ? 'products.duplicate_barcode'
-                                                    .tr()
-                                              : '${'Save failed'.tr()}: $e';
-                                          submitting = false;
-                                        });
-                                      }
                                     },
-                              child: Text(
-                                submitting ? 'Saving...'.tr() : 'Save'.tr(),
+                                  ),
+                                  const SizedBox(height: 10),
+                                  TextFormField(
+                                    controller: salePriceHalfWholesale,
+                                    keyboardType:
+                                        const TextInputType.numberWithOptions(
+                                          decimal: true,
+                                        ),
+                                    inputFormatters: [
+                                      FilteringTextInputFormatter.allow(
+                                        RegExp(r'[0-9٠-٩.,٫٬]'),
+                                      ),
+                                    ],
+                                    decoration: InputDecoration(
+                                      labelText: 'Half Wholesale Price'.tr(),
+                                      hintText: '0',
+                                    ),
+                                  ),
+                                  const SizedBox(height: 10),
+                                  TextFormField(
+                                    controller: salePriceWholesale,
+                                    keyboardType:
+                                        const TextInputType.numberWithOptions(
+                                          decimal: true,
+                                        ),
+                                    inputFormatters: [
+                                      FilteringTextInputFormatter.allow(
+                                        RegExp(r'[0-9٠-٩.,٫٬]'),
+                                      ),
+                                    ],
+                                    decoration: InputDecoration(
+                                      labelText: 'Wholesale Price'.tr(),
+                                      hintText: '0',
+                                    ),
+                                  ),
+                                  const SizedBox(height: 10),
+                                  TextFormField(
+                                    controller: purchasePrice,
+                                    keyboardType:
+                                        const TextInputType.numberWithOptions(
+                                          decimal: true,
+                                        ),
+                                    inputFormatters: [
+                                      FilteringTextInputFormatter.allow(
+                                        RegExp(r'[0-9٠-٩.,٫٬]'),
+                                      ),
+                                    ],
+                                    decoration: InputDecoration(
+                                      labelText: 'Purchase Price'.tr(),
+                                      hintText: '0',
+                                    ),
+                                  ),
+                                  const SizedBox(height: 10),
+                                  TextFormField(
+                                    controller: lowStock,
+                                    keyboardType:
+                                        const TextInputType.numberWithOptions(
+                                          decimal: true,
+                                        ),
+                                    inputFormatters: [
+                                      FilteringTextInputFormatter.allow(
+                                        RegExp(r'[0-9٠-٩.,٫٬]'),
+                                      ),
+                                    ],
+                                    decoration: InputDecoration(
+                                      labelText: 'Low Stock Threshold'.tr(),
+                                      hintText: '0',
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
-                          ],
+                          ),
                         ),
-                      ),
-                    ],
+                        const SizedBox(height: 12),
+                        Align(
+                          alignment: AlignmentDirectional.centerEnd,
+                          child: Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              OutlinedButton.icon(
+                                onPressed: submitting || generatingBarcode
+                                    ? null
+                                    : () async {
+                                        final productName = name.text.trim();
+                                        final productBarcode =
+                                            _normalizeBarcodeForSave(
+                                              barcode.text,
+                                            );
+                                        if (productName.isEmpty ||
+                                            productBarcode.isEmpty) {
+                                          _showLatestSnackBar(
+                                            'Enter product name and barcode first'
+                                                .tr(),
+                                          );
+                                          return;
+                                        }
+
+                                        final parsedQty =
+                                            _parseFlexibleNumber(
+                                              openingQty.text,
+                                            ) ??
+                                            1;
+                                        final quantity = parsedQty < 1
+                                            ? 1
+                                            : parsedQty.round();
+                                        final salePrice = _parseFlexibleNumber(
+                                          salePriceRetail.text,
+                                        );
+                                        await _printProductBarcodeLabel(
+                                          productName: productName,
+                                          barcode: productBarcode,
+                                          quantity: quantity,
+                                          amount: salePrice,
+                                        );
+                                      },
+                                icon: const Icon(Icons.print_outlined),
+                                label: Text('Print Barcode'.tr()),
+                              ),
+                              TextButton(
+                                onPressed: submitting
+                                    ? null
+                                    : () => Navigator.of(
+                                        dialogContext,
+                                      ).pop(false),
+                                child: Text('Cancel'.tr()),
+                              ),
+                              FilledButton(
+                                onPressed: submitting
+                                    ? null
+                                    : () async {
+                                        if (!formKey.currentState!.validate()) {
+                                          return;
+                                        }
+
+                                        final qty =
+                                            _parseFlexibleNumber(
+                                              openingQty.text,
+                                            ) ??
+                                            0;
+                                        final sale = _parseFlexibleNumber(
+                                          salePriceRetail.text,
+                                        );
+                                        if (ProductPriceValidators.isRetailPriceMissing(
+                                          sale,
+                                        )) {
+                                          return;
+                                        }
+                                        final half = _parseFlexibleNumber(
+                                          salePriceHalfWholesale.text,
+                                        );
+                                        final whole = _parseFlexibleNumber(
+                                          salePriceWholesale.text,
+                                        );
+                                        final purchase = _parseFlexibleNumber(
+                                          purchasePrice.text,
+                                        );
+                                        final low = _parseFlexibleNumber(
+                                          lowStock.text,
+                                        );
+
+                                        final normalizedBc =
+                                            _normalizeBarcodeForSave(
+                                              barcode.text,
+                                            );
+                                        final product = Product(
+                                          id: null,
+                                          name: name.text.trim(),
+                                          barcode: normalizedBc.isEmpty
+                                              ? null
+                                              : normalizedBc,
+                                          categoryId: null,
+                                          unitType: unit,
+                                          salePrice: sale!,
+                                          salePriceHalfWholesale: half ?? 0,
+                                          salePriceWholesale: whole ?? 0,
+                                          purchasePrice: purchase ?? 0,
+                                          lowStockThreshold: low ?? 0,
+                                        );
+
+                                        setDialogState(() {
+                                          submitting = true;
+                                          submitError = null;
+                                        });
+
+                                        try {
+                                          await _productRepository
+                                              .createProductWithInitialStock(
+                                                product,
+                                                initialQuantity: qty,
+                                              );
+                                          if (!dialogContext.mounted) return;
+                                          Navigator.of(dialogContext).pop(true);
+                                        } on DuplicateProductBarcodeException {
+                                          if (!dialogContext.mounted) return;
+                                          setDialogState(() {
+                                            submitError =
+                                                'products.duplicate_barcode'
+                                                    .tr();
+                                            submitting = false;
+                                          });
+                                        } catch (e) {
+                                          if (!dialogContext.mounted) return;
+                                          final errorText = e.toString();
+                                          setDialogState(() {
+                                            submitError =
+                                                errorText.contains(
+                                                  'UNIQUE constraint failed: products.barcode',
+                                                )
+                                                ? 'products.duplicate_barcode'
+                                                      .tr()
+                                                : '${'Save failed'.tr()}: $e';
+                                            submitting = false;
+                                          });
+                                        }
+                                      },
+                                child: Text(
+                                  submitting ? 'Saving...'.tr() : 'Save'.tr(),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-            );
+              );
             },
           );
         },
@@ -1360,8 +1360,8 @@ class _InventoryViewState extends State<_InventoryView> {
                                     ),
                                   ],
                                   decoration: InputDecoration(
-                                    labelText:
-                                        'inventory.current_quantity'.tr(),
+                                    labelText: 'inventory.current_quantity'
+                                        .tr(),
                                     helperText:
                                         'inventory.quantity_increase_only_hint'
                                             .tr(),
@@ -1387,13 +1387,11 @@ class _InventoryViewState extends State<_InventoryView> {
                                     final purchase = _parseFlexibleNumber(
                                       purchasePrice.text,
                                     );
-                                    return ProductPriceValidators
-                                        .retailPriceValidator(
+                                    return ProductPriceValidators.retailPriceValidator(
                                       value,
                                       _parseFlexibleNumber,
                                       requiredMessage:
-                                          'products.retail_price_required'
-                                              .tr(),
+                                          'products.retail_price_required'.tr(),
                                       purchasePrice: purchase,
                                       belowCostMessage:
                                           'Sale price cannot be less than purchase price.'
@@ -1580,10 +1578,10 @@ class _InventoryViewState extends State<_InventoryView> {
                                         if (stockDelta > 0.000001) {
                                           await _productRepository
                                               .addOpeningStockMovement(
-                                            productId: existing.id!,
-                                            unitType: unit,
-                                            quantity: stockDelta,
-                                          );
+                                                productId: existing.id!,
+                                                unitType: unit,
+                                                quantity: stockDelta,
+                                              );
                                         }
                                         if (!dialogContext.mounted) return;
                                         Navigator.of(dialogContext).pop(true);
@@ -2286,13 +2284,11 @@ class _InventoryViewState extends State<_InventoryView> {
                                     final purchase = _parseFlexibleNumber(
                                       purchasePrice.text,
                                     );
-                                    return ProductPriceValidators
-                                        .retailPriceValidator(
+                                    return ProductPriceValidators.retailPriceValidator(
                                       value,
                                       _parseFlexibleNumber,
                                       requiredMessage:
-                                          'products.retail_price_required'
-                                              .tr(),
+                                          'products.retail_price_required'.tr(),
                                       purchasePrice: purchase,
                                       belowCostMessage:
                                           'Sale price cannot be less than purchase price.'

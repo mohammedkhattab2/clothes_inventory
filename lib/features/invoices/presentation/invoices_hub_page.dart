@@ -76,6 +76,10 @@ class _InvoicesHubPageState extends State<InvoicesHubPage>
 
   final _salesScrollController = ScrollController();
   final _purchasesScrollController = ScrollController();
+  final _salesSearchController = TextEditingController();
+  final _purchasesSearchController = TextEditingController();
+  late DateTime? _fromDate;
+  late DateTime? _toDate;
 
   // Sales invoices state
   bool _salesLoading = false;
@@ -83,6 +87,7 @@ class _InvoicesHubPageState extends State<InvoicesHubPage>
   Map<SalesInvoiceTypeFilter, int> _salesTypeCounts =
       const <SalesInvoiceTypeFilter, int>{};
   SalesInvoiceTypeFilter _salesTypeFilter = SalesInvoiceTypeFilter.all;
+  String _salesSearchQuery = '';
   int _salesPage = 0;
   int _salesPageSize = 50;
   int? _activeSalesInvoiceId;
@@ -93,6 +98,10 @@ class _InvoicesHubPageState extends State<InvoicesHubPage>
   // Purchase invoices state
   bool _purchasesLoading = false;
   List<PurchaseInvoiceSummary> _purchaseRows = const [];
+  Map<PurchaseInvoiceTypeFilter, int> _purchaseTypeCounts =
+      const <PurchaseInvoiceTypeFilter, int>{};
+  PurchaseInvoiceTypeFilter _purchaseTypeFilter = PurchaseInvoiceTypeFilter.all;
+  String _purchasesSearchQuery = '';
   int _purchasePage = 0;
   int _purchasePageSize = 50;
   int? _activePurchaseInvoiceId;
@@ -103,6 +112,8 @@ class _InvoicesHubPageState extends State<InvoicesHubPage>
   @override
   void initState() {
     super.initState();
+    _fromDate = widget.fromDate;
+    _toDate = widget.toDate;
     _salesPage = widget.initialPage < 0 ? 0 : widget.initialPage;
     _salesPageSize = widget.pageSize <= 0 ? 50 : widget.pageSize;
     _purchasePage = widget.initialPage < 0 ? 0 : widget.initialPage;
@@ -136,6 +147,8 @@ class _InvoicesHubPageState extends State<InvoicesHubPage>
     _tabController.dispose();
     _salesScrollController.dispose();
     _purchasesScrollController.dispose();
+    _salesSearchController.dispose();
+    _purchasesSearchController.dispose();
     super.dispose();
   }
 
@@ -251,10 +264,11 @@ class _InvoicesHubPageState extends State<InvoicesHubPage>
       };
 
       final countsRaw = await _salesRepo.countInvoicesByStatus(
-        fromDate: widget.fromDate,
-        toDate: widget.toDate,
-        accountId: widget.accountId,
+        fromDate: _fromDate,
+        toDate: _toDate,
+        accountId: null,
         categoryId: widget.categoryId,
+        searchQuery: _salesSearchQuery,
       );
 
       final completedCount = countsRaw['completed'] ?? 0;
@@ -263,11 +277,12 @@ class _InvoicesHubPageState extends State<InvoicesHubPage>
       final allCount = completedCount + creditCount + pendingCount;
 
       final rows = await _salesRepo.listInvoices(
-        fromDate: widget.fromDate,
-        toDate: widget.toDate,
-        accountId: widget.accountId,
+        fromDate: _fromDate,
+        toDate: _toDate,
+        accountId: null,
         categoryId: widget.categoryId,
         statuses: statuses,
+        searchQuery: _salesSearchQuery,
         limit: _salesPageSize,
         offset: _salesPage * _salesPageSize,
       );
@@ -413,11 +428,7 @@ class _InvoicesHubPageState extends State<InvoicesHubPage>
       loadPaymentSnapshot: (saleId) =>
           _salesRepo.loadSalePaymentSnapshot(saleId),
       previewMaxRefund:
-          ({
-            required saleId,
-            required saleItemId,
-            required quantity,
-          }) =>
+          ({required saleId, required saleItemId, required quantity}) =>
               _salesRepo.previewMaxRefundForReturnLine(
                 saleId: saleId,
                 saleItemId: saleItemId,
@@ -534,11 +545,33 @@ class _InvoicesHubPageState extends State<InvoicesHubPage>
   Future<void> _loadPurchaseInvoices() async {
     setState(() => _purchasesLoading = true);
     try {
-      final rows = await _purchasesRepo.listInvoices(
-        fromDate: widget.fromDate,
-        toDate: widget.toDate,
-        accountId: widget.accountId,
+      final statuses = switch (_purchaseTypeFilter) {
+        PurchaseInvoiceTypeFilter.all => null,
+        PurchaseInvoiceTypeFilter.completed => <String>['completed'],
+        PurchaseInvoiceTypeFilter.credit => <String>['partial'],
+        PurchaseInvoiceTypeFilter.pending => <String>['pending'],
+      };
+
+      final countsRaw = await _purchasesRepo.countInvoicesByStatus(
+        fromDate: _fromDate,
+        toDate: _toDate,
+        accountId: null,
         categoryId: widget.categoryId,
+        searchQuery: _purchasesSearchQuery,
+      );
+
+      final completedCount = countsRaw['completed'] ?? 0;
+      final creditCount = countsRaw['partial'] ?? 0;
+      final pendingCount = countsRaw['pending'] ?? 0;
+      final allCount = completedCount + creditCount + pendingCount;
+
+      final rows = await _purchasesRepo.listInvoices(
+        fromDate: _fromDate,
+        toDate: _toDate,
+        accountId: null,
+        categoryId: widget.categoryId,
+        statuses: statuses,
+        searchQuery: _purchasesSearchQuery,
         limit: _purchasePageSize,
         offset: _purchasePage * _purchasePageSize,
       );
@@ -546,6 +579,12 @@ class _InvoicesHubPageState extends State<InvoicesHubPage>
       if (!mounted) return;
       setState(() {
         _purchaseRows = rows;
+        _purchaseTypeCounts = {
+          PurchaseInvoiceTypeFilter.all: allCount,
+          PurchaseInvoiceTypeFilter.completed: completedCount,
+          PurchaseInvoiceTypeFilter.credit: creditCount,
+          PurchaseInvoiceTypeFilter.pending: pendingCount,
+        };
         _purchasesLoading = false;
       });
       _scrollToPurchasePreselected();
@@ -568,6 +607,62 @@ class _InvoicesHubPageState extends State<InvoicesHubPage>
       if (!mounted) return;
       setState(() => _purchasesLoading = false);
     }
+  }
+
+  Future<void> _pickFromDate() async {
+    final now = DateTime.now();
+    final initial = _fromDate ?? _toDate ?? now;
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      _fromDate = DateTime(picked.year, picked.month, picked.day);
+      if (_toDate != null && _toDate!.isBefore(_fromDate!)) {
+        _toDate = _fromDate;
+      }
+      _salesPage = 0;
+      _purchasePage = 0;
+    });
+    await _loadSalesInvoices();
+    await _loadPurchaseInvoices();
+  }
+
+  Future<void> _pickToDate() async {
+    final now = DateTime.now();
+    final initial = _toDate ?? _fromDate ?? now;
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      _toDate = DateTime(picked.year, picked.month, picked.day);
+      if (_fromDate != null && _fromDate!.isAfter(_toDate!)) {
+        _fromDate = _toDate;
+      }
+      _salesPage = 0;
+      _purchasePage = 0;
+    });
+    await _loadSalesInvoices();
+    await _loadPurchaseInvoices();
+  }
+
+  Future<void> _clearDateFilters() async {
+    if (_fromDate == null && _toDate == null) return;
+    setState(() {
+      _fromDate = null;
+      _toDate = null;
+      _salesPage = 0;
+      _purchasePage = 0;
+    });
+    await _loadSalesInvoices();
+    await _loadPurchaseInvoices();
   }
 
   void _scrollToPurchasePreselected() {
@@ -788,8 +883,36 @@ class _InvoicesHubPageState extends State<InvoicesHubPage>
           ),
           const SizedBox(height: 4),
           Text(
-            '${'Filters'.tr()}: ${widget.fromDate == null ? 'Any date'.tr() : DateFormat('yyyy-MM-dd').format(widget.fromDate!)} - ${widget.toDate == null ? 'Any date'.tr() : DateFormat('yyyy-MM-dd').format(widget.toDate!)}',
+            '${'Filters'.tr()}: ${_fromDate == null ? 'Any date'.tr() : DateFormat('yyyy-MM-dd').format(_fromDate!)} - ${_toDate == null ? 'Any date'.tr() : DateFormat('yyyy-MM-dd').format(_toDate!)}',
             style: theme.textTheme.bodySmall,
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              OutlinedButton.icon(
+                onPressed: _pickFromDate,
+                icon: const Icon(Icons.date_range_outlined),
+                label: Text(
+                  '${'From'.tr()}: ${_fromDate == null ? 'Any date'.tr() : DateFormat('yyyy-MM-dd').format(_fromDate!)}',
+                ),
+              ),
+              OutlinedButton.icon(
+                onPressed: _pickToDate,
+                icon: const Icon(Icons.event_outlined),
+                label: Text(
+                  '${'To'.tr()}: ${_toDate == null ? 'Any date'.tr() : DateFormat('yyyy-MM-dd').format(_toDate!)}',
+                ),
+              ),
+              OutlinedButton.icon(
+                onPressed: (_fromDate == null && _toDate == null)
+                    ? null
+                    : _clearDateFilters,
+                icon: const Icon(Icons.clear_all_outlined),
+                label: Text('Reset'.tr()),
+              ),
+            ],
           ),
           const SizedBox(height: 10),
           TabBar(
@@ -807,9 +930,9 @@ class _InvoicesHubPageState extends State<InvoicesHubPage>
 
   Widget _buildSalesTab() {
     return SalesInvoicesExplorer(
-      fromDate: widget.fromDate,
-      toDate: widget.toDate,
-      accountId: widget.accountId,
+      fromDate: _fromDate,
+      toDate: _toDate,
+      accountId: null,
       categoryId: widget.categoryId,
       loadingInvoices: _salesLoading,
       invoiceRows: _salesRows,
@@ -824,6 +947,34 @@ class _InvoicesHubPageState extends State<InvoicesHubPage>
       activeSaleItemId: _activeSalesItemId,
       selectedTypeFilter: _salesTypeFilter,
       invoiceTypeCounts: _salesTypeCounts,
+      searchController: _salesSearchController,
+      searchQuery: _salesSearchQuery,
+      onSearchChanged: (value) {
+        final next = value.trim();
+        if (next == _salesSearchQuery) return;
+        setState(() {
+          _salesSearchQuery = next;
+          _salesPage = 0;
+          _activeSalesInvoiceId = null;
+          _activeSalesInvoiceNumber = null;
+          _activeSalesItemId = null;
+          _activeSalesInvoiceLines = const [];
+        });
+        _loadSalesInvoices();
+      },
+      onClearSearch: () {
+        if (_salesSearchQuery.isEmpty) return;
+        _salesSearchController.clear();
+        setState(() {
+          _salesSearchQuery = '';
+          _salesPage = 0;
+          _activeSalesInvoiceId = null;
+          _activeSalesInvoiceNumber = null;
+          _activeSalesItemId = null;
+          _activeSalesInvoiceLines = const [];
+        });
+        _loadSalesInvoices();
+      },
       invoicePage: _salesPage,
       invoicePageSize: _salesPageSize,
       onSelectInvoice: _selectSalesInvoice,
@@ -868,9 +1019,9 @@ class _InvoicesHubPageState extends State<InvoicesHubPage>
 
   Widget _buildPurchasesTab() {
     return PurchasesInvoicesExplorer(
-      fromDate: widget.fromDate,
-      toDate: widget.toDate,
-      accountId: widget.accountId,
+      fromDate: _fromDate,
+      toDate: _toDate,
+      accountId: null,
       categoryId: widget.categoryId,
       loadingInvoices: _purchasesLoading,
       invoiceRows: _purchaseRows,
@@ -878,6 +1029,36 @@ class _InvoicesHubPageState extends State<InvoicesHubPage>
       activeInvoiceId: _activePurchaseInvoiceId,
       activeInvoiceNumber: _activePurchaseInvoiceNumber,
       activePurchaseItemId: _activePurchaseItemId,
+      selectedTypeFilter: _purchaseTypeFilter,
+      invoiceTypeCounts: _purchaseTypeCounts,
+      searchController: _purchasesSearchController,
+      searchQuery: _purchasesSearchQuery,
+      onSearchChanged: (value) {
+        final next = value.trim();
+        if (next == _purchasesSearchQuery) return;
+        setState(() {
+          _purchasesSearchQuery = next;
+          _purchasePage = 0;
+          _activePurchaseInvoiceId = null;
+          _activePurchaseInvoiceNumber = null;
+          _activePurchaseItemId = null;
+          _activePurchaseInvoiceLines = const [];
+        });
+        _loadPurchaseInvoices();
+      },
+      onClearSearch: () {
+        if (_purchasesSearchQuery.isEmpty) return;
+        _purchasesSearchController.clear();
+        setState(() {
+          _purchasesSearchQuery = '';
+          _purchasePage = 0;
+          _activePurchaseInvoiceId = null;
+          _activePurchaseInvoiceNumber = null;
+          _activePurchaseItemId = null;
+          _activePurchaseInvoiceLines = const [];
+        });
+        _loadPurchaseInvoices();
+      },
       invoicePage: _purchasePage,
       invoicePageSize: _purchasePageSize,
       invoiceLabelBuilder: buildPurchaseInvoiceLabel,
@@ -890,6 +1071,17 @@ class _InvoicesHubPageState extends State<InvoicesHubPage>
       onCancelSelected: () => _showPurchaseCancelDialog(
         initialPurchaseId: _activePurchaseInvoiceId,
       ),
+      onTypeFilterChanged: (filter) {
+        setState(() {
+          _purchaseTypeFilter = filter;
+          _purchasePage = 0;
+          _activePurchaseInvoiceId = null;
+          _activePurchaseInvoiceNumber = null;
+          _activePurchaseItemId = null;
+          _activePurchaseInvoiceLines = const [];
+        });
+        _loadPurchaseInvoices();
+      },
       onPreviousPage: () {
         setState(() => _purchasePage -= 1);
         _loadPurchaseInvoices();

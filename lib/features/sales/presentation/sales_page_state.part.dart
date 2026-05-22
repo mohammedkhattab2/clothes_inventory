@@ -272,8 +272,17 @@ class _SalesPageState extends State<SalesPage> {
           ),
         );
         if (!mounted) return;
+        AmendCollectConfirmation? collectConfirmation;
         AmendRefundConfirmation? refundConfirmation;
-        if (preview.maxRefundable > 0.000001) {
+        if (preview.totalDelta > 0.000001) {
+          collectConfirmation = await SalesAmendPaymentDialog.show(
+            context,
+            preview: preview,
+            parseFlexibleNumber: _parseFlexibleNumber,
+          );
+          if (!mounted) return;
+          if (collectConfirmation == null) return;
+        } else if (preview.maxRefundable > 0.000001) {
           refundConfirmation = await SalesAmendRefundDialog.show(
             context,
             preview: preview,
@@ -286,6 +295,10 @@ class _SalesPageState extends State<SalesPage> {
           amendRefundAmountOverride: refundConfirmation?.refundAmountOverride,
           amendRefundCashOverride: refundConfirmation?.refundCashOverride,
           amendRefundWalletOverride: refundConfirmation?.refundWalletOverride,
+          positiveAmendmentHandling: collectConfirmation?.handling,
+          collectPaymentMethod: collectConfirmation?.paymentMethod,
+          collectAmount: collectConfirmation?.collectAmount,
+          collectWalletAmount: collectConfirmation?.collectWalletAmount,
         );
       } catch (e) {
         if (!mounted) return;
@@ -856,6 +869,9 @@ class _SalesPageState extends State<SalesPage> {
               unawaited(_refreshActiveInvoiceLines(state.successInvoiceId!));
             }
             _loadInvoices();
+            if (event == 'sale_saved') {
+              unawaited(_loadCustomers());
+            }
             final successMessage = switch (event) {
               'pending_saved' =>
                 '${'Pending invoice saved'.tr()}: #${state.successInvoiceId}',
@@ -985,7 +1001,9 @@ class _SalesPageState extends State<SalesPage> {
                     child: Text(
                       _readOnlyMessage ?? 'license.read_only_banner'.tr(),
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onTertiaryContainer,
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onTertiaryContainer,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
@@ -1204,11 +1222,7 @@ class _SalesPageState extends State<SalesPage> {
       loadPaymentSnapshot: (saleId) =>
           getIt<SalesRepository>().loadSalePaymentSnapshot(saleId),
       previewMaxRefund:
-          ({
-            required saleId,
-            required saleItemId,
-            required quantity,
-          }) =>
+          ({required saleId, required saleItemId, required quantity}) =>
               getIt<SalesRepository>().previewMaxRefundForReturnLine(
                 saleId: saleId,
                 saleItemId: saleItemId,

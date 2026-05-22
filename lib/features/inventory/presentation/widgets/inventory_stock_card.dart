@@ -92,6 +92,13 @@ class InventoryStockCard extends StatelessWidget {
                   ),
                   SizedBox(height: isUltraDense ? 1 : 2),
                   Text(
+                    '${'Barcode'.tr()}: ${((row.barcode ?? '').trim().isEmpty) ? '-' : row.barcode!.trim()}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.labelSmall,
+                  ),
+                  SizedBox(height: isUltraDense ? 1 : 2),
+                  Text(
                     '${'Unit'.tr()}: ${row.unitType} • ${'Low Stock Threshold'.tr()}: $formattedLowThreshold',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,

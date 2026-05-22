@@ -5,6 +5,8 @@ import 'package:delta_erp/features/invoices/presentation/invoice_payment_display
 import 'package:delta_erp/features/invoices/presentation/widgets/invoice_hub_list_card.dart';
 import 'package:delta_erp/features/purchases/data/purchases_repository.dart';
 
+enum PurchaseInvoiceTypeFilter { all, completed, credit, pending }
+
 class PurchasesInvoicesExplorer extends StatelessWidget {
   const PurchasesInvoicesExplorer({
     super.key,
@@ -18,6 +20,12 @@ class PurchasesInvoicesExplorer extends StatelessWidget {
     required this.activeInvoiceId,
     required this.activeInvoiceNumber,
     required this.activePurchaseItemId,
+    required this.selectedTypeFilter,
+    required this.invoiceTypeCounts,
+    required this.searchController,
+    required this.searchQuery,
+    required this.onSearchChanged,
+    required this.onClearSearch,
     required this.invoicePage,
     required this.invoicePageSize,
     required this.invoiceLabelBuilder,
@@ -25,6 +33,7 @@ class PurchasesInvoicesExplorer extends StatelessWidget {
     required this.onReturnSelected,
     required this.onShowDetails,
     required this.onCancelSelected,
+    required this.onTypeFilterChanged,
     required this.onPreviousPage,
     required this.onNextPage,
   });
@@ -39,6 +48,12 @@ class PurchasesInvoicesExplorer extends StatelessWidget {
   final int? activeInvoiceId;
   final String? activeInvoiceNumber;
   final int? activePurchaseItemId;
+  final PurchaseInvoiceTypeFilter selectedTypeFilter;
+  final Map<PurchaseInvoiceTypeFilter, int> invoiceTypeCounts;
+  final TextEditingController searchController;
+  final String searchQuery;
+  final ValueChanged<String> onSearchChanged;
+  final VoidCallback onClearSearch;
   final int invoicePage;
   final int invoicePageSize;
   final String Function({required int id, String? rawInvoiceNumber})
@@ -47,8 +62,23 @@ class PurchasesInvoicesExplorer extends StatelessWidget {
   final VoidCallback onReturnSelected;
   final VoidCallback onShowDetails;
   final VoidCallback onCancelSelected;
+  final ValueChanged<PurchaseInvoiceTypeFilter> onTypeFilterChanged;
   final VoidCallback onPreviousPage;
   final VoidCallback onNextPage;
+
+  String _filterLabel(PurchaseInvoiceTypeFilter filter) {
+    final count = invoiceTypeCounts[filter] ?? 0;
+    switch (filter) {
+      case PurchaseInvoiceTypeFilter.all:
+        return '${'All'.tr()} ($count)';
+      case PurchaseInvoiceTypeFilter.completed:
+        return '${'Completed'.tr()} ($count)';
+      case PurchaseInvoiceTypeFilter.credit:
+        return '${'Credit (no immediate payment)'.tr()} ($count)';
+      case PurchaseInvoiceTypeFilter.pending:
+        return '${'Pending'.tr()} ($count)';
+    }
+  }
 
   String _statusLabel(String status) {
     switch (status.trim().toLowerCase()) {
@@ -102,6 +132,37 @@ class PurchasesInvoicesExplorer extends StatelessWidget {
               style: Theme.of(context).textTheme.bodySmall,
             ),
             const SizedBox(height: 8),
+            TextField(
+              controller: searchController,
+              onChanged: onSearchChanged,
+              textInputAction: TextInputAction.search,
+              decoration: InputDecoration(
+                labelText: 'invoices.hub.search_by_customer_or_invoice'.tr(),
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: searchQuery.isEmpty
+                    ? null
+                    : IconButton(
+                        onPressed: onClearSearch,
+                        icon: const Icon(Icons.clear),
+                        tooltip: 'Clear'.tr(),
+                      ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: PurchaseInvoiceTypeFilter.values
+                  .map(
+                    (filter) => ChoiceChip(
+                      label: Text(_filterLabel(filter)),
+                      selected: selectedTypeFilter == filter,
+                      onSelected: (_) => onTypeFilterChanged(filter),
+                    ),
+                  )
+                  .toList(growable: false),
+            ),
+            const SizedBox(height: 8),
             Expanded(
               child: loadingInvoices
                   ? AppLoadingIndicator(label: 'Loading invoices...'.tr())
@@ -114,10 +175,9 @@ class PurchasesInvoicesExplorer extends StatelessWidget {
                         final highlighted = row.id == activeInvoiceId;
                         final statusText = _statusLabel(row.status);
                         final statusColor = _statusColor(context, row.status);
-                        final payLabel =
-                            invoicePaymentMethodsDisplayLabel(
-                              row.paymentMethod,
-                            );
+                        final payLabel = invoicePaymentMethodsDisplayLabel(
+                          row.paymentMethod,
+                        );
                         final invLabel = invoiceLabelBuilder(
                           id: row.id,
                           rawInvoiceNumber: row.invoiceNumber,

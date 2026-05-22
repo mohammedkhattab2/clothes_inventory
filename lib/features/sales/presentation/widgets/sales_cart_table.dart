@@ -96,22 +96,25 @@ class SalesCartTable extends StatelessWidget {
                 constraints.maxWidth > 0
             ? constraints.maxWidth
             : MediaQuery.sizeOf(context).width;
+        final effectiveMinWidth = tableWidth < 980 ? 980.0 : tableWidth;
 
         return SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
           child: ConstrainedBox(
-            constraints: BoxConstraints(minWidth: tableWidth),
+            constraints: BoxConstraints(minWidth: effectiveMinWidth),
             child: Directionality(
               textDirection: ui.TextDirection.rtl,
               child: Table(
                 columnWidths: const {
-                  0: FlexColumnWidth(2.0),
-                  1: FlexColumnWidth(0.6),
-                  2: FlexColumnWidth(0.95),
-                  3: FlexColumnWidth(0.75),
-                  4: FlexColumnWidth(0.95),
+                  0: FlexColumnWidth(1.05),
+                  1: FlexColumnWidth(1.95),
+                  2: FlexColumnWidth(0.6),
+                  3: FlexColumnWidth(0.95),
+                  4: FlexColumnWidth(0.75),
                   5: FlexColumnWidth(0.95),
                   6: FlexColumnWidth(0.95),
-                  7: FlexColumnWidth(1.35),
+                  7: FlexColumnWidth(0.95),
+                  8: FlexColumnWidth(1.35),
                 },
                 border: tableBorder,
                 defaultVerticalAlignment: TableCellVerticalAlignment.middle,
@@ -123,6 +126,7 @@ class SalesCartTable extends StatelessWidget {
                       ),
                     ),
                     children: [
+                      headerCell('Barcode'.tr()),
                       headerCell('Product'.tr()),
                       headerCell('Unit'.tr()),
                       headerCell('Quantity'.tr(), align: TextAlign.end),
@@ -138,6 +142,19 @@ class SalesCartTable extends StatelessWidget {
                         item.amendSourceSaleItemId == null;
                     return TableRow(
                       children: [
+                        Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          child: Text(
+                            (item.barcode == null || item.barcode!.isEmpty)
+                                ? '-'
+                                : item.barcode!,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
                         Padding(
                           padding: const EdgeInsets.symmetric(
                             horizontal: 8,

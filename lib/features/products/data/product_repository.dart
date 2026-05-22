@@ -58,8 +58,9 @@ class ProductRepository {
     }
 
     final whereClause = where.isEmpty ? '' : 'WHERE ${where.join(' AND ')}';
-    final limitClause =
-        limit != null && limit > 0 ? 'LIMIT ${limit.clamp(1, 10000)}' : '';
+    final limitClause = limit != null && limit > 0
+        ? 'LIMIT ${limit.clamp(1, 10000)}'
+        : '';
     final rows = await db.rawQuery('''
       SELECT
         p.*, 
@@ -216,8 +217,7 @@ class ProductRepository {
           final existingByBarcode = await txn.query(
             'products',
             columns: const ['id'],
-            where:
-                'barcode IS NOT NULL AND LOWER(TRIM(barcode)) = LOWER(?)',
+            where: 'barcode IS NOT NULL AND LOWER(TRIM(barcode)) = LOWER(?)',
             whereArgs: [normalizedBarcode],
             limit: 1,
           );
@@ -268,8 +268,7 @@ class ProductRepository {
           final conflictByBarcode = await txn.query(
             'products',
             columns: const ['id'],
-            where:
-                'barcode IS NOT NULL AND LOWER(TRIM(barcode)) = LOWER(?)',
+            where: 'barcode IS NOT NULL AND LOWER(TRIM(barcode)) = LOWER(?)',
             whereArgs: [normalizedBarcode],
             limit: 1,
           );
@@ -442,28 +441,19 @@ class ProductRepository {
     return '$normalized${next.toString().padLeft(suffixLength, '0')}';
   }
 
-  /// Short retail barcode: one ASCII letter + exactly 4 digits (e.g. P2000).
-  /// Sequence continues from the highest existing code with the same letter, min 2000.
-  static const String shortBarcodeLetter = 'P';
+  /// Short retail barcode: exactly 4 digits (e.g. 2000).
+  /// Sequence continues from the highest existing 4-digit code, min 2000.
   static const int shortBarcodeMinNumeric = 2000;
   static const int shortBarcodeMaxNumeric = 9999;
 
   Future<String> generateNextShortBarcode({String? letter}) async {
-    final raw = (letter ?? shortBarcodeLetter).trim();
-    if (raw.length != 1 || !RegExp(r'[A-Za-z]').hasMatch(raw)) {
-      throw ArgumentError('Barcode letter must be a single A–Z character.');
-    }
-    final L = raw.toUpperCase();
     final db = await _appDatabase.database;
     final rows = await db.query('products', columns: const ['barcode']);
 
-    // Highest numeric suffix among L#### (any 4 digits), not capped at min floor,
+    // Highest numeric value among #### (any 4 digits), not capped at min floor,
     // so the next code follows the last matching barcode in the DB.
     var maxNum = -1;
-    final pattern = RegExp(
-      '^${RegExp.escape(L)}(\\d{4})\$',
-      caseSensitive: false,
-    );
+    final pattern = RegExp(r'^(\d{4})$');
     for (final row in rows) {
       final rawBarcode = (row['barcode'] as String?)?.trim();
       if (rawBarcode == null || rawBarcode.isEmpty) continue;
@@ -478,7 +468,7 @@ class ProductRepository {
       candidateNum = shortBarcodeMinNumeric;
     }
     while (candidateNum <= shortBarcodeMaxNumeric) {
-      final candidate = '$L${candidateNum.toString().padLeft(4, '0')}';
+      final candidate = candidateNum.toString().padLeft(4, '0');
       final clash = await db.query(
         'products',
         columns: const ['id'],
@@ -490,7 +480,7 @@ class ProductRepository {
       candidateNum++;
     }
     throw StateError(
-      'Short barcode numeric range exhausted ($L$shortBarcodeMinNumeric–$L$shortBarcodeMaxNumeric).',
+      'Short barcode numeric range exhausted ($shortBarcodeMinNumeric-$shortBarcodeMaxNumeric).',
     );
   }
 

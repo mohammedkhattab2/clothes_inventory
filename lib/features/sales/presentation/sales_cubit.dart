@@ -32,6 +32,7 @@ class SalesState extends Equatable {
   final InvoiceHeaderDiscountKind headerDiscountKind;
   final double headerDiscountValue;
   final double paidAmount;
+
   /// Wallet portion when [paymentMethod] is [PaymentMethod.cashAndWallet].
   final double paidWalletAmount;
   final PaymentMethod paymentMethod;
@@ -53,10 +54,10 @@ class SalesState extends Equatable {
       roundCurrency(cart.fold<double>(0, (sum, item) => sum + item.lineTotal));
 
   double get headerDiscountAmount => computeInvoiceHeaderDiscountAmount(
-        subtotal: subtotal,
-        kind: headerDiscountKind,
-        value: headerDiscountValue,
-      );
+    subtotal: subtotal,
+    kind: headerDiscountKind,
+    value: headerDiscountValue,
+  );
 
   double get total => roundCurrency(subtotal - headerDiscountAmount);
 
@@ -113,13 +114,14 @@ class SalesState extends Equatable {
       pendingSaleId: clearPendingSaleId
           ? null
           : (pendingSaleId ?? this.pendingSaleId),
-      editingSaleId:
-          clearEditingSaleId ? null : (editingSaleId ?? this.editingSaleId),
-      amendmentStockCreditByProduct: clearEditingSaleId ||
-              clearAmendmentStockCredit
+      editingSaleId: clearEditingSaleId
+          ? null
+          : (editingSaleId ?? this.editingSaleId),
+      amendmentStockCreditByProduct:
+          clearEditingSaleId || clearAmendmentStockCredit
           ? const <int, double>{}
           : (amendmentStockCreditByProduct ??
-              this.amendmentStockCreditByProduct),
+                this.amendmentStockCreditByProduct),
     );
   }
 
@@ -206,7 +208,8 @@ class SalesCubit extends Cubit<SalesState> {
   }
 
   void setHeaderDiscountValue(double value) {
-    final normalized = state.headerDiscountKind == InvoiceHeaderDiscountKind.percent
+    final normalized =
+        state.headerDiscountKind == InvoiceHeaderDiscountKind.percent
         ? roundCurrency(value.clamp(0, 100))
         : roundCurrency(value.clamp(0, double.infinity));
     emit(state.copyWith(headerDiscountValue: normalized));
@@ -220,10 +223,10 @@ class SalesCubit extends Cubit<SalesState> {
       PaymentMethod.vodafoneCash => (0.0, state.paidAmount, 0.0),
       PaymentMethod.visa => (0.0, 0.0, state.paidAmount),
       PaymentMethod.cashAndWallet => (
-          state.paidAmount,
-          state.paidWalletAmount,
-          0.0,
-        ),
+        state.paidAmount,
+        state.paidWalletAmount,
+        0.0,
+      ),
     };
 
     switch (method) {
@@ -250,7 +253,9 @@ class SalesCubit extends Cubit<SalesState> {
 
   void addProduct(Product product, {double? initialUnitPrice}) {
     if (product.currentStock <= 0) {
-      emit(state.copyWith(error: 'Insufficient stock for one or more products.'));
+      emit(
+        state.copyWith(error: 'Insufficient stock for one or more products.'),
+      );
       return;
     }
 
@@ -282,6 +287,7 @@ class SalesCubit extends Cubit<SalesState> {
             SaleDraftItem(
               productId: product.id!,
               productName: product.name,
+              barcode: product.barcode,
               unitType: product.unitType.name,
               availableStock: product.currentStock,
               minUnitPrice: product.purchasePrice,
@@ -371,6 +377,10 @@ class SalesCubit extends Cubit<SalesState> {
     double? amendRefundAmountOverride,
     double? amendRefundCashOverride,
     double? amendRefundWalletOverride,
+    PositiveAmendmentHandling? positiveAmendmentHandling,
+    PaymentMethod? collectPaymentMethod,
+    double? collectAmount,
+    double? collectWalletAmount,
   }) async {
     if (state.cart.isEmpty) {
       emit(state.copyWith(error: 'Add at least one product.'));
@@ -393,11 +403,7 @@ class SalesCubit extends Cubit<SalesState> {
     }
 
     if (state.editingSaleId != null && isPending) {
-      emit(
-        state.copyWith(
-          error: 'sale.amend_complete_only',
-        ),
-      );
+      emit(state.copyWith(error: 'sale.amend_complete_only'));
       return;
     }
 
@@ -418,19 +424,11 @@ class SalesCubit extends Cubit<SalesState> {
 
       final credit = state.amendmentStockCreditByProduct;
       final isAmending = state.editingSaleId != null;
-      final syncedCart = state.cart
-          .map(
-            (item) {
-              final live = liveStockByProduct[item.productId] ?? 0;
-              final extra = isAmending
-                  ? (credit[item.productId] ?? 0)
-                  : 0.0;
-              return item.copyWith(
-                availableStock: roundQuantity(live + extra),
-              );
-            },
-          )
-          .toList();
+      final syncedCart = state.cart.map((item) {
+        final live = liveStockByProduct[item.productId] ?? 0;
+        final extra = isAmending ? (credit[item.productId] ?? 0) : 0.0;
+        return item.copyWith(availableStock: roundQuantity(live + extra));
+      }).toList();
 
       final hasInsufficient = syncedCart.any(
         (item) => item.quantity > item.availableStock + 0.000001,
@@ -472,6 +470,10 @@ class SalesCubit extends Cubit<SalesState> {
             refundAmountOverride: amendRefundAmountOverride,
             refundCashOverride: amendRefundCashOverride,
             refundWalletOverride: amendRefundWalletOverride,
+            positiveAmendmentHandling: positiveAmendmentHandling,
+            collectPaymentMethod: collectPaymentMethod,
+            collectAmount: collectAmount,
+            collectWalletAmount: collectWalletAmount,
           ),
         );
         emit(

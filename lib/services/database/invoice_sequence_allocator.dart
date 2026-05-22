@@ -3,17 +3,17 @@ import 'package:sqflite/sqflite.dart';
 const _saleType = 'sale';
 const _purchaseType = 'purchase';
 
-/// Formats as `S` + at least 4 digits (e.g. `S0001`; beyond 9999 → `S10000`).
+/// Formats as at least 4 digits (e.g. `0001`; beyond 9999 → `10000`).
 String formatSaleInvoiceNumber(int seq) {
   if (seq < 1 || seq > 999999) {
     throw StateError('Sale invoice sequence out of supported range (1–999999).');
   }
   final suffix =
       seq <= 9999 ? seq.toString().padLeft(4, '0') : seq.toString();
-  return 'S$suffix';
+  return suffix;
 }
 
-/// Formats as `P` + at least 4 digits (e.g. `P0001`; beyond 9999 → `P10000`).
+/// Formats as at least 4 digits (e.g. `0001`; beyond 9999 → `10000`).
 String formatPurchaseInvoiceNumber(int seq) {
   if (seq < 1 || seq > 999999) {
     throw StateError(
@@ -22,7 +22,7 @@ String formatPurchaseInvoiceNumber(int seq) {
   }
   final suffix =
       seq <= 9999 ? seq.toString().padLeft(4, '0') : seq.toString();
-  return 'P$suffix';
+  return suffix;
 }
 
 Future<String> allocateSaleInvoiceNumber(Transaction txn) async {

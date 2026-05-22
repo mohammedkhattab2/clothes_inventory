@@ -55,6 +55,7 @@ class SaleDraftItem {
   const SaleDraftItem({
     required this.productId,
     required this.productName,
+    this.barcode,
     required this.unitType,
     required this.availableStock,
     required this.minUnitPrice,
@@ -66,6 +67,7 @@ class SaleDraftItem {
 
   final int productId;
   final String productName;
+  final String? barcode;
   final String unitType;
   final double availableStock;
   final double minUnitPrice;
@@ -81,6 +83,7 @@ class SaleDraftItem {
   SaleDraftItem copyWith({
     int? productId,
     String? productName,
+    String? barcode,
     String? unitType,
     double? availableStock,
     double? minUnitPrice,
@@ -92,6 +95,7 @@ class SaleDraftItem {
     return SaleDraftItem(
       productId: productId ?? this.productId,
       productName: productName ?? this.productName,
+      barcode: barcode ?? this.barcode,
       unitType: unitType ?? this.unitType,
       availableStock: availableStock ?? this.availableStock,
       minUnitPrice: minUnitPrice ?? this.minUnitPrice,
@@ -107,22 +111,30 @@ class SaleDraftItem {
 /// Refund limits when completing an invoice amendment in cart.
 class AmendRefundPreview {
   const AmendRefundPreview({
+    required this.oldTotalAmount,
     required this.returnAmountTotal,
     required this.newTotalAmount,
+    required this.totalDelta,
     required this.netPaidAmount,
+    required this.outstandingAfterAmend,
     required this.maxRefundable,
     required this.paymentMethod,
     required this.paidCash,
     required this.paidWallet,
   });
 
+  final double oldTotalAmount;
   final double returnAmountTotal;
   final double newTotalAmount;
+  final double totalDelta;
   final double netPaidAmount;
+  final double outstandingAfterAmend;
   final double maxRefundable;
   final PaymentMethod paymentMethod;
   final double paidCash;
   final double paidWallet;
+
+  double get positiveDelta => totalDelta > 0 ? totalDelta : 0;
 }
 
 /// User-confirmed refund amounts for [SaleAmendRequest].
@@ -136,6 +148,28 @@ class AmendRefundConfirmation {
   final double? refundAmountOverride;
   final double? refundCashOverride;
   final double? refundWalletOverride;
+}
+
+enum PositiveAmendmentHandling { defer, collectNow }
+
+/// User-confirmed handling for positive amendment deltas.
+class AmendCollectConfirmation {
+  const AmendCollectConfirmation.defer()
+    : handling = PositiveAmendmentHandling.defer,
+      paymentMethod = null,
+      collectAmount = null,
+      collectWalletAmount = null;
+
+  const AmendCollectConfirmation.collectNow({
+    required this.paymentMethod,
+    required this.collectAmount,
+    this.collectWalletAmount,
+  }) : handling = PositiveAmendmentHandling.collectNow;
+
+  final PositiveAmendmentHandling handling;
+  final PaymentMethod? paymentMethod;
+  final double? collectAmount;
+  final double? collectWalletAmount;
 }
 
 class SaleCreateRequest {
@@ -156,12 +190,14 @@ class SaleCreateRequest {
 
   final int? customerId;
   final String? newCustomerName;
+
   /// Saved to [accounts.phone] when completing a sale (existing or new customer).
   final String? customerPhone;
   final List<SaleDraftItem> items;
   final InvoiceHeaderDiscountKind headerDiscountKind;
   final double headerDiscountValue;
   final double paidAmount;
+
   /// Used when [paymentMethod] is [PaymentMethod.cashAndWallet]; stored as
   /// a separate `vodafone_cash` payment row (wallet portion).
   final double paidWalletAmount;
@@ -183,6 +219,10 @@ class SaleAmendRequest {
     this.refundAmountOverride,
     this.refundCashOverride,
     this.refundWalletOverride,
+    this.positiveAmendmentHandling,
+    this.collectPaymentMethod,
+    this.collectAmount,
+    this.collectWalletAmount,
   });
 
   final int saleId;
@@ -193,4 +233,8 @@ class SaleAmendRequest {
   final double? refundAmountOverride;
   final double? refundCashOverride;
   final double? refundWalletOverride;
+  final PositiveAmendmentHandling? positiveAmendmentHandling;
+  final PaymentMethod? collectPaymentMethod;
+  final double? collectAmount;
+  final double? collectWalletAmount;
 }

@@ -68,15 +68,16 @@ Future<void> setupServiceLocator() async {
     getIt.registerSingleton<AppDatabase>(AppDatabase.instance);
   }
 
-  final db = await getIt<AppDatabase>().database;
-
   if (!getIt.isRegistered<MaintenanceCoordinator>()) {
     getIt.registerSingleton<MaintenanceCoordinator>(MaintenanceCoordinator());
   }
 
   if (!getIt.isRegistered<DbTransactionRunner>()) {
     getIt.registerSingleton<DbTransactionRunner>(
-      DbTransactionRunner(db, getIt<MaintenanceCoordinator>()),
+      DbTransactionRunner(
+        getIt<AppDatabase>(),
+        getIt<MaintenanceCoordinator>(),
+      ),
     );
   }
 

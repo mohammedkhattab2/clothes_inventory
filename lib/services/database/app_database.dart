@@ -25,6 +25,7 @@ class AppDatabase {
   AppDatabase._();
 
   static final AppDatabase instance = AppDatabase._();
+  static bool _ffiConfigured = false;
 
   static const _legacyDbName = 'inventory_pos.db';
   static const _dbVersion = 14;
@@ -55,10 +56,7 @@ class AppDatabase {
   }
 
   Future<Database> _open() async {
-    if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
-      sqfliteFfiInit();
-      databaseFactory = databaseFactoryFfi;
-    }
+    _configureFfiIfNeeded();
 
     final dbPath = await _resolveDatabasePath();
     await _migrateLegacyDatabaseIfNeeded(dbPath);
@@ -136,6 +134,17 @@ class AppDatabase {
         await _normalizeStandaloneSettlementPayments(db);
       },
     );
+  }
+
+  void _configureFfiIfNeeded() {
+    if (_ffiConfigured) {
+      return;
+    }
+    if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+      sqfliteFfiInit();
+      databaseFactory = databaseFactoryFfi;
+    }
+    _ffiConfigured = true;
   }
 
   Future<void> _normalizeStandaloneSettlementPayments(Database db) async {

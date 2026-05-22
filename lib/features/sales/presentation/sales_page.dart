@@ -25,6 +25,7 @@ import 'package:delta_erp/features/sales/presentation/widgets/sales_cancel_sale_
 import 'package:delta_erp/features/sales/presentation/widgets/sales_invoice_details_dialog.dart';
 import 'package:delta_erp/features/sales/presentation/widgets/sales_invoices_explorer.dart';
 import 'package:delta_erp/features/sales/presentation/widgets/sales_checkout_toolbar.dart';
+import 'package:delta_erp/features/sales/presentation/widgets/sales_amend_payment_dialog.dart';
 import 'package:delta_erp/features/sales/presentation/widgets/sales_amend_refund_dialog.dart';
 import 'package:delta_erp/features/sales/presentation/widgets/sales_return_dialog.dart';
 import 'package:delta_erp/features/license/domain/license_service.dart';

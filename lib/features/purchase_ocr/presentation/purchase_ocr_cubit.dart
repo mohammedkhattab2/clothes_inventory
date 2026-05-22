@@ -461,6 +461,7 @@ class PurchaseOcrCubit extends Cubit<PurchaseOcrState> {
           PurchaseDraftItem(
             productId: product.id!,
             productName: product.name,
+            barcode: product.barcode,
             unitType: product.unitType.name,
             quantity: quantity,
             unitPrice: roundCurrency(line.unitPrice),

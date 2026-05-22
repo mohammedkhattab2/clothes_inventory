@@ -883,16 +883,11 @@ class _DashboardDrillDownPageState extends State<DashboardDrillDownPage> {
     );
     final totalReturned = widget.kind == 'revenue'
         ? _returnedTotalForPeriod
-        : _invoiceRows.fold<double>(
-            0,
-            (sum, row) => sum + row.returnedAmount,
-          );
+        : _invoiceRows.fold<double>(0, (sum, row) => sum + row.returnedAmount);
     final totalAdded = widget.kind == 'revenue'
         ? _addedTotalForPeriod
-        : _invoiceRows.fold<double>(
-            0,
-            (sum, row) => sum + row.addedAmount,
-          );
+        : _invoiceRows.fold<double>(0, (sum, row) => sum + row.addedAmount);
+    final netDelta = totalAdded - totalReturned;
     final grossRevenueTotal = _profitRows.fold<double>(
       0,
       (sum, row) => sum + row.revenue,
@@ -991,6 +986,12 @@ class _DashboardDrillDownPageState extends State<DashboardDrillDownPage> {
                       _NetMiniMetricItem(
                         label: 'dashboard.drilldown_added_total'.tr(),
                         value: _currency.format(totalAdded),
+                      ),
+                    if (widget.kind == 'revenue')
+                      _NetMiniMetricItem(
+                        label: 'dashboard.drilldown_net_delta'.tr(),
+                        value: _currency.format(netDelta),
+                        emphasize: netDelta.abs() > 0.000001,
                       ),
                     _NetMiniMetricItem(
                       label: 'dashboard.drilldown_deferred_short'.tr(),

@@ -140,8 +140,8 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
   String _normalizeBarcodeForSave(String raw) {
     final t = _normalizeDigits(raw).trim();
     if (t.isEmpty) return '';
-    if (t.length == 5 && RegExp(r'^[A-Za-z]\d{4}$').hasMatch(t)) {
-      return '${t[0].toUpperCase()}${t.substring(1)}';
+    if (t.length == 4 && RegExp(r'^\d{4}$').hasMatch(t)) {
+      return t;
     }
     return t;
   }
@@ -214,8 +214,8 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                         child: Text(
                           'Preview'.tr(),
                           style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.w800,
-                              ),
+                            fontWeight: FontWeight.w800,
+                          ),
                         ),
                       ),
                       IconButton(
@@ -242,9 +242,9 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${'Preview failed'.tr()}: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('${'Preview failed'.tr()}: $e')));
     }
   }
 
@@ -343,10 +343,12 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                       controller: _barcode,
                       focusNode: _barcodeFocus,
                       textInputAction: TextInputAction.next,
-                      maxLength: widget.product == null ? 5 : null,
+                      maxLength: widget.product == null ? 4 : null,
                       inputFormatters: [
                         FilteringTextInputFormatter.allow(
-                          RegExp(r'[A-Za-z0-9٠-٩]'),
+                          widget.product == null
+                              ? RegExp(r'[0-9٠-٩]')
+                              : RegExp(r'[A-Za-z0-9٠-٩]'),
                         ),
                       ],
                       onEditingComplete: () {
@@ -356,16 +358,18 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                         final t = _normalizeBarcodeForSave(value ?? '');
                         if (t.isEmpty) return null;
                         if (widget.product == null &&
-                            !RegExp(r'^[A-Za-z]\d{4}$').hasMatch(t)) {
+                            !RegExp(r'^\d{4}$').hasMatch(t)) {
                           return 'products.barcode_short_invalid'.tr();
                         }
                         return null;
                       },
                       buildCounter: widget.product == null
-                          ? (_, {required currentLength,
+                          ? (
+                              _, {
+                              required currentLength,
                               required isFocused,
-                              required maxLength}) =>
-                              null
+                              required maxLength,
+                            }) => null
                           : null,
                       decoration: InputDecoration(
                         labelText: 'Barcode (optional)'.tr(),
@@ -384,13 +388,13 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
                                 ),
                               )
                             : (widget.product == null &&
-                                    widget.onGenerateBarcode != null
-                                ? IconButton(
-                                    tooltip: 'Regenerate'.tr(),
-                                    icon: const Icon(Icons.refresh_rounded),
-                                    onPressed: _generateShortBarcode,
-                                  )
-                                : const Icon(Icons.qr_code_2_outlined)),
+                                      widget.onGenerateBarcode != null
+                                  ? IconButton(
+                                      tooltip: 'Regenerate'.tr(),
+                                      icon: const Icon(Icons.refresh_rounded),
+                                      onPressed: _generateShortBarcode,
+                                    )
+                                  : const Icon(Icons.qr_code_2_outlined)),
                       ),
                     ),
                     SizedBox(height: fieldGap),

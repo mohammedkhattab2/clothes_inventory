@@ -32,7 +32,7 @@ class ProductBarcodeLabelPrinter {
       productName: productName.trim(),
       barcodeValue: barcodeValue.trim(),
       companyName: companyName?.trim() ?? '',
-      amountText: amount == null ? '' : amount.toStringAsFixed(2),
+      amountText: amount == null ? '' : '${amount.toStringAsFixed(2)} L.E',
       copies: copies,
     );
   }

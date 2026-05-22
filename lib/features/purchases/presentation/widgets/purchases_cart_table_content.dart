@@ -77,18 +77,21 @@ class PurchasesCartTableContent extends StatelessWidget {
                 constraints.maxWidth > 0
             ? constraints.maxWidth
             : MediaQuery.sizeOf(context).width;
+        final effectiveMinWidth = tableWidth < 900 ? 900.0 : tableWidth;
 
         return SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
           child: ConstrainedBox(
-            constraints: BoxConstraints(minWidth: tableWidth),
+            constraints: BoxConstraints(minWidth: effectiveMinWidth),
             child: Table(
               columnWidths: const {
-                0: FlexColumnWidth(2.2),
-                1: FlexColumnWidth(0.65),
-                2: FlexColumnWidth(1.05),
-                3: FlexColumnWidth(1.0),
+                0: FlexColumnWidth(1.1),
+                1: FlexColumnWidth(2.05),
+                2: FlexColumnWidth(0.65),
+                3: FlexColumnWidth(1.05),
                 4: FlexColumnWidth(1.0),
-                5: FlexColumnWidth(1.5),
+                5: FlexColumnWidth(1.0),
+                6: FlexColumnWidth(1.5),
               },
               border: tableBorder,
               defaultVerticalAlignment: TableCellVerticalAlignment.middle,
@@ -100,6 +103,7 @@ class PurchasesCartTableContent extends StatelessWidget {
                     ),
                   ),
                   children: [
+                    headerCell('Barcode'.tr()),
                     headerCell('Product'.tr()),
                     headerCell('Unit'.tr()),
                     headerCell('Quantity'.tr(), align: TextAlign.end),
@@ -111,6 +115,19 @@ class PurchasesCartTableContent extends StatelessWidget {
                 ...state.cart.map((item) {
                   return TableRow(
                     children: [
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        child: Text(
+                          (item.barcode == null || item.barcode!.isEmpty)
+                              ? '-'
+                              : item.barcode!,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
                       Padding(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 8,
