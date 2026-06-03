@@ -100,6 +100,64 @@ class AccountsRepository {
         .toList();
   }
 
+  static String normalizeCustomerPhone(String? raw) {
+    if (raw == null) return '';
+    return raw.replaceAll(RegExp(r'[\s\-()+]'), '');
+  }
+
+  static bool customerPhonesMatch(String? a, String? b) {
+    final left = normalizeCustomerPhone(a);
+    final right = normalizeCustomerPhone(b);
+    if (left.isEmpty || right.isEmpty) return false;
+    if (left == right) return true;
+    const minLen = 10;
+    if (left.length >= minLen && right.length >= minLen) {
+      return left.endsWith(right.substring(right.length - minLen)) ||
+          right.endsWith(left.substring(left.length - minLen));
+    }
+    return false;
+  }
+
+  Future<AccountLookup?> findCustomerByNameOrPhone({
+    String? name,
+    String? phone,
+  }) async {
+    final trimmedName = name?.trim() ?? '';
+    final trimmedPhone = phone?.trim() ?? '';
+    if (trimmedName.isEmpty && trimmedPhone.isEmpty) {
+      return null;
+    }
+
+    final db = await _appDatabase.database;
+    final rows = await db.query(
+      'accounts',
+      columns: ['id', 'name', 'account_type', 'phone'],
+      where: "account_type = 'customer'",
+    );
+
+    final normalizedName = trimmedName.toLowerCase();
+    AccountLookup? phoneMatch;
+
+    for (final row in rows) {
+      final lookup = AccountLookup(
+        id: row['id'] as int,
+        name: row['name'] as String,
+        accountType: row['account_type'] as String,
+        phone: row['phone'] as String?,
+      );
+      if (normalizedName.isNotEmpty &&
+          lookup.name.trim().toLowerCase() == normalizedName) {
+        return lookup;
+      }
+      if (trimmedPhone.isNotEmpty &&
+          customerPhonesMatch(trimmedPhone, lookup.phone)) {
+        phoneMatch ??= lookup;
+      }
+    }
+
+    return phoneMatch;
+  }
+
   Future<int> createAccount({
     required String name,
     required String accountType,

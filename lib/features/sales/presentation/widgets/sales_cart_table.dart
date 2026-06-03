@@ -6,6 +6,66 @@ import 'package:flutter/services.dart';
 import 'package:delta_erp/core/widgets/app_empty_state.dart';
 import 'package:delta_erp/features/sales/domain/sale_models.dart';
 
+void _applyInlineControllerText(TextEditingController controller, String text) {
+  controller.value = TextEditingValue(
+    text: text,
+    selection: TextSelection.collapsed(offset: text.length),
+    composing: TextRange.empty,
+  );
+}
+
+bool _isTextEditingValueValid(TextEditingValue value) {
+  final text = value.text;
+  final selection = value.selection;
+  if (!selection.isValid) return false;
+  if (selection.start < 0 ||
+      selection.end < 0 ||
+      selection.start > text.length ||
+      selection.end > text.length) {
+    return false;
+  }
+  final composing = value.composing;
+  if (composing.isValid &&
+      (composing.start < 0 ||
+          composing.end < 0 ||
+          composing.start > text.length ||
+          composing.end > text.length)) {
+    return false;
+  }
+  return true;
+}
+
+void _ensureInlineControllerValueValid(
+  TextEditingController controller,
+  String fallbackText,
+) {
+  if (_isTextEditingValueValid(controller.value)) return;
+  final text = controller.text.isEmpty ? fallbackText : controller.text;
+  final offset = controller.selection.baseOffset.clamp(0, text.length);
+  controller.value = TextEditingValue(
+    text: text,
+    selection: TextSelection.collapsed(offset: offset),
+    composing: TextRange.empty,
+  );
+}
+
+Widget _singleLineNumericField({required Widget child}) {
+  return Actions(
+    actions: <Type, Action<Intent>>{
+      DoNothingAndStopPropagationIntent: DoNothingAction(),
+    },
+    child: Shortcuts(
+      shortcuts: <ShortcutActivator, Intent>{
+        const SingleActivator(LogicalKeyboardKey.arrowUp):
+            DoNothingAndStopPropagationIntent(),
+        const SingleActivator(LogicalKeyboardKey.arrowDown):
+            DoNothingAndStopPropagationIntent(),
+      },
+      child: child,
+    ),
+  );
+}
+
 class SalesCartTable extends StatelessWidget {
   const SalesCartTable({
     super.key,
@@ -98,13 +158,15 @@ class SalesCartTable extends StatelessWidget {
             : MediaQuery.sizeOf(context).width;
         final effectiveMinWidth = tableWidth < 980 ? 980.0 : tableWidth;
 
-        return SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: ConstrainedBox(
-            constraints: BoxConstraints(minWidth: effectiveMinWidth),
-            child: Directionality(
-              textDirection: ui.TextDirection.rtl,
-              child: Table(
+        return Scrollbar(
+          child: SingleChildScrollView(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minWidth: effectiveMinWidth),
+                child: Directionality(
+                  textDirection: ui.TextDirection.rtl,
+                  child: Table(
                 columnWidths: const {
                   0: FlexColumnWidth(1.05),
                   1: FlexColumnWidth(1.95),
@@ -230,11 +292,14 @@ class SalesCartTable extends StatelessWidget {
 
                               if (!focusNode.hasFocus &&
                                   controller.text != formatted) {
-                                controller.value = controller.value.copyWith(
-                                  text: formatted,
-                                  selection: TextSelection.collapsed(
-                                    offset: formatted.length,
-                                  ),
+                                _applyInlineControllerText(
+                                  controller,
+                                  formatted,
+                                );
+                              } else if (focusNode.hasFocus) {
+                                _ensureInlineControllerValueValid(
+                                  controller,
+                                  formatted,
                                 );
                               }
 
@@ -242,9 +307,10 @@ class SalesCartTable extends StatelessWidget {
                                 alignment: Alignment.centerRight,
                                 child: SizedBox(
                                   width: double.infinity,
-                                  child: TextField(
-                                    controller: controller,
-                                    focusNode: focusNode,
+                                  child: _singleLineNumericField(
+                                    child: TextField(
+                                      controller: controller,
+                                      focusNode: focusNode,
                                     textAlign: TextAlign.end,
                                     keyboardType:
                                         const TextInputType.numberWithOptions(
@@ -305,20 +371,21 @@ class SalesCartTable extends StatelessWidget {
                                     },
                                   ),
                                 ),
-                              );
-                            },
-                          ),
+                              ),
+                            );
+                          },
                         ),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                          child: Builder(
-                            builder: (context) {
-                              final rawDraft =
-                                  inlineQuantityDrafts[item.productId];
-                              final parsedDraft =
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        child: Builder(
+                          builder: (context) {
+                            final rawDraft =
+                                inlineQuantityDrafts[item.productId];
+                            final parsedDraft =
                                   rawDraft == null || rawDraft.trim().isEmpty
                                   ? null
                                   : parseFlexibleNumber(rawDraft);
@@ -379,11 +446,14 @@ class SalesCartTable extends StatelessWidget {
 
                               if (!focusNode.hasFocus &&
                                   controller.text != formatted) {
-                                controller.value = controller.value.copyWith(
-                                  text: formatted,
-                                  selection: TextSelection.collapsed(
-                                    offset: formatted.length,
-                                  ),
+                                _applyInlineControllerText(
+                                  controller,
+                                  formatted,
+                                );
+                              } else if (focusNode.hasFocus) {
+                                _ensureInlineControllerValueValid(
+                                  controller,
+                                  formatted,
                                 );
                               }
 
@@ -391,9 +461,10 @@ class SalesCartTable extends StatelessWidget {
                                 alignment: Alignment.centerRight,
                                 child: SizedBox(
                                   width: double.infinity,
-                                  child: TextField(
-                                    controller: controller,
-                                    focusNode: focusNode,
+                                  child: _singleLineNumericField(
+                                    child: TextField(
+                                      controller: controller,
+                                      focusNode: focusNode,
                                     textAlign: TextAlign.end,
                                     keyboardType:
                                         const TextInputType.numberWithOptions(
@@ -440,17 +511,18 @@ class SalesCartTable extends StatelessWidget {
                                     },
                                   ),
                                 ),
-                              );
-                            },
-                          ),
+                              ),
+                            );
+                          },
                         ),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                          child: Text(
-                            item.lineTotal.toStringAsFixed(2),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        child: Text(
+                          item.lineTotal.toStringAsFixed(2),
                             textAlign: TextAlign.end,
                           ),
                         ),
@@ -536,7 +608,9 @@ class SalesCartTable extends StatelessWidget {
               ),
             ),
           ),
-        );
+        ),
+      ),
+    );
       },
     );
   }

@@ -1,6 +1,7 @@
 import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:delta_erp/features/dashboard/data/dashboard_repository.dart';
+import 'package:delta_erp/features/dashboard/presentation/utils/dashboard_date_range.dart';
 import 'package:delta_erp/services/pdf/dashboard_pdf_service.dart';
 import 'dart:typed_data';
 
@@ -122,12 +123,15 @@ class DashboardState extends Equatable {
 
 class DashboardCubit extends Cubit<DashboardState> {
   DashboardCubit(this._repository, this._pdfService)
-    : super(
-        DashboardState(
-          fromDate: DateTime.now().subtract(const Duration(days: 30)),
-          toDate: DateTime.now(),
-        ),
-      );
+    : super(_initialState());
+
+  static DashboardState _initialState() {
+    final range = DashboardDateRange.forGranularity('day');
+    return DashboardState(
+      fromDate: range.from,
+      toDate: range.to,
+    );
+  }
 
   final DashboardRepository _repository;
   final DashboardPdfService _pdfService;
@@ -173,7 +177,16 @@ class DashboardCubit extends Cubit<DashboardState> {
   }
 
   Future<void> setGranularity(String value) async {
-    emit(state.copyWith(granularity: value, loading: true, clearError: true));
+    final range = DashboardDateRange.forGranularity(value);
+    emit(
+      state.copyWith(
+        granularity: value,
+        fromDate: range.from,
+        toDate: range.to,
+        loading: true,
+        clearError: true,
+      ),
+    );
     await _refreshSnapshot();
   }
 
@@ -202,10 +215,11 @@ class DashboardCubit extends Cubit<DashboardState> {
   }
 
   Future<void> clearFilters() async {
+    final range = DashboardDateRange.forGranularity('day');
     emit(
       state.copyWith(
-        fromDate: DateTime.now().subtract(const Duration(days: 30)),
-        toDate: DateTime.now(),
+        fromDate: range.from,
+        toDate: range.to,
         granularity: 'day',
         clearCategory: true,
         clearAccount: true,

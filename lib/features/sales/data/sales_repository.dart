@@ -2,6 +2,7 @@ import 'package:delta_erp/core/utils/invoice_number_display.dart';
 import 'package:delta_erp/core/utils/number_utils.dart';
 import 'package:delta_erp/core/utils/return_rules.dart';
 import 'package:delta_erp/core/utils/sql_like_escape.dart';
+import 'package:delta_erp/features/accounts/data/accounts_repository.dart';
 import 'package:delta_erp/features/invoices/domain/invoice_suggestion.dart';
 import 'package:delta_erp/features/sales/domain/sale_models.dart';
 import 'package:delta_erp/services/auth/session_service.dart';
@@ -1582,6 +1583,28 @@ class SalesRepository {
       final newName = request.newCustomerName?.trim() ?? '';
       final phoneTrimmed = request.customerPhone?.trim() ?? '';
       final phoneForDb = phoneTrimmed.isEmpty ? null : phoneTrimmed;
+      if (accountId == null &&
+          (newName.isNotEmpty || phoneTrimmed.isNotEmpty)) {
+        final existingRows = await txn.query(
+          'accounts',
+          columns: ['id', 'name', 'phone'],
+          where: "account_type = 'customer'",
+        );
+        final normalizedName = newName.toLowerCase();
+        for (final row in existingRows) {
+          final rowName = (row['name'] as String).trim().toLowerCase();
+          final rowPhone = row['phone'] as String?;
+          if (newName.isNotEmpty && rowName == normalizedName) {
+            accountId = row['id'] as int;
+            break;
+          }
+          if (phoneTrimmed.isNotEmpty &&
+              AccountsRepository.customerPhonesMatch(phoneTrimmed, rowPhone)) {
+            accountId = row['id'] as int;
+            break;
+          }
+        }
+      }
       if (accountId == null && newName.isNotEmpty) {
         accountId = await txn.insert('accounts', {
           'name': newName,

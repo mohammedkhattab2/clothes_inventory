@@ -624,6 +624,7 @@ class _CompanySettingsPageState extends State<CompanySettingsPage> {
     bool healthOk = false;
     String healthMessage = 'backup.not_available'.tr();
     bool ocrReady = false;
+    List<String> ocrMissingDetails = const [];
     String ocrVersion = 'backup.not_available'.tr();
     String? generalError;
 
@@ -672,6 +673,9 @@ class _CompanySettingsPageState extends State<CompanySettingsPage> {
     try {
       final ocrHealth = _ocrService.debugHealthCheck();
       ocrReady = ocrHealth.values.every((value) => value);
+      if (!ocrReady) {
+        ocrMissingDetails = _ocrService.describeOcrMissingComponents();
+      }
     } catch (error) {
       ocrReady = false;
       generalError = generalError ??
@@ -696,6 +700,7 @@ class _CompanySettingsPageState extends State<CompanySettingsPage> {
       healthOk: healthOk,
       healthMessage: healthMessage,
       ocrReady: ocrReady,
+      ocrMissingDetails: ocrMissingDetails,
       ocrVersion: ocrVersion,
       lastOcrErrorCode: lastError?.errorCode,
       lastOcrErrorType: lastError?.type.name,
@@ -715,6 +720,8 @@ class _CompanySettingsPageState extends State<CompanySettingsPage> {
         'Health Status: ${data.healthOk ? 'Healthy' : 'Error'}',
         if (!data.healthOk) 'Health Message: ${data.healthMessage}',
         'OCR Status: ${data.ocrReady ? 'OCR Ready' : 'OCR Not Ready'}',
+        if (!data.ocrReady && data.ocrMissingDetails.isNotEmpty)
+          'OCR Missing: ${data.ocrMissingDetails.join(', ')}',
         'Tesseract Version: ${data.ocrVersion}',
         'Last OCR Error Code: ${data.lastOcrErrorCode ?? 'n/a'}',
         'Last OCR Error Type: ${data.lastOcrErrorType ?? 'n/a'}',

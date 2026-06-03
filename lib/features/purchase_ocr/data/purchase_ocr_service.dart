@@ -13,6 +13,7 @@ import 'package:delta_erp/features/purchase_ocr/domain/purchase_ocr_models.dart'
 abstract class PurchaseOcrService {
   Future<String> extractText({required String imagePath});
   Map<String, bool> debugHealthCheck();
+  List<String> describeOcrMissingComponents();
   Future<String> getTesseractVersion();
   OcrFailure? getLastFailure();
   void markFingerprintResolved(String fingerprint);
@@ -250,6 +251,29 @@ class OfflinePurchaseOcrService implements PurchaseOcrService {
         path.join(paths.tessdataDirPath, 'ara.traineddata'),
       ).existsSync(),
     };
+  }
+
+  @override
+  List<String> describeOcrMissingComponents() {
+    if (!Platform.isWindows) {
+      return const ['ocr.platform_unsupported'];
+    }
+
+    final health = debugHealthCheck();
+    final missing = <String>[];
+    if (health['tesseract_exists'] != true) {
+      missing.add('ocr.missing_tesseract');
+    }
+    if (health['tessdata_exists'] != true) {
+      missing.add('ocr.missing_tessdata_dir');
+    }
+    if (health['eng_traineddata'] != true) {
+      missing.add('ocr.missing_eng_traineddata');
+    }
+    if (health['ara_traineddata'] != true) {
+      missing.add('ocr.missing_ara_traineddata');
+    }
+    return missing;
   }
 
   @override

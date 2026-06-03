@@ -21,7 +21,7 @@ class A4InvoiceRtlWidget extends StatelessWidget {
       textDirection: ui.TextDirection.rtl,
       child: Container(
         color: Colors.white,
-        padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 32),
+        padding: const EdgeInsets.all(34),
         child: DefaultTextStyle.merge(
           style: const TextStyle(color: Color(0xFF1A1A1A), height: 1.35),
           child: Column(

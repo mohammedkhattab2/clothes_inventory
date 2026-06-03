@@ -117,12 +117,15 @@ final GoRouter appRouter = GoRouter(
             final pageSize =
                 int.tryParse(state.uri.queryParameters['pageSize'] ?? '') ?? 50;
             final navSource = state.uri.queryParameters['navSource'];
+            final resumePending =
+                state.uri.queryParameters['resumePending'] == '1';
 
             return NoTransitionPage(
               child: BlocProvider<SalesCubit>(
                 create: (_) => getIt<SalesCubit>(),
                 child: SalesPage(
                   selectedInvoiceId: selectedInvoiceId,
+                  resumePending: resumePending,
                   fromDate: fromDate,
                   toDate: toDate,
                   accountId: accountId,

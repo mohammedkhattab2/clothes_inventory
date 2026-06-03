@@ -43,6 +43,7 @@ enum _SalePriceTier { retail, halfWholesale, wholesale }
 class SalesPage extends StatefulWidget {
   const SalesPage({
     this.selectedInvoiceId,
+    this.resumePending = false,
     this.fromDate,
     this.toDate,
     this.accountId,
@@ -54,6 +55,7 @@ class SalesPage extends StatefulWidget {
   });
 
   final int? selectedInvoiceId;
+  final bool resumePending;
   final DateTime? fromDate;
   final DateTime? toDate;
   final int? accountId;

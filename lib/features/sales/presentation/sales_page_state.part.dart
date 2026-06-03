@@ -38,6 +38,7 @@ class _SalesPageState extends State<SalesPage> {
   final _customerPhoneController = TextEditingController();
   final _licenseService = getIt<LicenseService>();
   Timer? _barcodeDebounce;
+  Timer? _customerDedupDebounce;
   int _barcodeLookupGeneration = 0;
   bool _readOnlyMode = false;
   String? _readOnlyMessage;
@@ -69,11 +70,25 @@ class _SalesPageState extends State<SalesPage> {
   _SalePriceTier _selectedSalePriceTier = _SalePriceTier.retail;
 
   void _resetCartPaymentControllers() {
-    _paidController.clear();
-    _paidWalletController.clear();
-    _headerDiscountValueController.clear();
-    _newCustomerController.clear();
-    _customerPhoneController.clear();
+    _setControllerText(_paidController, '');
+    _setControllerText(_paidWalletController, '');
+    _setControllerText(_headerDiscountValueController, '');
+    _setControllerText(_newCustomerController, '');
+    _setControllerText(_customerPhoneController, '');
+  }
+
+  void _setControllerText(TextEditingController controller, String text) {
+    if (controller.text == text &&
+        controller.selection.isValid &&
+        controller.selection.end <= text.length &&
+        controller.value.composing == TextRange.empty) {
+      return;
+    }
+    controller.value = TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
+      composing: TextRange.empty,
+    );
   }
 
   void _showLatestSnackBar(BuildContext targetContext, String message) {
@@ -97,13 +112,24 @@ class _SalesPageState extends State<SalesPage> {
     _loadInvoices();
     _refreshWritePermissionStatus();
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || widget.selectedInvoiceId == null) return;
-      _showLatestSnackBar(
-        context,
-        '${'Opened from'.tr()} ${widget.navSource ?? 'navigation'.tr()}: ${'invoice'.tr()} #${widget.selectedInvoiceId} ${'highlighted'.tr()}.',
-      );
-    });
+    if (widget.resumePending && widget.selectedInvoiceId != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        unawaited(
+          context.read<SalesCubit>().loadPendingInvoiceToCart(
+            widget.selectedInvoiceId!,
+          ),
+        );
+      });
+    } else {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || widget.selectedInvoiceId == null) return;
+        _showLatestSnackBar(
+          context,
+          '${'Opened from'.tr()} ${widget.navSource ?? 'navigation'.tr()}: ${'invoice'.tr()} #${widget.selectedInvoiceId} ${'highlighted'.tr()}.',
+        );
+      });
+    }
   }
 
   Widget _animateDialogEntrance(Widget child) {
@@ -130,6 +156,57 @@ class _SalesPageState extends State<SalesPage> {
     setState(() => _customers = items);
   }
 
+  void _scheduleCustomerDedupCheck({String? name, String? phone}) {
+    _customerDedupDebounce?.cancel();
+    _customerDedupDebounce = Timer(const Duration(milliseconds: 400), () async {
+      if (!mounted) return;
+      final cubit = context.read<SalesCubit>();
+      if (cubit.state.customerId != null) return;
+
+      final resolvedName = name ?? _newCustomerController.text;
+      final resolvedPhone = phone ?? _customerPhoneController.text;
+      if (resolvedName.trim().isEmpty && resolvedPhone.trim().isEmpty) {
+        return;
+      }
+
+      final existing = await _accountsRepo.findCustomerByNameOrPhone(
+        name: resolvedName,
+        phone: resolvedPhone,
+      );
+      if (existing == null || !mounted) return;
+
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        FocusManager.instance.primaryFocus?.unfocus();
+        cubit.selectCustomer(existing.id, phone: existing.phone);
+        _setControllerText(_newCustomerController, '');
+        _setControllerText(_customerPhoneController, existing.phone ?? '');
+        final matchedByPhone =
+            resolvedPhone.trim().isNotEmpty &&
+            AccountsRepository.customerPhonesMatch(
+              resolvedPhone,
+              existing.phone,
+            );
+        _showLatestSnackBar(
+          context,
+          matchedByPhone
+              ? 'customer.already_exists_by_phone'.tr()
+              : 'customer.already_exists'.tr(),
+        );
+      });
+    });
+  }
+
+  void _onNewCustomerNameChanged(String value) {
+    context.read<SalesCubit>().setNewCustomerName(value);
+    _scheduleCustomerDedupCheck(name: value);
+  }
+
+  void _onCustomerPhoneChanged(String value) {
+    context.read<SalesCubit>().setCustomerPhone(value);
+    _scheduleCustomerDedupCheck(phone: value);
+  }
+
   String? _phoneForCustomerId(int? customerId) {
     if (customerId == null) return null;
     for (final c in _customers) {
@@ -144,7 +221,7 @@ class _SalesPageState extends State<SalesPage> {
     if (customerId == null || currentPhone.trim().isNotEmpty) return;
     final phone = _phoneForCustomerId(customerId)?.trim() ?? '';
     if (phone.isEmpty) return;
-    _customerPhoneController.text = phone;
+    _setControllerText(_customerPhoneController, phone);
     if (mounted) {
       context.read<SalesCubit>().setCustomerPhone(phone);
     }
@@ -507,6 +584,7 @@ class _SalesPageState extends State<SalesPage> {
   @override
   void dispose() {
     _barcodeDebounce?.cancel();
+    _customerDedupDebounce?.cancel();
     _nameSearchController.dispose();
     _barcodeController.dispose();
     _barcodeFocusNode.dispose();
@@ -705,6 +783,7 @@ class _SalesPageState extends State<SalesPage> {
         .where((id) => !activeIds.contains(id))
         .toList();
     for (final id in staleControllers) {
+      _inlineQtyFocusNodes[id]?.unfocus();
       _inlineQtyControllers.remove(id)?.dispose();
     }
 
@@ -724,6 +803,7 @@ class _SalesPageState extends State<SalesPage> {
         .where((id) => !activeIds.contains(id))
         .toList();
     for (final id in staleControllers) {
+      _inlineDiscountFocusNodes[id]?.unfocus();
       _inlineDiscountControllers.remove(id)?.dispose();
     }
 
@@ -751,9 +831,14 @@ class _SalesPageState extends State<SalesPage> {
       final node = FocusNode();
       node.addListener(() {
         if (node.hasFocus) {
-          controller.selection = TextSelection(
-            baseOffset: 0,
-            extentOffset: controller.text.length,
+          final text = controller.text;
+          controller.value = TextEditingValue(
+            text: text,
+            selection: TextSelection(
+              baseOffset: 0,
+              extentOffset: text.length,
+            ),
+            composing: TextRange.empty,
           );
         }
       });
@@ -776,9 +861,14 @@ class _SalesPageState extends State<SalesPage> {
       final node = FocusNode();
       node.addListener(() {
         if (node.hasFocus) {
-          controller.selection = TextSelection(
-            baseOffset: 0,
-            extentOffset: controller.text.length,
+          final text = controller.text;
+          controller.value = TextEditingValue(
+            text: text,
+            selection: TextSelection(
+              baseOffset: 0,
+              extentOffset: text.length,
+            ),
+            composing: TextRange.empty,
           );
         }
       });
@@ -827,8 +917,11 @@ class _SalesPageState extends State<SalesPage> {
         final total = state.total;
         cubit.setPaidAmount(total);
         cubit.setPaidWalletAmount(0);
-        _paidController.text = total == 0 ? '' : total.toStringAsFixed(2);
-        _paidWalletController.text = '';
+        _setControllerText(
+          _paidController,
+          total == 0 ? '' : total.toStringAsFixed(2),
+        );
+        _setControllerText(_paidWalletController, '');
       },
       child: BlocConsumer<SalesCubit, SalesState>(
         listenWhen: (previous, current) {
@@ -890,23 +983,26 @@ class _SalesPageState extends State<SalesPage> {
                 focus: _barcodeFocusNode,
                 controller: _barcodeController,
               );
-              _paidController.clear();
-              _paidWalletController.clear();
-              _headerDiscountValueController.clear();
-              _newCustomerController.clear();
-              _customerPhoneController.clear();
+              _setControllerText(_paidController, '');
+              _setControllerText(_paidWalletController, '');
+              _setControllerText(_headerDiscountValueController, '');
+              _setControllerText(_newCustomerController, '');
+              _setControllerText(_customerPhoneController, '');
             }
             shouldClearTransient = true;
           }
           if (state.successEvent == 'pending_loaded') {
             _loadedPendingSaleId = state.pendingSaleId;
-            _headerDiscountValueController.text = state.headerDiscountValue == 0
-                ? ''
-                : state.headerDiscountValue.toStringAsFixed(2);
-            _paidController.text = '0';
-            _paidWalletController.text = '';
-            _newCustomerController.text = state.newCustomerName;
-            _customerPhoneController.text = state.customerPhone;
+            _setControllerText(
+              _headerDiscountValueController,
+              state.headerDiscountValue == 0
+                  ? ''
+                  : state.headerDiscountValue.toStringAsFixed(2),
+            );
+            _setControllerText(_paidController, '0');
+            _setControllerText(_paidWalletController, '');
+            _setControllerText(_newCustomerController, state.newCustomerName);
+            _setControllerText(_customerPhoneController, state.customerPhone);
             _backfillCustomerPhoneIfNeeded(
               state.customerId,
               state.customerPhone,
@@ -927,17 +1023,24 @@ class _SalesPageState extends State<SalesPage> {
           }
           if (state.successEvent == 'invoice_amendment_loaded') {
             _loadedPendingSaleId = null;
-            _headerDiscountValueController.text = state.headerDiscountValue == 0
-                ? ''
-                : state.headerDiscountValue.toStringAsFixed(2);
-            _paidController.text = state.paidAmount == 0
-                ? ''
-                : state.paidAmount.toStringAsFixed(2);
-            _paidWalletController.text = state.paidWalletAmount == 0
-                ? ''
-                : state.paidWalletAmount.toStringAsFixed(2);
-            _newCustomerController.text = state.newCustomerName;
-            _customerPhoneController.text = state.customerPhone;
+            _setControllerText(
+              _headerDiscountValueController,
+              state.headerDiscountValue == 0
+                  ? ''
+                  : state.headerDiscountValue.toStringAsFixed(2),
+            );
+            _setControllerText(
+              _paidController,
+              state.paidAmount == 0 ? '' : state.paidAmount.toStringAsFixed(2),
+            );
+            _setControllerText(
+              _paidWalletController,
+              state.paidWalletAmount == 0
+                  ? ''
+                  : state.paidWalletAmount.toStringAsFixed(2),
+            );
+            _setControllerText(_newCustomerController, state.newCustomerName);
+            _setControllerText(_customerPhoneController, state.customerPhone);
             _backfillCustomerPhoneIfNeeded(
               state.customerId,
               state.customerPhone,
@@ -1081,17 +1184,13 @@ class _SalesPageState extends State<SalesPage> {
                         value,
                         phone: t,
                       );
-                      _customerPhoneController.text = t;
+                      _setControllerText(_customerPhoneController, t);
                       if (value != null) {
-                        _newCustomerController.clear();
+                        _setControllerText(_newCustomerController, '');
                       }
                     },
-                    onNewCustomerNameChanged: context
-                        .read<SalesCubit>()
-                        .setNewCustomerName,
-                    onCustomerPhoneChanged: context
-                        .read<SalesCubit>()
-                        .setCustomerPhone,
+                    onNewCustomerNameChanged: _onNewCustomerNameChanged,
+                    onCustomerPhoneChanged: _onCustomerPhoneChanged,
                     onHeaderDiscountKindChanged: (kind) =>
                         context.read<SalesCubit>().setHeaderDiscountKind(kind),
                     onHeaderDiscountValueChanged: (v) => context
@@ -1108,13 +1207,18 @@ class _SalesPageState extends State<SalesPage> {
                       WidgetsBinding.instance.addPostFrameCallback((_) {
                         if (!mounted) return;
                         final updated = context.read<SalesCubit>().state;
-                        _paidController.text = updated.paidAmount == 0
-                            ? ''
-                            : updated.paidAmount.toStringAsFixed(2);
-                        _paidWalletController.text =
-                            updated.paidWalletAmount == 0
-                            ? ''
-                            : updated.paidWalletAmount.toStringAsFixed(2);
+                        _setControllerText(
+                          _paidController,
+                          updated.paidAmount == 0
+                              ? ''
+                              : updated.paidAmount.toStringAsFixed(2),
+                        );
+                        _setControllerText(
+                          _paidWalletController,
+                          updated.paidWalletAmount == 0
+                              ? ''
+                              : updated.paidWalletAmount.toStringAsFixed(2),
+                        );
                       });
                     },
                     onCompleteSale: () => _attemptCheckout(cubit, state),
@@ -1371,18 +1475,6 @@ class _SalesPageState extends State<SalesPage> {
         _activeInvoiceId = saleId;
       }
     });
-  }
-
-  // ignore: unused_element
-  Future<void> _loadPendingInvoiceToCart(BuildContext pageContext) async {
-    final saleId = _activeInvoiceId;
-    if (saleId == null) {
-      _showLatestSnackBar(pageContext, 'Select a pending invoice first.'.tr());
-      return;
-    }
-
-    final cubit = pageContext.read<SalesCubit>();
-    await cubit.loadPendingInvoiceToCart(saleId);
   }
 
   // ignore: unused_element

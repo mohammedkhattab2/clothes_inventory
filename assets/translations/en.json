@@ -992,5 +992,12 @@
   "settings.preview_customer_name": "Sample customer",
   "settings.preview_product_a": "Product A",
   "settings.preview_product_b": "Product B",
-  "inventory.barcode_not_found": "No product matches this barcode."
+  "inventory.barcode_not_found": "No product matches this barcode.",
+  "ocr.missing_tesseract": "tesseract.exe missing next to app",
+  "ocr.missing_tessdata_dir": "tessdata folder missing",
+  "ocr.missing_eng_traineddata": "English language data missing",
+  "ocr.missing_ara_traineddata": "Arabic language data missing",
+  "ocr.platform_unsupported": "OCR not supported on this platform",
+  "customer.already_exists": "Customer already exists and was selected.",
+  "customer.already_exists_by_phone": "A customer with this phone already exists and was selected."
 }

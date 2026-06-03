@@ -74,7 +74,6 @@ class _ProductsPageState extends State<ProductsPage> {
     _productsCubit = getIt<ProductsCubit>();
     _productRepository = getIt<ProductRepository>();
     _barcodeLabelPrinter = const ProductBarcodeLabelPrinter(
-      paperWidthMm: 58,
       printerPrefs: ThermalPrinterPreferences(),
     );
     _restoreProductsPageState();

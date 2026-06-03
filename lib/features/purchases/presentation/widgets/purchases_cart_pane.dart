@@ -999,6 +999,8 @@ class _AnimatedAdvancedSection extends StatefulWidget {
 class _AnimatedAdvancedSectionState extends State<_AnimatedAdvancedSection> {
   late bool _expanded = widget.initiallyExpanded;
 
+  static const double _headerHeight = 40;
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
@@ -1020,22 +1022,20 @@ class _AnimatedAdvancedSectionState extends State<_AnimatedAdvancedSection> {
               ),
             ),
           )
-        : AnimatedCrossFade(
-            firstChild: const SizedBox.shrink(),
-            secondChild: Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: widget.child,
+        : ClipRect(
+            child: AnimatedAlign(
+              heightFactor: _expanded ? 1.0 : 0.0,
+              duration: const Duration(milliseconds: 220),
+              curve: Curves.easeOutCubic,
+              alignment: Alignment.topCenter,
+              child: Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: widget.child,
+              ),
             ),
-            crossFadeState: _expanded
-                ? CrossFadeState.showSecond
-                : CrossFadeState.showFirst,
-            duration: const Duration(milliseconds: 220),
-            sizeCurve: Curves.easeOutCubic,
           );
 
-    final panel = AnimatedContainer(
-      duration: const Duration(milliseconds: 220),
-      curve: Curves.easeOutCubic,
+    return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(14),
@@ -1063,11 +1063,11 @@ class _AnimatedAdvancedSectionState extends State<_AnimatedAdvancedSection> {
             ? MainAxisSize.max
             : MainAxisSize.min,
         children: [
-          InkWell(
-            borderRadius: BorderRadius.circular(8),
-            onTap: () => setState(() => _expanded = !_expanded),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 6),
+          SizedBox(
+            height: _headerHeight,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(8),
+              onTap: () => setState(() => _expanded = !_expanded),
               child: Row(
                 children: [
                   Icon(
@@ -1084,11 +1084,6 @@ class _AnimatedAdvancedSectionState extends State<_AnimatedAdvancedSection> {
                       ),
                     ),
                   ),
-                  AnimatedRotation(
-                    turns: _expanded ? 0.5 : 0,
-                    duration: const Duration(milliseconds: 220),
-                    child: const Icon(Icons.keyboard_arrow_down),
-                  ),
                 ],
               ),
             ),
@@ -1097,7 +1092,5 @@ class _AnimatedAdvancedSectionState extends State<_AnimatedAdvancedSection> {
         ],
       ),
     );
-
-    return panel;
   }
 }

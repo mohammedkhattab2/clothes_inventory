@@ -158,11 +158,12 @@ class PurchasesCartTableContent extends StatelessWidget {
                             final formatted = formatQuantity(item);
                             if (!focusNode.hasFocus &&
                                 controller.text != formatted) {
-                              controller.value = controller.value.copyWith(
+                              controller.value = TextEditingValue(
                                 text: formatted,
                                 selection: TextSelection.collapsed(
                                   offset: formatted.length,
                                 ),
+                                composing: TextRange.empty,
                               );
                             }
 

@@ -239,6 +239,22 @@ dart run tool/generate_license.dart 9a1f... ShopA LIC-2026-001 2027-04-10T23:59:
 - تسجيل تاريخ الانتهاء وعدد مرات النقل.
 - مشاركة قناة الدعم مع العميل.
 
+## حزمة OCR (Windows)
+
+لتشغيل OCR في نسخة Release، يجب أن يحتوي مجلد `ocr/` في جذر المشروع قبل البناء على:
+
+- `tesseract.exe`
+- `tessdata/eng.traineddata`
+- `tessdata/ara.traineddata`
+- ملفات DLL المطلوبة لـ Tesseract (إن وُجدت)
+
+عند `flutter build windows --release`، يتم نسخ المجلد بالكامل إلى:
+`build/windows/x64/runner/Release/ocr/`
+
+**مهم:** عند تسليم التطبيق للعميل، انسخ مجلد Release بالكامل (بما فيه `DeltaErp.exe` و `ocr/` و `data/`). نسخ الملف التنفيذي وحده يؤدي إلى ظهور "OCR Not Ready".
+
+تحقق من الجاهزية من: الإعدادات → Diagnostics → OCR Status.
+
 ## المراحل التنفيذية القادمة
 
 1. تنفيذ خدمة Machine Fingerprint.

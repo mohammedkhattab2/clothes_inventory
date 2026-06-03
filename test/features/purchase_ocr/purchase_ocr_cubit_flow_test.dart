@@ -35,6 +35,9 @@ class _FakePurchaseOcrService implements PurchaseOcrService {
   };
 
   @override
+  List<String> describeOcrMissingComponents() => const [];
+
+  @override
   Future<String> getTesseractVersion() async => 'fake-tesseract 0.0.0';
 
   @override

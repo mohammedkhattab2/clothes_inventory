@@ -2,8 +2,32 @@
 class ProductPriceValidators {
   ProductPriceValidators._();
 
+  static const double _epsilon = 0.000001;
+
   static bool isRetailPriceMissing(double? sale) =>
-      sale == null || sale <= 0.000001;
+      sale == null || sale <= _epsilon;
+
+  static bool isActivePriceBelowCost(double price, double purchase) =>
+      price > _epsilon && purchase > _epsilon && price < purchase - _epsilon;
+
+  static bool anyActiveSalePriceBelowCost({
+    required double retail,
+    required double purchase,
+    double? halfWholesale,
+    double? wholesale,
+  }) {
+    if (isActivePriceBelowCost(retail, purchase)) {
+      return true;
+    }
+    if (halfWholesale != null &&
+        isActivePriceBelowCost(halfWholesale, purchase)) {
+      return true;
+    }
+    if (wholesale != null && isActivePriceBelowCost(wholesale, purchase)) {
+      return true;
+    }
+    return false;
+  }
 
   static String? retailPriceValidator(
     String? value,
@@ -16,7 +40,9 @@ class ProductPriceValidators {
     if (isRetailPriceMissing(sale)) {
       return requiredMessage;
     }
-    if (purchasePrice != null && sale! < purchasePrice) {
+    if (purchasePrice != null &&
+        purchasePrice > _epsilon &&
+        isActivePriceBelowCost(sale!, purchasePrice)) {
       return belowCostMessage;
     }
     return null;

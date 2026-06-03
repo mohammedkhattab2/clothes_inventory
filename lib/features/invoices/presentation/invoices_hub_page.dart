@@ -993,7 +993,7 @@ class _InvoicesHubPageState extends State<InvoicesHubPage>
       onCompletePendingSelected: () {
         final id = _activeSalesInvoiceId;
         if (id == null) return;
-        context.go('/sales?selectedInvoiceId=$id&navSource=invoices');
+        context.go('/sales?selectedInvoiceId=$id&resumePending=1&navSource=invoices');
       },
       onTypeFilterChanged: (filter) {
         setState(() {

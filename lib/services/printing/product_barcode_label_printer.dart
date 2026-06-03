@@ -8,11 +8,19 @@ import 'package:printing/printing.dart';
 
 class ProductBarcodeLabelPrinter {
   const ProductBarcodeLabelPrinter({
-    required this.paperWidthMm,
     required this.printerPrefs,
   });
 
-  final double paperWidthMm;
+  /// Printable sticker area (mm).
+  static const double labelWidthMm = 40;
+  static const double labelHeightMm = 25;
+
+  /// Gap between consecutive stickers on the roll (mm).
+  static const double gapMm = 3;
+
+  /// Safe padding inside the sticker (mm).
+  static const double innerMarginMm = 1.5;
+
   final ThermalPrinterPreferences printerPrefs;
 
   Future<Uint8List> buildLabelPdfBytes({
@@ -98,12 +106,11 @@ class ProductBarcodeLabelPrinter {
       ),
     );
 
-    final pageWidthPt = paperWidthMm * PdfPageFormat.mm;
-    final pageFormat = PdfPageFormat(
-      pageWidthPt,
-      62 * PdfPageFormat.mm,
-      marginAll: 2.5 * PdfPageFormat.mm,
-    );
+    final pageWidthPt = labelWidthMm * PdfPageFormat.mm;
+    final pageHeightPt = (labelHeightMm + gapMm) * PdfPageFormat.mm;
+    final labelHeightPt = labelHeightMm * PdfPageFormat.mm;
+    final innerPaddingPt = innerMarginMm * PdfPageFormat.mm;
+    final pageFormat = PdfPageFormat(pageWidthPt, pageHeightPt, marginAll: 0);
 
     final showProductRow = productName.isNotEmpty || amountText.isNotEmpty;
 
@@ -114,66 +121,74 @@ class ProductBarcodeLabelPrinter {
           build: (context) {
             return pw.Directionality(
               textDirection: pw.TextDirection.rtl,
-              child: pw.Column(
-                crossAxisAlignment: pw.CrossAxisAlignment.stretch,
-                mainAxisAlignment: pw.MainAxisAlignment.center,
-                children: [
-                  if (companyName.isNotEmpty)
-                    pw.Text(
-                      companyName,
-                      textAlign: pw.TextAlign.center,
-                      maxLines: 1,
-                      style: pw.TextStyle(
-                        fontSize: 11,
-                        fontWeight: pw.FontWeight.bold,
-                      ),
-                    ),
-                  if (companyName.isNotEmpty) pw.SizedBox(height: 2),
-                  if (showProductRow)
-                    pw.Row(
-                      crossAxisAlignment: pw.CrossAxisAlignment.start,
-                      children: [
-                        if (amountText.isNotEmpty)
-                          pw.Expanded(
-                            flex: 2,
-                            child: pw.Text(
-                              amountText,
-                              textAlign: pw.TextAlign.right,
-                              maxLines: 1,
-                              style: pw.TextStyle(
-                                fontSize: 11,
-                                fontWeight: pw.FontWeight.bold,
+              child: pw.SizedBox(
+                height: labelHeightPt,
+                child: pw.Padding(
+                  padding: pw.EdgeInsets.all(innerPaddingPt),
+                  child: pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+                    mainAxisAlignment: pw.MainAxisAlignment.center,
+                    children: [
+                      if (companyName.isNotEmpty)
+                        pw.Text(
+                          companyName,
+                          textAlign: pw.TextAlign.center,
+                          maxLines: 1,
+                          style: pw.TextStyle(
+                            fontSize: 7.5,
+                            fontWeight: pw.FontWeight.bold,
+                          ),
+                        ),
+                      if (companyName.isNotEmpty) pw.SizedBox(height: 1),
+                      if (showProductRow)
+                        pw.Row(
+                          crossAxisAlignment: pw.CrossAxisAlignment.start,
+                          children: [
+                            if (amountText.isNotEmpty)
+                              pw.Expanded(
+                                flex: 2,
+                                child: pw.Text(
+                                  amountText,
+                                  textAlign: pw.TextAlign.right,
+                                  maxLines: 1,
+                                  style: pw.TextStyle(
+                                    fontSize: 7.5,
+                                    fontWeight: pw.FontWeight.bold,
+                                  ),
+                                ),
                               ),
-                            ),
-                          ),
-                        if (amountText.isNotEmpty && productName.isNotEmpty)
-                          pw.SizedBox(width: 4),
-                        if (productName.isNotEmpty)
-                          pw.Expanded(
-                            flex: 3,
-                            child: pw.Text(
-                              productName,
-                              textAlign: pw.TextAlign.left,
-                              maxLines: 2,
-                              style: const pw.TextStyle(fontSize: 10),
-                            ),
-                          ),
-                      ],
-                    ),
-                  if (showProductRow) pw.SizedBox(height: 2),
-                  pw.BarcodeWidget(
-                    barcode: bc.Barcode.code128(),
-                    data: barcodeValue,
-                    height: 9 * PdfPageFormat.mm,
-                    drawText: false,
+                            if (amountText.isNotEmpty && productName.isNotEmpty)
+                              pw.SizedBox(width: 2),
+                            if (productName.isNotEmpty)
+                              pw.Expanded(
+                                flex: 3,
+                                child: pw.Text(
+                                  productName,
+                                  textAlign: pw.TextAlign.left,
+                                  maxLines: 2,
+                                  style: const pw.TextStyle(fontSize: 7),
+                                ),
+                              ),
+                          ],
+                        ),
+                      if (showProductRow) pw.SizedBox(height: 1),
+                      pw.Expanded(
+                        child: pw.BarcodeWidget(
+                          barcode: bc.Barcode.code128(),
+                          data: barcodeValue,
+                          height: 6.5 * PdfPageFormat.mm,
+                          drawText: false,
+                        ),
+                      ),
+                      pw.Text(
+                        barcodeValue,
+                        textAlign: pw.TextAlign.center,
+                        maxLines: 1,
+                        style: const pw.TextStyle(fontSize: 7),
+                      ),
+                    ],
                   ),
-                  pw.SizedBox(height: 2),
-                  pw.Text(
-                    barcodeValue,
-                    textAlign: pw.TextAlign.center,
-                    style: const pw.TextStyle(fontSize: 10),
-                  ),
-                ],
+                ),
               ),
             );
           },

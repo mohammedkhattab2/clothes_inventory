@@ -992,5 +992,12 @@
   "settings.preview_customer_name": "عميل تجريبي",
   "settings.preview_product_a": "منتج أ",
   "settings.preview_product_b": "منتج ب",
-  "inventory.barcode_not_found": "لا يوجد صنف بهذا الباركود."
+  "inventory.barcode_not_found": "لا يوجد صنف بهذا الباركود.",
+  "ocr.missing_tesseract": "ملف tesseract.exe غير موجود بجانب التطبيق",
+  "ocr.missing_tessdata_dir": "مجلد tessdata غير موجود",
+  "ocr.missing_eng_traineddata": "ملف اللغة الإنجليزية غير موجود",
+  "ocr.missing_ara_traineddata": "ملف اللغة العربية غير موجود",
+  "ocr.platform_unsupported": "OCR غير مدعوم على هذا النظام",
+  "customer.already_exists": "العميل مسجل من قبل وتم اختياره.",
+  "customer.already_exists_by_phone": "يوجد عميل مسجل بهذا الرقم وتم اختياره."
 }

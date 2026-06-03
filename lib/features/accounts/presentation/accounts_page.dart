@@ -281,6 +281,30 @@ class _AccountsViewState extends State<_AccountsView> {
                                 });
 
                                 try {
+                                  if (accountType == 'customer') {
+                                    final existing = await getIt<
+                                            AccountsRepository>()
+                                        .findCustomerByNameOrPhone(
+                                      name: name,
+                                      phone: phoneController.text.trim(),
+                                    );
+                                    if (existing != null) {
+                                      if (!dialogContext.mounted) return;
+                                      Navigator.of(dialogContext).pop(false);
+                                      if (mounted) {
+                                        ScaffoldMessenger.of(context)
+                                            .showSnackBar(
+                                          SnackBar(
+                                            content: Text(
+                                              'customer.already_exists'.tr(),
+                                            ),
+                                          ),
+                                        );
+                                      }
+                                      return;
+                                    }
+                                  }
+
                                   await getIt<AccountsRepository>()
                                       .createAccount(
                                         name: name,

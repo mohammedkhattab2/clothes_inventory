@@ -53,7 +53,20 @@ set(OCR_SOURCE_DIR "${CMAKE_SOURCE_DIR}/../ocr")
 if(NOT EXISTS "${OCR_SOURCE_DIR}")
   message(FATAL_ERROR "OCR folder not found in project root!")
 endif()
-message(STATUS "Copying OCR folder to output directory...")
+
+set(OCR_REQUIRED_FILES
+  "${OCR_SOURCE_DIR}/tesseract.exe"
+  "${OCR_SOURCE_DIR}/tessdata/eng.traineddata"
+  "${OCR_SOURCE_DIR}/tessdata/ara.traineddata"
+)
+foreach(OCR_REQUIRED_FILE IN LISTS OCR_REQUIRED_FILES)
+  if(NOT EXISTS "${OCR_REQUIRED_FILE}")
+    message(FATAL_ERROR
+      "Missing OCR runtime file: ${OCR_REQUIRED_FILE}\n"
+      "Place tesseract.exe and eng/ara traineddata under the project ocr/ folder before building.")
+  endif()
+endforeach()
+message(STATUS "OCR bundle validated; copying to output directory...")
 
 # Application build; see runner/CMakeLists.txt.
 add_subdirectory("runner")
@@ -111,4 +124,8 @@ install(DIRECTORY "${PROJECT_BUILD_DIR}/${FLUTTER_ASSET_DIR_NAME}"
 # Install the AOT library on non-Debug builds only.
 install(FILES "${AOT_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}"
   CONFIGURATIONS Profile;Release
+  COMPONENT Runtime)
+
+install(DIRECTORY "${OCR_SOURCE_DIR}/"
+  DESTINATION "${CMAKE_INSTALL_PREFIX}/ocr"
   COMPONENT Runtime)

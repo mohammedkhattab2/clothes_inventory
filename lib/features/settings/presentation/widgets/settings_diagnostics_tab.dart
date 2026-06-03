@@ -11,6 +11,7 @@ class SettingsSystemDiagnosticsData {
     required this.healthOk,
     required this.healthMessage,
     required this.ocrReady,
+    required this.ocrMissingDetails,
     required this.ocrVersion,
     required this.lastOcrErrorCode,
     required this.lastOcrErrorType,
@@ -27,6 +28,7 @@ class SettingsSystemDiagnosticsData {
       healthOk: false,
       healthMessage: 'Not available',
       ocrReady: false,
+      ocrMissingDetails: [],
       ocrVersion: 'Not available',
       lastOcrErrorCode: null,
       lastOcrErrorType: null,
@@ -42,6 +44,7 @@ class SettingsSystemDiagnosticsData {
   final bool healthOk;
   final String healthMessage;
   final bool ocrReady;
+  final List<String> ocrMissingDetails;
   final String ocrVersion;
   final String? lastOcrErrorCode;
   final String? lastOcrErrorType;
@@ -169,7 +172,9 @@ class SettingsDiagnosticsTab extends StatelessWidget {
                         label: 'OCR Status'.tr(),
                         value: data.ocrReady
                             ? 'OCR Ready'.tr()
-                            : 'OCR Not Ready'.tr(),
+                            : data.ocrMissingDetails.isEmpty
+                            ? 'OCR Not Ready'.tr()
+                            : '${'OCR Not Ready'.tr()}: ${data.ocrMissingDetails.map((key) => key.tr()).join(', ')}',
                         valueColor: ocrTone,
                       ),
                       _MetricRow(

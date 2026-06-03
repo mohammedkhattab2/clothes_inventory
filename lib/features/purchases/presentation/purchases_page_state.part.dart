@@ -35,7 +35,6 @@ class _PurchasesPageState extends State<PurchasesPage> {
   );
 
   final _barcodeLabelPrinter = const ProductBarcodeLabelPrinter(
-    paperWidthMm: 58,
     printerPrefs: ThermalPrinterPreferences(),
   );
   bool? _printInvoiceAfterCheckout;

@@ -48,7 +48,6 @@ class _InventoryViewState extends State<_InventoryView> {
   late Future<List<InventoryStockRow>> _rowsFuture;
   final _productRepository = getIt<ProductRepository>();
   final _barcodeLabelPrinter = const ProductBarcodeLabelPrinter(
-    paperWidthMm: 58,
     printerPrefs: ThermalPrinterPreferences(),
   );
   final _inventoryImportService = InventoryProductsImportService();
@@ -1532,10 +1531,12 @@ class _InventoryViewState extends State<_InventoryView> {
                                         return;
                                       }
 
-                                      if (purchase > 0 &&
-                                          (sale < purchase ||
-                                              half < purchase ||
-                                              whole < purchase)) {
+                                      if (ProductPriceValidators.anyActiveSalePriceBelowCost(
+                                        retail: sale,
+                                        purchase: purchase,
+                                        halfWholesale: half,
+                                        wholesale: whole,
+                                      )) {
                                         setDialogState(() {
                                           submitError =
                                               'Sale price cannot be less than purchase price.'
@@ -2423,10 +2424,12 @@ class _InventoryViewState extends State<_InventoryView> {
                                   return;
                                 }
 
-                                if (purchase > 0 &&
-                                    (sale < purchase ||
-                                        half < purchase ||
-                                        whole < purchase)) {
+                                if (ProductPriceValidators.anyActiveSalePriceBelowCost(
+                                  retail: sale,
+                                  purchase: purchase,
+                                  halfWholesale: half,
+                                  wholesale: whole,
+                                )) {
                                   setDialogState(() {
                                     submitError =
                                         'Sale price cannot be less than purchase price.'
