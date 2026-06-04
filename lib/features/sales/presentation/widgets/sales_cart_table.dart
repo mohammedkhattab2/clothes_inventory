@@ -289,8 +289,10 @@ class SalesCartTable extends StatelessWidget {
                               final isOverStockDraft =
                                   draftParsed != null &&
                                   draftParsed > item.availableStock + 0.000001;
+                              final hasActiveQtyDraft =
+                                  draftRaw != null && draftRaw.trim().isNotEmpty;
 
-                              if (!focusNode.hasFocus &&
+                              if (!hasActiveQtyDraft &&
                                   controller.text != formatted) {
                                 _applyInlineControllerText(
                                   controller,
@@ -358,16 +360,17 @@ class SalesCartTable extends StatelessWidget {
                                     onSubmitted: (value) {
                                       onApplyInlineQuantity(item, value);
                                       onQuantityDraftCleared(item.productId);
+                                      focusNode.unfocus();
                                     },
                                     onTapOutside: (_) {
                                       final draft =
                                           inlineQuantityDrafts[item.productId];
-                                      if (draft == null ||
-                                          draft.trim().isEmpty) {
-                                        return;
+                                      if (draft != null &&
+                                          draft.trim().isNotEmpty) {
+                                        onApplyInlineQuantity(item, draft);
+                                        onQuantityDraftCleared(item.productId);
                                       }
-                                      onApplyInlineQuantity(item, draft);
-                                      onQuantityDraftCleared(item.productId);
+                                      focusNode.unfocus();
                                     },
                                   ),
                                 ),
@@ -443,8 +446,10 @@ class SalesCartTable extends StatelessWidget {
                               final exceedsGross =
                                   parsedDraft != null &&
                                   parsedDraft > gross + 0.000001;
+                              final hasActiveDiscountDraft =
+                                  draftRaw != null && draftRaw.trim().isNotEmpty;
 
-                              if (!focusNode.hasFocus &&
+                              if (!hasActiveDiscountDraft &&
                                   controller.text != formatted) {
                                 _applyInlineControllerText(
                                   controller,
@@ -498,16 +503,17 @@ class SalesCartTable extends StatelessWidget {
                                     onSubmitted: (value) {
                                       onApplyInlineDiscount(item, value);
                                       onDiscountDraftCleared(item.productId);
+                                      focusNode.unfocus();
                                     },
                                     onTapOutside: (_) {
                                       final draft =
                                           inlineDiscountDrafts[item.productId];
-                                      if (draft == null ||
-                                          draft.trim().isEmpty) {
-                                        return;
+                                      if (draft != null &&
+                                          draft.trim().isNotEmpty) {
+                                        onApplyInlineDiscount(item, draft);
+                                        onDiscountDraftCleared(item.productId);
                                       }
-                                      onApplyInlineDiscount(item, draft);
-                                      onDiscountDraftCleared(item.productId);
+                                      focusNode.unfocus();
                                     },
                                   ),
                                 ),
@@ -554,6 +560,7 @@ class SalesCartTable extends StatelessWidget {
                                       onRemoveItem(item.productId);
                                       return;
                                     }
+                                    onQuantityDraftCleared(item.productId);
                                     onUpdateItemQuantity(
                                       item.productId,
                                       nextQuantity,
@@ -582,6 +589,9 @@ class SalesCartTable extends StatelessWidget {
                                               item.availableStock + 0.000001) {
                                             return;
                                           }
+                                          onQuantityDraftCleared(
+                                            item.productId,
+                                          );
                                           onUpdateItemQuantity(
                                             item.productId,
                                             nextQuantity,
