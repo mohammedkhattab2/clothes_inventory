@@ -1,9 +1,12 @@
 import 'dart:typed_data';
 
 import 'package:delta_erp/features/invoices/domain/invoice_print_model.dart';
+import 'package:delta_erp/services/pdf/invoice_pdf_theme.dart';
+import 'package:delta_erp/services/pdf/thermal_invoice_pdf_builder.dart';
 import 'package:delta_erp/services/pdf/thermal_invoice_pdf_document.dart';
 import 'package:delta_erp/services/printing/invoice_printer.dart';
 import 'package:delta_erp/services/printing/thermal_printer_preferences.dart';
+import 'package:pdf/pdf.dart';
 import 'package:printing/printing.dart';
 
 /// Concrete thermal printer that generates a narrow receipt-style PDF
@@ -26,6 +29,7 @@ class ThermalPdfInvoicePrinter implements InvoicePrinter {
 
   @override
   Future<void> print(InvoicePrintModel invoice) async {
+    final pageFormat = _pageFormatFor(invoice);
     final pdfBytes = await _buildPdf(invoice);
     final jobName = 'invoice_${invoice.invoiceNumber}';
 
@@ -35,6 +39,7 @@ class ThermalPdfInvoicePrinter implements InvoicePrinter {
       await Printing.directPrintPdf(
         printer: savedPrinter,
         onLayout: (_) async => pdfBytes,
+        format: pageFormat,
         name: jobName,
       );
       return;
@@ -45,10 +50,19 @@ class ThermalPdfInvoicePrinter implements InvoicePrinter {
     final ok = await Printing.layoutPdf(
       name: jobName,
       onLayout: (_) async => pdfBytes,
+      format: pageFormat,
     );
     if (ok == false) {
       throw StateError('Printing was cancelled.');
     }
+  }
+
+  PdfPageFormat _pageFormatFor(InvoicePrintModel invoice) {
+    final pageHeightMm = thermalEstimatedPageHeightMm(invoice, paperWidthMm);
+    return InvoicePdfTheme.thermalPageFormat(
+      paperWidthMm: paperWidthMm,
+      pageHeightMm: pageHeightMm,
+    );
   }
 
   Future<Uint8List> _buildPdf(InvoicePrintModel invoice) async {

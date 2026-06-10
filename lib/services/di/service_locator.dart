@@ -395,7 +395,10 @@ Future<void> setupServiceLocator() async {
 
   if (!getIt.isRegistered<SalesInvoicePdfService>()) {
     getIt.registerLazySingleton<SalesInvoicePdfService>(
-      () => SalesInvoicePdfService(getIt<SaleInvoicePrintDataBuilder>()),
+      () => SalesInvoicePdfService(
+        getIt<SaleInvoicePrintDataBuilder>(),
+        getIt<CompanySettingsService>(),
+      ),
     );
   }
 

@@ -6,8 +6,6 @@ class _SalesPageState extends State<SalesPage> {
   final _pdfService = getIt<SalesInvoicePdfService>();
   final _invoiceScrollController = ScrollController();
   final _dateFormat = DateFormat('yyyy-MM-dd HH:mm');
-  bool? _printInvoiceAfterCheckout;
-  final _invoicePrintPreferences = const InvoicePrintPreferences();
   late final InvoicePrintModelFactory _invoicePrintFactory =
       InvoicePrintModelFactory(
         getIt<SaleInvoicePrintDataBuilder>(),
@@ -288,31 +286,15 @@ class _SalesPageState extends State<SalesPage> {
     }
   }
 
-  Future<bool?> _confirmPrintInvoiceAfterCheckout(BuildContext context) {
-    return showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text('checkout.print_invoice_prompt'.tr()),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: Text('checkout.print_invoice_no'.tr()),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: Text('checkout.print_invoice_yes'.tr()),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _printSaleInvoiceDirect(int saleId) async {
+  Future<void> _promptCheckoutInvoicePrintForSale(int saleId) async {
     try {
       final model = await _invoicePrintFactory.buildForSale(saleId);
       if (model == null || !mounted) return;
-      final config = await _invoicePrintPreferences.load();
-      await _invoicePrintManager.printInvoice(model, config);
+      await promptCheckoutInvoicePrint(
+        context: context,
+        invoice: model,
+        printManager: _invoicePrintManager,
+      );
     } catch (e) {
       if (!mounted) return;
       _showLatestSnackBar(context, '${'Failed to print invoice'.tr()}: $e');
@@ -328,13 +310,6 @@ class _SalesPageState extends State<SalesPage> {
     if (!qtyOk) return;
     final discountOk = _commitInlineDiscountDrafts(context, state.cart);
     if (!discountOk) return;
-
-    _printInvoiceAfterCheckout = null;
-    if (state.editingSaleId == null && _loadedPendingSaleId == null) {
-      _printInvoiceAfterCheckout = await _confirmPrintInvoiceAfterCheckout(
-        context,
-      );
-    }
 
     if (state.editingSaleId != null) {
       final saleId = state.editingSaleId!;
@@ -936,12 +911,7 @@ class _SalesPageState extends State<SalesPage> {
           if (state.successInvoiceId != null) {
             final event = state.successEvent ?? 'sale_saved';
             final invoiceId = state.successInvoiceId!;
-            if (_printInvoiceAfterCheckout == true &&
-                event != 'pending_saved' &&
-                event != 'sale_amended') {
-              unawaited(_printSaleInvoiceDirect(invoiceId));
-            }
-            _printInvoiceAfterCheckout = null;
+            final shouldOpenPreview = event != 'pending_saved';
             if (event == 'pending_completed' || event == 'sale_amended') {
               _loadedPendingSaleId = null;
             }
@@ -976,6 +946,9 @@ class _SalesPageState extends State<SalesPage> {
               _ => '${'Sale saved'.tr()}: #${state.successInvoiceId}',
             };
             _showLatestSnackBar(context, successMessage);
+            if (shouldOpenPreview) {
+              unawaited(_promptCheckoutInvoicePrintForSale(invoiceId));
+            }
             if (event != 'pending_completed') {
               _nameSearchController.clear();
               _barcodeController.clear();

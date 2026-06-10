@@ -1,6 +1,7 @@
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:delta_erp/features/settings/presentation/widgets/settings_luxury_components.dart';
+import 'package:delta_erp/services/printing/thermal_printer_presets.dart';
 
 class SettingsCompanyTab extends StatelessWidget {
   const SettingsCompanyTab({
@@ -296,6 +297,24 @@ class SettingsCompanyTab extends StatelessWidget {
                           label: Text('settings.clear_selection'.tr()),
                         ),
                     ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'settings.thermal_printer_350b_hint'.tr(
+                      namedArgs: {
+                        'model': ThermalPrinterPresets.modelName,
+                        'invoiceWidth':
+                            ThermalPrinterPresets.recommendedInvoiceWidthMm
+                                .toStringAsFixed(0),
+                        'labelWidth': ThermalPrinterPresets.labelWidthMm
+                            .toStringAsFixed(0),
+                        'labelHeight': ThermalPrinterPresets.labelHeightMm
+                            .toStringAsFixed(0),
+                      },
+                    ),
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
                   ),
                 ],
               ),

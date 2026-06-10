@@ -5,10 +5,9 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:delta_erp/core/config/company_settings_service.dart';
 import 'package:delta_erp/features/invoices/domain/a4_invoice_view_data.dart';
 import 'package:delta_erp/services/database/app_database.dart';
-import 'package:delta_erp/services/pdf/a4_invoice_rtl_pdf_builder.dart';
+import 'package:delta_erp/services/pdf/a4_invoice_pdf_document.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
-import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 
 class PurchaseInvoicePdfService {
@@ -112,12 +111,12 @@ class PurchaseInvoicePdfService {
       invoiceFooterImageBytes:
           await _companySettingsService.loadFooterImageBytes(),
     );
-    final doc = await _createDocumentWithSafeFonts();
-    final companyLogo = await _loadCompanyLogo();
+    final logoBytes = await _companySettingsService.loadLogoBytes();
 
-    buildA4RtlInvoicePage(document: doc, data: invoiceData, logo: companyLogo);
-
-    return doc.save();
+    return buildA4InvoicePdfDocument(
+      data: invoiceData,
+      logoBytes: logoBytes,
+    );
   }
 
   Future<void> printInvoice(int purchaseId) async {
@@ -205,35 +204,4 @@ class PurchaseInvoicePdfService {
     await file.writeAsBytes(bytes, flush: true);
     return file;
   }
-
-  Future<pw.MemoryImage?> _loadCompanyLogo() async {
-    final bytes = await _companySettingsService.loadLogoBytes();
-    if (bytes == null) return null;
-    return pw.MemoryImage(bytes);
-  }
-
-  Future<pw.Document> _createDocumentWithSafeFonts() async {
-    try {
-      final baseFont = await PdfGoogleFonts.notoNaskhArabicRegular();
-      final boldFont = await PdfGoogleFonts.notoNaskhArabicBold();
-      return pw.Document(
-        theme: pw.ThemeData.withFont(
-          base: baseFont,
-          bold: boldFont,
-          italic: baseFont,
-          boldItalic: boldFont,
-        ),
-      );
-    } catch (e) {
-      if (_isArabicLocale()) {
-        throw StateError(
-          'تعذر تحميل خط عربي للطباعة. تأكد من الاتصال بالإنترنت ثم أعد المحاولة. ($e)',
-        );
-      }
-      return pw.Document();
-    }
-  }
-
-  bool _isArabicLocale() =>
-      Intl.getCurrentLocale().toLowerCase().startsWith('ar');
 }

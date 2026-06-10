@@ -1,17 +1,16 @@
 import 'package:easy_localization/easy_localization.dart';
 import 'package:delta_erp/features/invoices/domain/a4_invoice_view_data.dart';
+import 'package:delta_erp/services/pdf/invoice_pdf_theme.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
-const _marginMm = 12.0;
-
-final _tableColumnWidths = {
-  0: const pw.FlexColumnWidth(1.1),
-  1: const pw.FlexColumnWidth(1.1),
-  2: const pw.FlexColumnWidth(1.2),
-  3: const pw.FlexColumnWidth(0.9),
-  4: const pw.FlexColumnWidth(2.4),
-  5: const pw.FlexColumnWidth(1.2),
+const _tableColumnWidths = {
+  0: pw.FlexColumnWidth(1.1),
+  1: pw.FlexColumnWidth(1.1),
+  2: pw.FlexColumnWidth(1.2),
+  3: pw.FlexColumnWidth(0.9),
+  4: pw.FlexColumnWidth(2.4),
+  5: pw.FlexColumnWidth(1.2),
 };
 
 void buildA4RtlInvoicePage({
@@ -27,7 +26,8 @@ void buildA4RtlInvoicePage({
       : null;
   final dateText = DateFormat('yyyy-MM-dd').format(data.issuedAt);
   final timeText = DateFormat('HH:mm').format(data.issuedAt);
-  final marginPt = _marginMm * PdfPageFormat.mm;
+  final marginPt = InvoicePdfTheme.a4MarginMm * PdfPageFormat.mm;
+  final borderWidth = InvoicePdfTheme.a4BorderWidth;
 
   document.addPage(
     pw.MultiPage(
@@ -40,145 +40,238 @@ void buildA4RtlInvoicePage({
           crossAxisAlignment: pw.CrossAxisAlignment.stretch,
           children: [
             if (context.pageNumber == 1) ...[
+              _buildCompanyLetterhead(data: data, logo: logo),
+              pw.SizedBox(height: 8),
               pw.Align(
                 alignment: pw.Alignment.centerRight,
                 child: pw.Text(
                   data.invoiceNumber,
                   style: pw.TextStyle(
-                    fontSize: 13,
+                    fontSize: InvoicePdfTheme.a4InvoiceNumberFontSize,
                     fontWeight: pw.FontWeight.bold,
+                    color: InvoicePdfTheme.textColor,
                   ),
                 ),
               ),
-              pw.SizedBox(height: 10),
-              pw.Text(
-                data.companyName,
-                textAlign: pw.TextAlign.center,
-                style: pw.TextStyle(
-                  fontSize: 22,
-                  fontWeight: pw.FontWeight.bold,
-                ),
-              ),
-              pw.SizedBox(height: 10),
+              pw.SizedBox(height: 6),
               _metaLine('invoice.print.cashier'.tr(), data.cashierName),
               _metaLine('invoice.print.customer'.tr(), data.partyName),
               _metaLine(
                 'invoice.print.datetime'.tr(),
                 '$dateText  $timeText',
               ),
-              pw.SizedBox(height: 10),
+              pw.SizedBox(height: 8),
             ],
-            _buildTableHeaderRow(),
+            _buildTableHeaderRow(borderWidth: borderWidth),
           ],
         ),
       ),
       build: (context) => [
-        ...data.lines.map(_buildItemRow),
-        _buildTotalsRow(data),
+        ...data.lines.map((line) => _buildItemRow(line, borderWidth: borderWidth)),
+        _buildTotalsRow(data, borderWidth: borderWidth),
         pw.SizedBox(height: 12),
-        pw.Row(
-          children: [
-            pw.Expanded(
-              child: pw.Text(
-                '${'invoice.print.paid'.tr()}: ${data.paidAmount}',
-                style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
-              ),
-            ),
-            pw.SizedBox(width: 12),
-            pw.Expanded(
-              child: pw.Text(
-                '${'invoice.print.outstanding'.tr()}: ${data.outstandingAmount}',
-                style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
-              ),
-            ),
-          ],
+        ..._buildPaymentsSection(data),
+        ..._buildFooterSection(
+          data: data,
+          footerImg: footerImg,
+          appIcon: appIcon,
         ),
-        pw.SizedBox(height: 6),
-        pw.Align(
-          alignment: pw.Alignment.centerRight,
-          child: pw.Text(
-            '${'Total'.tr()}: ${data.currency.trim().isEmpty ? data.total : '${data.total} ${data.currency}'}',
-            style: pw.TextStyle(
-              fontSize: 12,
-              fontWeight: pw.FontWeight.bold,
-            ),
-          ),
-        ),
-        if (data.returnPolicyText.trim().isNotEmpty) ...[
-          pw.SizedBox(height: 14),
-          pw.Text(
-            data.returnPolicyText,
-            textAlign: pw.TextAlign.center,
-            style: pw.TextStyle(
-              fontSize: 10,
-              fontWeight: pw.FontWeight.bold,
-            ),
-          ),
-        ],
-        if (data.address.trim().isNotEmpty) ...[
-          pw.SizedBox(height: 10),
-          pw.Text(
-            data.address,
-            textAlign: pw.TextAlign.center,
-            style: const pw.TextStyle(fontSize: 10),
-          ),
-        ],
-        if (data.phone.trim().isNotEmpty)
-          pw.Text(
-            data.phone,
-            textAlign: pw.TextAlign.center,
-            style: const pw.TextStyle(fontSize: 10),
-          ),
-        pw.SizedBox(height: 16),
-        pw.Row(
-          crossAxisAlignment: pw.CrossAxisAlignment.end,
+      ],
+    ),
+  );
+}
+
+pw.Widget _buildCompanyLetterhead({
+  required A4InvoiceViewData data,
+  pw.MemoryImage? logo,
+}) {
+  return pw.Column(
+    crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+    children: [
+      pw.Container(
+        color: InvoicePdfTheme.headerBandColor,
+        padding: const pw.EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: pw.Row(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
           children: [
-            if (footerImg != null)
-              pw.Expanded(
-                child: pw.Align(
-                  alignment: pw.Alignment.centerRight,
-                  child: pw.Image(footerImg, height: 64),
-                ),
+            if (logo != null) ...[
+              pw.Container(
+                width: 72,
+                height: 72,
+                alignment: pw.Alignment.center,
+                child: pw.Image(logo, fit: pw.BoxFit.contain),
               ),
-            if (footerImg != null) pw.SizedBox(width: 12),
+              pw.SizedBox(width: 12),
+            ],
             pw.Expanded(
-              child: pw.Row(
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
                 children: [
-                  if (appIcon != null) ...[
-                    pw.Image(appIcon, width: 40, height: 40),
-                    pw.SizedBox(width: 8),
-                  ],
-                  pw.Expanded(
-                    child: pw.Column(
-                      crossAxisAlignment: pw.CrossAxisAlignment.start,
-                      children: [
-                        pw.Text(
-                          data.developerBrand,
-                          style: pw.TextStyle(
-                            fontWeight: pw.FontWeight.bold,
-                          ),
-                        ),
-                        pw.Text(data.developerName),
-                        pw.Text(data.developerPhone),
-                      ],
+                  pw.Text(
+                    data.companyName,
+                    textAlign: pw.TextAlign.right,
+                    style: pw.TextStyle(
+                      fontSize: InvoicePdfTheme.a4CompanyNameFontSize,
+                      fontWeight: pw.FontWeight.bold,
+                      color: InvoicePdfTheme.textColor,
                     ),
                   ),
+                  if (data.address.trim().isNotEmpty) ...[
+                    pw.SizedBox(height: 4),
+                    pw.Text(
+                      data.address.trim(),
+                      textAlign: pw.TextAlign.right,
+                      style: pw.TextStyle(
+                        fontSize: InvoicePdfTheme.a4MetaFontSize,
+                        color: InvoicePdfTheme.textColor,
+                      ),
+                    ),
+                  ],
+                  if (data.phone.trim().isNotEmpty) ...[
+                    pw.SizedBox(height: 2),
+                    pw.Text(
+                      data.phone.trim(),
+                      textAlign: pw.TextAlign.right,
+                      style: pw.TextStyle(
+                        fontSize: InvoicePdfTheme.a4MetaFontSize,
+                        color: InvoicePdfTheme.textColor,
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
           ],
         ),
-        if (data.invoiceFooterNote.trim().isNotEmpty) ...[
-          pw.SizedBox(height: 10),
-          pw.Text(
-            data.invoiceFooterNote.trim(),
-            textAlign: pw.TextAlign.center,
-            style: const pw.TextStyle(fontSize: 8, lineSpacing: 1.15),
+      ),
+      pw.Container(
+        height: 1,
+        color: InvoicePdfTheme.borderColor,
+      ),
+    ],
+  );
+}
+
+List<pw.Widget> _buildPaymentsSection(A4InvoiceViewData data) {
+  return [
+    pw.Row(
+      children: [
+        pw.Expanded(
+          child: pw.Text(
+            '${'invoice.print.paid'.tr()}: ${data.paidAmount}',
+            textAlign: pw.TextAlign.right,
+            style: pw.TextStyle(
+              fontWeight: pw.FontWeight.bold,
+              color: InvoicePdfTheme.textColor,
+              fontSize: InvoicePdfTheme.a4MetaFontSize,
+            ),
           ),
-        ],
+        ),
+        pw.SizedBox(width: 12),
+        pw.Expanded(
+          child: pw.Text(
+            '${'invoice.print.outstanding'.tr()}: ${data.outstandingAmount}',
+            textAlign: pw.TextAlign.right,
+            style: pw.TextStyle(
+              fontWeight: pw.FontWeight.bold,
+              color: InvoicePdfTheme.textColor,
+              fontSize: InvoicePdfTheme.a4MetaFontSize,
+            ),
+          ),
+        ),
       ],
     ),
-  );
+    pw.SizedBox(height: 6),
+    pw.Align(
+      alignment: pw.Alignment.centerRight,
+      child: pw.Text(
+        '${'Total'.tr()}: ${data.currency.trim().isEmpty ? data.total : '${data.total} ${data.currency}'}',
+        style: pw.TextStyle(
+          fontSize: InvoicePdfTheme.a4TotalFontSize,
+          fontWeight: pw.FontWeight.bold,
+          color: InvoicePdfTheme.textColor,
+        ),
+      ),
+    ),
+    if (data.returnPolicyText.trim().isNotEmpty) ...[
+      pw.SizedBox(height: 12),
+      pw.Text(
+        data.returnPolicyText,
+        textAlign: pw.TextAlign.center,
+        style: pw.TextStyle(
+          fontSize: InvoicePdfTheme.a4MetaFontSize,
+          fontWeight: pw.FontWeight.bold,
+          color: InvoicePdfTheme.textColor,
+        ),
+      ),
+    ],
+    pw.SizedBox(height: 14),
+  ];
+}
+
+List<pw.Widget> _buildFooterSection({
+  required A4InvoiceViewData data,
+  pw.MemoryImage? footerImg,
+  pw.MemoryImage? appIcon,
+}) {
+  return [
+    if (data.invoiceFooterNote.trim().isNotEmpty) ...[
+      pw.Text(
+        data.invoiceFooterNote.trim(),
+        textAlign: pw.TextAlign.center,
+        style: pw.TextStyle(
+          fontSize: InvoicePdfTheme.a4FooterNoteFontSize,
+          lineSpacing: 1.2,
+          color: InvoicePdfTheme.textColor,
+        ),
+      ),
+      pw.SizedBox(height: 10),
+    ],
+    if (footerImg != null) ...[
+      pw.Center(child: pw.Image(footerImg, height: 64)),
+      pw.SizedBox(height: 10),
+    ],
+    pw.Container(
+      width: double.infinity,
+      padding: const pw.EdgeInsets.symmetric(vertical: 6),
+      decoration: const pw.BoxDecoration(
+        border: pw.Border(
+          top: pw.BorderSide(color: InvoicePdfTheme.borderColor, width: 0.5),
+        ),
+      ),
+      child: pw.Column(
+        children: [
+          if (appIcon != null)
+            pw.Image(appIcon, width: 24, height: 24),
+          pw.Text(
+            data.developerBrand,
+            textAlign: pw.TextAlign.center,
+            style: pw.TextStyle(
+              fontSize: InvoicePdfTheme.a4DeveloperFontSize,
+              fontWeight: pw.FontWeight.bold,
+              color: InvoicePdfTheme.textColor,
+            ),
+          ),
+          pw.Text(
+            data.developerName,
+            textAlign: pw.TextAlign.center,
+            style: pw.TextStyle(
+              fontSize: InvoicePdfTheme.a4DeveloperFontSize,
+              color: InvoicePdfTheme.textColor,
+            ),
+          ),
+          pw.Text(
+            data.developerPhone,
+            textAlign: pw.TextAlign.center,
+            style: pw.TextStyle(
+              fontSize: InvoicePdfTheme.a4DeveloperFontSize,
+              color: InvoicePdfTheme.textColor,
+            ),
+          ),
+        ],
+      ),
+    ),
+  ];
 }
 
 pw.Widget _metaLine(String label, String value) {
@@ -186,18 +279,22 @@ pw.Widget _metaLine(String label, String value) {
     padding: const pw.EdgeInsets.only(bottom: 3),
     child: pw.Text(
       '$label: ${value.isEmpty ? '—' : value}',
-      style: const pw.TextStyle(fontSize: 11),
+      textAlign: pw.TextAlign.right,
+      style: pw.TextStyle(
+        fontSize: InvoicePdfTheme.a4MetaFontSize,
+        color: InvoicePdfTheme.textColor,
+      ),
     ),
   );
 }
 
-pw.Widget _buildTableHeaderRow() {
+pw.Widget _buildTableHeaderRow({required double borderWidth}) {
   return pw.Table(
-    border: pw.TableBorder.all(color: PdfColors.grey600, width: 0.6),
+    border: InvoicePdfTheme.fullTableBorder(width: borderWidth),
     columnWidths: _tableColumnWidths,
     children: [
       pw.TableRow(
-        decoration: const pw.BoxDecoration(color: PdfColors.grey300),
+        decoration: const pw.BoxDecoration(color: InvoicePdfTheme.tableHeaderBg),
         children: [
           _pdfCell('invoice.print.col_price'.tr(), bold: true),
           _pdfCell('invoice.print.col_discount'.tr(), bold: true),
@@ -215,14 +312,9 @@ pw.Widget _buildTableHeaderRow() {
   );
 }
 
-pw.Widget _buildItemRow(A4InvoiceLine line) {
+pw.Widget _buildItemRow(A4InvoiceLine line, {required double borderWidth}) {
   return pw.Table(
-    border: pw.TableBorder(
-      left: const pw.BorderSide(color: PdfColors.grey600, width: 0.6),
-      right: const pw.BorderSide(color: PdfColors.grey600, width: 0.6),
-      bottom: const pw.BorderSide(color: PdfColors.grey600, width: 0.6),
-      horizontalInside: const pw.BorderSide(color: PdfColors.grey600, width: 0.6),
-    ),
+    border: InvoicePdfTheme.fullTableBorder(width: borderWidth),
     columnWidths: _tableColumnWidths,
     children: [
       pw.TableRow(
@@ -239,13 +331,13 @@ pw.Widget _buildItemRow(A4InvoiceLine line) {
   );
 }
 
-pw.Widget _buildTotalsRow(A4InvoiceViewData data) {
+pw.Widget _buildTotalsRow(A4InvoiceViewData data, {required double borderWidth}) {
   return pw.Table(
-    border: pw.TableBorder.all(color: PdfColors.grey600, width: 0.6),
+    border: InvoicePdfTheme.fullTableBorder(width: borderWidth),
     columnWidths: _tableColumnWidths,
     children: [
       pw.TableRow(
-        decoration: const pw.BoxDecoration(color: PdfColors.grey200),
+        decoration: const pw.BoxDecoration(color: InvoicePdfTheme.tableTotalsBg),
         children: [
           _pdfCell(data.totalsRow.totalUnitPrice),
           _pdfCell(data.totalsRow.totalDiscount, bold: true),
@@ -270,8 +362,9 @@ pw.Widget _pdfCell(
       text,
       textAlign: align,
       style: pw.TextStyle(
-        fontSize: 9.5,
+        fontSize: InvoicePdfTheme.a4CellFontSize,
         fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
+        color: InvoicePdfTheme.textColor,
       ),
     ),
   );

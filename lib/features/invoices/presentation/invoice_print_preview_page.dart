@@ -7,8 +7,8 @@ import 'package:delta_erp/core/widgets/app_inline_loading_indicator.dart';
 import 'package:delta_erp/core/config/company_settings_service.dart';
 import 'package:delta_erp/features/invoices/domain/a4_invoice_view_data.dart';
 import 'package:delta_erp/features/invoices/presentation/invoice_print_model_mapper.dart';
-import 'package:delta_erp/features/invoices/presentation/widgets/a4_invoice_rtl_widget.dart';
-import 'package:delta_erp/services/pdf/thermal_invoice_pdf_document.dart';
+import 'package:delta_erp/features/invoices/presentation/widgets/thermal_invoice_pdf_preview.dart';
+import 'package:delta_erp/services/pdf/a4_invoice_pdf_document.dart';
 import 'package:delta_erp/services/printing/invoice_print_manager.dart';
 import 'package:delta_erp/services/printing/invoice_print_preferences.dart';
 import 'package:delta_erp/services/printing/invoice_printer.dart';
@@ -113,28 +113,36 @@ class _InvoicePrintPreviewPageState extends State<InvoicePrintPreviewPage> {
               padding: const EdgeInsets.all(20),
               child: ConstrainedBox(
                 constraints: BoxConstraints(
-                  maxWidth: _printerType == PrinterType.a4 ? 840 : 420,
+                  maxWidth: _printerType == PrinterType.a4
+                      ? 840
+                      : ThermalInvoicePdfPreview.maxPreviewWidthPx(
+                          _printerType == PrinterType.thermal58 ? 58.0 : 80.0,
+                        ),
                 ),
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                      color: colorScheme.outlineVariant.withValues(alpha: 0.7),
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.12),
-                        blurRadius: 26,
-                        offset: const Offset(0, 12),
-                      ),
-                    ],
-                  ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(14),
-                    child: _buildPreviewBody(data),
-                  ),
-                ),
+                child: _printerType == PrinterType.a4
+                    ? DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: colorScheme.outlineVariant.withValues(
+                              alpha: 0.7,
+                            ),
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.12),
+                              blurRadius: 26,
+                              offset: const Offset(0, 12),
+                            ),
+                          ],
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(14),
+                          child: _buildPreviewBody(data),
+                        ),
+                      )
+                    : _buildPreviewBody(data),
               ),
             ),
           ),
@@ -205,26 +213,25 @@ class _InvoicePrintPreviewPageState extends State<InvoicePrintPreviewPage> {
   }
 
   Widget _buildPreviewBody(A4InvoiceViewData data) {
-    if (_printerType == PrinterType.a4) {
-      return SingleChildScrollView(
-        child: A4InvoiceRtlWidget(
-          data: data,
-          logoBytes: _logoBytes,
-        ),
-      );
-    }
-    final mm = _printerType == PrinterType.thermal58 ? 58.0 : 80.0;
-    return PdfPreview(
-      build: (_) => buildThermalInvoicePdfDocument(
-        invoice: widget.invoice,
-        paperWidthMm: mm,
-      ),
-      maxPageWidth: mm * 4,
-      allowPrinting: false,
-      canChangeOrientation: false,
-      canChangePageFormat: false,
-      canDebug: false,
-    );
+    final preview = _printerType == PrinterType.a4
+        ? PdfPreview(
+            build: (_) => buildA4InvoicePdfDocument(
+              data: data,
+              logoBytes: _logoBytes,
+            ),
+            maxPageWidth: 840,
+            dpi: ThermalInvoicePdfPreview.previewDpi,
+            allowPrinting: false,
+            canChangeOrientation: false,
+            canChangePageFormat: false,
+            canDebug: false,
+          )
+        : ThermalInvoicePdfPreview(
+            invoice: widget.invoice,
+            paperWidthMm: _printerType == PrinterType.thermal58 ? 58.0 : 80.0,
+          );
+
+    return PrimaryScrollController.none(child: preview);
   }
 }
 

@@ -44,6 +44,7 @@ class InvoicePrintModel {
     this.returnPolicyNote = '',
     this.invoiceFooterNote = '',
     this.invoiceFooterImageBytes,
+    this.logoBytes,
     this.appIconBytes,
     this.developerBrand = 'deltadev',
     this.developerName = 'ENG. Abd-elrahaman',
@@ -67,6 +68,7 @@ class InvoicePrintModel {
   /// Shown at bottom of printed invoice (from company settings).
   final String invoiceFooterNote;
   final Uint8List? invoiceFooterImageBytes;
+  final Uint8List? logoBytes;
   final Uint8List? appIconBytes;
   final String developerBrand;
   final String developerName;

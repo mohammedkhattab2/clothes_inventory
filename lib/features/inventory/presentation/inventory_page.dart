@@ -416,6 +416,15 @@ class _InventoryViewState extends State<_InventoryView> {
                     final lowCount = rows
                         .where((row) => row.isLow && !_isOutOfStock(row))
                         .length;
+                    final totalCost = rows.fold<double>(
+                      0,
+                      (sum, row) => sum + row.stockCostValue,
+                    );
+                    final totalRetailSales = rows.fold<double>(
+                      0,
+                      (sum, row) => sum + row.stockRetailValue,
+                    );
+                    final totalProfit = totalRetailSales - totalCost;
 
                     final filtered = rows.where((row) {
                       if (_searchQuery.isNotEmpty &&
@@ -455,6 +464,9 @@ class _InventoryViewState extends State<_InventoryView> {
                             totalCount: totalCount,
                             lowCount: lowCount,
                             outCount: outCount,
+                            totalCost: totalCost,
+                            totalRetailSales: totalRetailSales,
+                            totalProfit: totalProfit,
                             isUltraDense: isUltraDense,
                           ),
                           SizedBox(height: isUltraDense ? 6 : 8),
@@ -477,6 +489,9 @@ class _InventoryViewState extends State<_InventoryView> {
                           totalCount: totalCount,
                           lowCount: lowCount,
                           outCount: outCount,
+                          totalCost: totalCost,
+                          totalRetailSales: totalRetailSales,
+                          totalProfit: totalProfit,
                           isUltraDense: isUltraDense,
                         ),
                         SizedBox(height: isUltraDense ? 6 : 8),
@@ -589,12 +604,18 @@ class _InventoryViewState extends State<_InventoryView> {
     required int totalCount,
     required int lowCount,
     required int outCount,
+    required double totalCost,
+    required double totalRetailSales,
+    required double totalProfit,
     required bool isUltraDense,
   }) {
     return InventorySummarySection(
       totalCount: totalCount,
       lowCount: lowCount,
       outCount: outCount,
+      totalCost: totalCost,
+      totalRetailSales: totalRetailSales,
+      totalProfit: totalProfit,
       isUltraDense: isUltraDense,
     );
   }

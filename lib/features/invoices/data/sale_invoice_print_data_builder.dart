@@ -37,6 +37,7 @@ class SaleInvoicePrintDataBuilder {
 
     final company = _companySettingsService.settings;
     final footerBytes = await _companySettingsService.loadFooterImageBytes();
+    final logoBytes = await _companySettingsService.loadLogoBytes();
     final appIcon = await loadAppIconBytes();
 
     final paid = double.tryParse(a4.paidAmount.replaceAll(',', '')) ?? 0;
@@ -71,6 +72,7 @@ class SaleInvoicePrintDataBuilder {
       returnPolicyNote: a4.returnPolicyText,
       invoiceFooterNote: company.invoiceFooterNote,
       invoiceFooterImageBytes: footerBytes,
+      logoBytes: logoBytes,
       appIconBytes: appIcon,
       developerBrand: a4.developerBrand,
       developerName: a4.developerName,

@@ -37,8 +37,6 @@ class _PurchasesPageState extends State<PurchasesPage> {
   final _barcodeLabelPrinter = const ProductBarcodeLabelPrinter(
     printerPrefs: ThermalPrinterPreferences(),
   );
-  bool? _printInvoiceAfterCheckout;
-  final _invoicePrintPreferences = const InvoicePrintPreferences();
   late final InvoicePrintModelFactory _invoicePrintFactory =
       InvoicePrintModelFactory(
         getIt<SaleInvoicePrintDataBuilder>(),
@@ -230,31 +228,15 @@ class _PurchasesPageState extends State<PurchasesPage> {
     }
   }
 
-  Future<bool?> _confirmPrintInvoiceAfterCheckout(BuildContext context) {
-    return showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text('checkout.print_invoice_prompt'.tr()),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: Text('checkout.print_invoice_no'.tr()),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: Text('checkout.print_invoice_yes'.tr()),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _printPurchaseInvoiceDirect(int purchaseId) async {
+  Future<void> _promptCheckoutInvoicePrintForPurchase(int purchaseId) async {
     try {
       final model = await _invoicePrintFactory.buildForPurchase(purchaseId);
       if (model == null || !mounted) return;
-      final config = await _invoicePrintPreferences.load();
-      await _invoicePrintManager.printInvoice(model, config);
+      await promptCheckoutInvoicePrint(
+        context: context,
+        invoice: model,
+        printManager: _invoicePrintManager,
+      );
     } catch (e) {
       if (!mounted) return;
       _showLatestSnackBar(
@@ -272,13 +254,6 @@ class _PurchasesPageState extends State<PurchasesPage> {
     if (!allowed) return;
     if (!mounted) return;
     _commitInlineQuantityDrafts(cubit, state.cart);
-
-    _printInvoiceAfterCheckout = null;
-    if (state.editingPurchaseId == null) {
-      _printInvoiceAfterCheckout = await _confirmPrintInvoiceAfterCheckout(
-        context,
-      );
-    }
 
     cubit.checkout();
   }
@@ -766,11 +741,6 @@ class _PurchasesPageState extends State<PurchasesPage> {
           if (state.successInvoiceId != null) {
             final invoiceId = state.successInvoiceId!;
             final event = state.successEvent;
-            if (_printInvoiceAfterCheckout == true &&
-                event != 'purchase_amended') {
-              unawaited(_printPurchaseInvoiceDirect(invoiceId));
-            }
-            _printInvoiceAfterCheckout = null;
             final msg = switch (event) {
               'purchase_amended' => 'purchase.amended_success'.tr(
                   namedArgs: {'id': '$invoiceId'},
@@ -778,6 +748,7 @@ class _PurchasesPageState extends State<PurchasesPage> {
               _ => '${'Purchase saved'.tr()}: #$invoiceId',
             };
             _showLatestSnackBar(context, msg);
+            unawaited(_promptCheckoutInvoicePrintForPurchase(invoiceId));
             _paymentStatus = _PurchasePaymentStatus.full;
             _searchController.clear();
             _barcodeController.clear();

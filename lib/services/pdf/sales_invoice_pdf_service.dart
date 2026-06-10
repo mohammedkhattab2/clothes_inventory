@@ -2,17 +2,21 @@ import 'dart:typed_data';
 import 'dart:io';
 
 import 'package:easy_localization/easy_localization.dart';
+import 'package:delta_erp/core/config/company_settings_service.dart';
 import 'package:delta_erp/features/invoices/data/sale_invoice_print_data_builder.dart';
-import 'package:delta_erp/services/pdf/a4_invoice_rtl_pdf_builder.dart';
+import 'package:delta_erp/services/pdf/a4_invoice_pdf_document.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
-import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 
 class SalesInvoicePdfService {
-  SalesInvoicePdfService(this._salePrintBuilder);
+  SalesInvoicePdfService(
+    this._salePrintBuilder,
+    this._companySettingsService,
+  );
 
   final SaleInvoicePrintDataBuilder _salePrintBuilder;
+  final CompanySettingsService _companySettingsService;
 
   Future<Uint8List> generateA4Invoice(int saleId) async {
     final invoiceData = await _salePrintBuilder.buildA4ViewData(saleId);
@@ -20,9 +24,11 @@ class SalesInvoicePdfService {
       throw StateError('Sale not found for PDF generation.'.tr());
     }
 
-    final doc = await _createDocumentWithSafeFonts();
-    buildA4RtlInvoicePage(document: doc, data: invoiceData);
-    return doc.save();
+    final logoBytes = await _companySettingsService.loadLogoBytes();
+    return buildA4InvoicePdfDocument(
+      data: invoiceData,
+      logoBytes: logoBytes,
+    );
   }
 
   Future<void> printInvoice(int saleId) async {
@@ -95,18 +101,5 @@ class SalesInvoicePdfService {
     );
     await file.writeAsBytes(bytes, flush: true);
     return file;
-  }
-
-  Future<pw.Document> _createDocumentWithSafeFonts() async {
-    final baseFont = await PdfGoogleFonts.notoNaskhArabicRegular();
-    final boldFont = await PdfGoogleFonts.notoNaskhArabicBold();
-    return pw.Document(
-      theme: pw.ThemeData.withFont(
-        base: baseFont,
-        bold: boldFont,
-        italic: baseFont,
-        boldItalic: boldFont,
-      ),
-    );
   }
 }

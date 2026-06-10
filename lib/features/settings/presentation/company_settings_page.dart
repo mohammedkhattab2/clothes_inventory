@@ -15,7 +15,8 @@ import 'package:delta_erp/features/invoices/domain/invoice_print_model.dart';
 import 'package:delta_erp/features/invoices/domain/a4_invoice_view_data.dart';
 import 'package:delta_erp/features/invoices/presentation/invoice_print_model_mapper.dart';
 import 'package:delta_erp/features/invoices/presentation/invoice_print_preview_page.dart';
-import 'package:delta_erp/features/invoices/presentation/widgets/a4_invoice_rtl_widget.dart';
+import 'package:delta_erp/features/invoices/presentation/widgets/thermal_invoice_pdf_preview.dart';
+import 'package:delta_erp/services/pdf/a4_invoice_pdf_document.dart';
 import 'package:delta_erp/features/license/domain/license_models.dart';
 import 'package:delta_erp/features/license/domain/license_service.dart';
 import 'package:delta_erp/features/purchase_ocr/data/purchase_ocr_service.dart';
@@ -32,7 +33,6 @@ import 'package:delta_erp/services/printing/thermal_printer_preferences.dart';
 import 'package:printing/printing.dart';
 import 'package:delta_erp/services/di/service_locator.dart';
 import 'package:delta_erp/services/platform/folder_opener_service.dart';
-import 'package:delta_erp/services/pdf/thermal_invoice_pdf_document.dart';
 
 enum _SettingsTab { overview, company, license, diagnostics }
 
@@ -1257,6 +1257,7 @@ class _CompanySettingsPageState extends State<CompanySettingsPage> {
       returnPolicyNote: 'invoice.print.return_policy'.tr(),
       invoiceFooterNote: company.invoiceFooterNote,
       invoiceFooterImageBytes: footerBytes,
+      logoBytes: _previewLogoBytes,
       developerBrand: 'invoice.print.developer_brand'.tr(),
       developerName: 'invoice.print.developer_name'.tr(),
       developerPhone: 'invoice.print.developer_phone'.tr(),
@@ -1317,22 +1318,21 @@ class _CompanyInvoiceFormatPreviewState
             child: ColoredBox(
               color: Colors.white,
               child: _formatIndex == 0
-                  ? SingleChildScrollView(
-                      child: A4InvoiceRtlWidget(
+                  ? PdfPreview(
+                      build: (_) => buildA4InvoicePdfDocument(
                         data: widget.a4Data,
                         logoBytes: widget.logoBytes,
                       ),
-                    )
-                  : PdfPreview(
-                      build: (_) => buildThermalInvoicePdfDocument(
-                        invoice: widget.invoiceModel,
-                        paperWidthMm: _formatIndex == 1 ? 58 : 80,
-                      ),
-                      maxPageWidth: _formatIndex == 1 ? 220 : 280,
+                      maxPageWidth: 560,
+                      dpi: ThermalInvoicePdfPreview.previewDpi,
                       allowPrinting: false,
                       canChangeOrientation: false,
                       canChangePageFormat: false,
                       canDebug: false,
+                    )
+                  : ThermalInvoicePdfPreview(
+                      invoice: widget.invoiceModel,
+                      paperWidthMm: _formatIndex == 1 ? 58 : 80,
                     ),
             ),
           ),

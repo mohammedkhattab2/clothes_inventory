@@ -8,6 +8,8 @@ class InventoryStockRow {
     required this.unitType,
     required this.currentStock,
     required this.lowThreshold,
+    required this.salePrice,
+    required this.purchasePrice,
   });
 
   final int productId;
@@ -16,8 +18,14 @@ class InventoryStockRow {
   final String unitType;
   final double currentStock;
   final double lowThreshold;
+  final double salePrice;
+  final double purchasePrice;
 
   bool get isLow => currentStock <= lowThreshold;
+
+  double get stockCostValue => currentStock * purchasePrice;
+
+  double get stockRetailValue => currentStock * salePrice;
 }
 
 class InventoryRepository {
@@ -34,6 +42,8 @@ class InventoryRepository {
         p.barcode AS barcode,
         p.unit_type AS unit_type,
         p.low_stock_threshold AS low_stock_threshold,
+        p.sale_price AS sale_price,
+        p.purchase_price AS purchase_price,
         MAX(
           0,
           COALESCE(SUM(CASE WHEN sm.movement_type = 'in' THEN sm.quantity ELSE 0 END), 0) -
@@ -41,7 +51,8 @@ class InventoryRepository {
         ) AS current_stock
       FROM products p
       LEFT JOIN stock_movements sm ON sm.product_id = p.id
-      GROUP BY p.id, p.name, p.barcode, p.unit_type, p.low_stock_threshold
+      GROUP BY p.id, p.name, p.barcode, p.unit_type, p.low_stock_threshold,
+               p.sale_price, p.purchase_price
       ORDER BY p.name ASC
     ''');
 
@@ -55,6 +66,8 @@ class InventoryRepository {
             currentStock: (((row['current_stock'] ?? 0) as num).toDouble())
                 .clamp(0, double.infinity),
             lowThreshold: ((row['low_stock_threshold'] ?? 0) as num).toDouble(),
+            salePrice: ((row['sale_price'] ?? 0) as num).toDouble(),
+            purchasePrice: ((row['purchase_price'] ?? 0) as num).toDouble(),
           ),
         )
         .toList();
