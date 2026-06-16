@@ -7,13 +7,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:delta_erp/core/barcode/barcode_pos_input.dart';
+import 'package:delta_erp/core/printing/invoice_print_dispatch.dart';
+import 'package:delta_erp/core/printing/print_user_feedback.dart';
 import 'package:delta_erp/features/auth/domain/access_policy.dart';
 import 'package:delta_erp/features/accounts/data/accounts_repository.dart';
 import 'package:delta_erp/core/config/company_settings_service.dart';
 import 'package:delta_erp/features/invoices/data/invoice_print_model_factory.dart';
+import 'package:delta_erp/features/invoices/domain/invoice_print_model.dart';
 import 'package:delta_erp/features/invoices/data/sale_invoice_print_data_builder.dart';
 import 'package:delta_erp/features/invoices/presentation/invoice_checkout_preview_flow.dart';
-import 'package:delta_erp/features/invoices/presentation/invoice_print_preview_page.dart';
 import 'package:delta_erp/services/database/app_database.dart';
 import 'package:delta_erp/features/purchase_ocr/presentation/purchase_ocr_review_page.dart';
 import 'package:delta_erp/features/products/data/product_repository.dart';
@@ -33,11 +35,11 @@ import 'package:delta_erp/features/purchases/presentation/widgets/purchases_supp
 import 'package:delta_erp/features/license/domain/license_service.dart';
 import 'package:delta_erp/services/auth/session_service.dart';
 import 'package:delta_erp/services/di/service_locator.dart';
-import 'package:delta_erp/services/printing/a4_invoice_printer.dart';
-import 'package:delta_erp/services/printing/invoice_print_manager.dart';
+import 'package:delta_erp/features/products/presentation/widgets/barcode_label_preview_dialog.dart';
 import 'package:delta_erp/services/printing/product_barcode_label_printer.dart';
-import 'package:delta_erp/services/printing/thermal_pdf_invoice_printer.dart';
+import 'package:delta_erp/services/printing/thermal_invoice_printer_factory.dart';
 import 'package:delta_erp/services/printing/thermal_printer_preferences.dart';
+import 'package:delta_erp/services/printing/thermal_printer_presets.dart';
 
 part 'purchases_page_state.part.dart';
 

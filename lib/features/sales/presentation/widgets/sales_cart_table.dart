@@ -158,11 +158,11 @@ class SalesCartTable extends StatelessWidget {
             : MediaQuery.sizeOf(context).width;
         final effectiveMinWidth = tableWidth < 980 ? 980.0 : tableWidth;
 
-        return Scrollbar(
+        return SingleChildScrollView(
           child: SingleChildScrollView(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: ConstrainedBox(
+            scrollDirection: Axis.horizontal,
+            primary: false,
+            child: ConstrainedBox(
                 constraints: BoxConstraints(minWidth: effectiveMinWidth),
                 child: Directionality(
                   textDirection: ui.TextDirection.rtl,
@@ -619,8 +619,7 @@ class SalesCartTable extends StatelessWidget {
             ),
           ),
         ),
-      ),
-    );
+        );
       },
     );
   }

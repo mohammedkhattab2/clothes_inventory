@@ -22,19 +22,9 @@ class _PurchasesPageState extends State<PurchasesPage> {
   final _paidAmountFocusNode = FocusNode();
   final _invoiceScrollController = ScrollController();
   final _dateFormat = DateFormat('yyyy-MM-dd HH:mm');
-  final _invoicePrintManager = InvoicePrintManager(
-    a4Printer: const A4InvoicePrinter(),
-    thermal58Printer: ThermalPdfInvoicePrinter(
-      paperWidthMm: 58,
-      printerPrefs: const ThermalPrinterPreferences(),
-    ),
-    thermal80Printer: ThermalPdfInvoicePrinter(
-      paperWidthMm: 80,
-      printerPrefs: const ThermalPrinterPreferences(),
-    ),
-  );
+  final _invoicePrintManager = ThermalInvoicePrinterFactory.createPrintManager();
 
-  final _barcodeLabelPrinter = const ProductBarcodeLabelPrinter(
+  final _barcodeLabelPrinter = ProductBarcodeLabelPrinter(
     printerPrefs: ThermalPrinterPreferences(),
   );
   late final InvoicePrintModelFactory _invoicePrintFactory =
@@ -241,7 +231,7 @@ class _PurchasesPageState extends State<PurchasesPage> {
       if (!mounted) return;
       _showLatestSnackBar(
         context,
-        '${'Failed to print invoice'.tr()}: $e',
+        formatPrintFailureMessage(e, fallbackKey: 'Failed to print invoice'),
       );
     }
   }
@@ -338,12 +328,16 @@ class _PurchasesPageState extends State<PurchasesPage> {
     }
   }
 
-  Future<void> _printPurchaseEntryBarcodeLabels({
+  Future<void> _printBarcodeLabels({
     required String productName,
     required String barcode,
     required int quantity,
     double? amount,
   }) async {
+    var copies = quantity < 1 ? 1 : quantity;
+    if (copies > ThermalPrinterPresets.maxBarcodeLabelCopies) {
+      copies = ThermalPrinterPresets.maxBarcodeLabelCopies;
+    }
     try {
       final companyName = getIt<CompanySettingsService>().settings.name;
       await _barcodeLabelPrinter.printLabel(
@@ -351,17 +345,191 @@ class _PurchasesPageState extends State<PurchasesPage> {
         barcodeValue: barcode,
         companyName: companyName,
         amount: amount,
-        copies: quantity,
+        copies: copies,
       );
       if (!mounted) return;
-      _showLatestSnackBar(context, 'Barcode label sent to printer'.tr());
+      showPrintSentToPrinterSnackBar(context);
     } catch (e) {
       if (!mounted) return;
       _showLatestSnackBar(
         context,
-        '${'Failed to print barcode'.tr()}: $e',
+        formatPrintFailureMessage(e, fallbackKey: 'Failed to print barcode'),
       );
     }
+  }
+
+  Future<void> _printInvoiceDirect(
+    BuildContext targetContext,
+    InvoicePrintModel invoice,
+  ) async {
+    try {
+      await printInvoiceToSavedPrinter(
+        printManager: _invoicePrintManager,
+        invoice: invoice,
+      );
+      if (!targetContext.mounted) return;
+      showPrintSentToPrinterSnackBar(targetContext);
+    } catch (e) {
+      if (!targetContext.mounted) return;
+      _showLatestSnackBar(
+        targetContext,
+        formatPrintFailureMessage(e, fallbackKey: 'Failed to print invoice'),
+      );
+    }
+  }
+
+  void _notifyIfBarcodeCopiesCapped(int requested) {
+    if (requested <= ThermalPrinterPresets.maxBarcodeLabelCopies || !mounted) {
+      return;
+    }
+    _showLatestSnackBar(
+      context,
+      'purchases.barcode_labels_limited'.tr(
+        namedArgs: {
+          'max': '${ThermalPrinterPresets.maxBarcodeLabelCopies}',
+        },
+      ),
+    );
+  }
+
+  ({int copies, String barcode}) _resolveCartBarcodePrintRequest(
+    PurchaseDraftItem item,
+  ) {
+    final barcode = item.barcode?.trim() ?? '';
+    final controller = _inlineQtyControllers[item.productId];
+    final resolved = resolvePurchaseCartBarcodeCopies(
+      item: item,
+      inlineQuantityDrafts: _inlineQuantityDrafts,
+      controllerText: controller?.text,
+    );
+    _notifyIfBarcodeCopiesCapped(resolved.requested);
+    return (copies: resolved.copies, barcode: barcode);
+  }
+
+  void _commitCartLineQuantityBeforeBarcodePrint(
+    PurchasesCubit cubit,
+    PurchaseDraftItem item,
+  ) {
+    final draft = _inlineQuantityDrafts[item.productId];
+    if (draft != null && draft.trim().isNotEmpty) {
+      _applyInlineQuantityChange(cubit, item, draft);
+      _inlineQuantityDrafts.remove(item.productId);
+      return;
+    }
+
+    final controller = _inlineQtyControllers[item.productId];
+    final text = controller?.text;
+    if (text == null || text.trim().isEmpty) {
+      return;
+    }
+
+    _applyInlineQuantityChange(cubit, item, text);
+  }
+
+  PurchaseDraftItem? _findCartLine(PurchasesCubit cubit, int productId) {
+    for (final line in cubit.state.cart) {
+      if (line.productId == productId) {
+        return line;
+      }
+    }
+    return null;
+  }
+
+  Future<double?> _fetchCartLineSalePrice(int productId) async {
+    final products = await _productRepo.listProductsByIds([productId]);
+    if (products.isEmpty) return null;
+    return products.first.salePrice;
+  }
+
+  Future<void> _previewCartBarcodeLabels(
+    BuildContext context,
+    PurchaseDraftItem item,
+  ) async {
+    final barcode = item.barcode?.trim();
+    if (barcode == null || barcode.isEmpty) return;
+
+    final cubit = context.read<PurchasesCubit>();
+    _commitCartLineQuantityBeforeBarcodePrint(cubit, item);
+    final currentItem = _findCartLine(cubit, item.productId) ?? item;
+
+    final request = _resolveCartBarcodePrintRequest(currentItem);
+    final salePrice = await _fetchCartLineSalePrice(currentItem.productId);
+    if (!context.mounted) return;
+
+    try {
+      final companyName = getIt<CompanySettingsService>().settings.name;
+      if (!context.mounted) return;
+      await showBarcodeLabelPreviewDialog(
+        context: context,
+        title: 'purchases.barcode_labels_preview_title'.tr(
+          namedArgs: {'count': '${request.copies}'},
+        ),
+        productName: currentItem.productName,
+        barcodeValue: request.barcode,
+        companyName: companyName,
+        amount: salePrice,
+        footer: Padding(
+          padding: const EdgeInsets.all(8),
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: Builder(
+              builder: (ctx) => FilledButton.icon(
+                onPressed: () async {
+                  try {
+                    await _printBarcodeLabels(
+                      productName: currentItem.productName,
+                      barcode: request.barcode,
+                      quantity: request.copies,
+                      amount: salePrice,
+                    );
+                    if (!ctx.mounted) return;
+                    Navigator.of(ctx).pop();
+                  } catch (e) {
+                    if (!ctx.mounted) return;
+                    ScaffoldMessenger.of(ctx).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          formatPrintFailureMessage(
+                            e,
+                            fallbackKey: 'Failed to print barcode',
+                          ),
+                        ),
+                      ),
+                    );
+                  }
+                },
+                icon: const Icon(Icons.print_outlined),
+                label: Text('Print Barcode'.tr()),
+              ),
+            ),
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      _showLatestSnackBar(context, '${'Preview failed'.tr()}: $e');
+    }
+  }
+
+  Future<void> _printCartBarcodeLabels(
+    BuildContext context,
+    PurchaseDraftItem item,
+  ) async {
+    final barcode = item.barcode?.trim();
+    if (barcode == null || barcode.isEmpty) return;
+
+    final cubit = context.read<PurchasesCubit>();
+    _commitCartLineQuantityBeforeBarcodePrint(cubit, item);
+    final currentItem = _findCartLine(cubit, item.productId) ?? item;
+
+    final request = _resolveCartBarcodePrintRequest(currentItem);
+    final salePrice = await _fetchCartLineSalePrice(currentItem.productId);
+    await _printBarcodeLabels(
+      productName: currentItem.productName,
+      barcode: request.barcode,
+      quantity: request.copies,
+      amount: salePrice,
+    );
   }
 
   Future<void> _showPurchasesEntryProductDialog(BuildContext context) async {
@@ -372,8 +540,6 @@ class _PurchasesPageState extends State<PurchasesPage> {
       context,
       parseFlexibleNumber: parseFlexibleNumber,
       onGenerateBarcode: () => _productRepo.generateNextShortBarcode(),
-      barcodeLabelPrinter: _barcodeLabelPrinter,
-      onPrintBarcode: _printPurchaseEntryBarcodeLabels,
       onCreateProduct: _productRepo.createProduct,
       onUpdateProduct: _productRepo.updateProduct,
       onRefreshSearch: () async {},
@@ -1112,7 +1278,12 @@ class _PurchasesPageState extends State<PurchasesPage> {
       applyInlineQuantityChange: (_, item, raw) {
         _applyInlineQuantityChange(cubit, item, raw);
       },
+      onQuantityDraftCleared: (productId) {
+        _inlineQuantityDrafts.remove(productId);
+      },
       onShowEditItemDialog: _showEditItemDialog,
+      onPreviewCartBarcode: _previewCartBarcodeLabels,
+      onPrintCartBarcode: _printCartBarcodeLabels,
     );
   }
 
@@ -1167,14 +1338,7 @@ class _PurchasesPageState extends State<PurchasesPage> {
       },
       onPrintInvoice: (invoice) async {
         if (!pageContext.mounted) return;
-        await Navigator.of(pageContext).push(
-          MaterialPageRoute<void>(
-            builder: (_) => InvoicePrintPreviewPage(
-              invoice: invoice,
-              printManager: _invoicePrintManager,
-            ),
-          ),
-        );
+        await _printInvoiceDirect(pageContext, invoice);
       },
       onApplyReturn: (purchaseItemId, quantity) {
         _showReturnDialog(

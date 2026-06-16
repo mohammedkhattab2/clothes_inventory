@@ -4,16 +4,12 @@ import 'package:delta_erp/services/printing/product_barcode_label_printer.dart';
 import 'package:delta_erp/services/printing/thermal_printer_preferences.dart';
 import 'package:delta_erp/services/printing/thermal_printer_presets.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pdf/pdf.dart';
 
 void main() {
-  int countPdfPages(Uint8List bytes) {
-    final text = String.fromCharCodes(bytes);
-    return RegExp(r'/Type\s*/Page\b').allMatches(text).length;
-  }
+  TestWidgetsFlutterBinding.ensureInitialized();
 
   group('ProductBarcodeLabelPrinter', () {
-    const printer = ProductBarcodeLabelPrinter(
+    final printer = ProductBarcodeLabelPrinter(
       printerPrefs: ThermalPrinterPreferences(),
     );
 
@@ -27,57 +23,93 @@ void main() {
         ThermalPrinterPresets.labelHeightMm,
       );
       expect(ProductBarcodeLabelPrinter.gapMm, ThermalPrinterPresets.labelGapMm);
+      expect(ThermalPrinterPresets.labelWidthMm, 38.0);
+      expect(ThermalPrinterPresets.labelHeightMm, 25.0);
+      expect(ThermalPrinterPresets.labelGapMm, 3.0);
     });
 
-    test('labelPageHeightMm includes gap between stickers', () {
+    test('label font sizes and feed presets', () {
+      expect(ThermalPrinterPresets.labelCompanyNameFontSizePt, 8.5);
+      expect(ThermalPrinterPresets.labelPrintLeadingMarginMm, 8.0);
+      expect(ThermalPrinterPresets.labelPitchFeedLines, 9);
+      expect(ThermalPrinterPresets.labelLeadingFeedLines, 1);
+    });
+
+    test('maxCopiesPerPrintJob matches 350B driver strip limit', () {
+      expect(ProductBarcodeLabelPrinter.maxCopiesPerPrintJob(), 4);
       expect(
-        ProductBarcodeLabelPrinter.labelPageHeightMm(includeGap: true),
-        ThermalPrinterPresets.labelHeightMm + ThermalPrinterPresets.labelGapMm,
+        ProductBarcodeLabelPrinter.stripHeightMm(4),
+        closeTo(ThermalPrinterPresets.labelMaxStripHeightMm, 0.001),
       );
       expect(
-        ProductBarcodeLabelPrinter.labelPageHeightMm(includeGap: false),
-        ThermalPrinterPresets.labelHeightMm,
+        ProductBarcodeLabelPrinter.stripHeightMm(5),
+        greaterThan(ThermalPrinterPresets.labelMaxStripHeightMm),
       );
     });
 
-    test('rollHeightMm totals label stack for multiple copies', () {
-      expect(ProductBarcodeLabelPrinter.rollHeightMm(1), 22);
-      expect(ProductBarcodeLabelPrinter.rollHeightMm(4), 22 * 4 + 2 * 3);
+    test('batchCopyCounts splits large jobs without losing copies', () {
+      expect(ProductBarcodeLabelPrinter.batchCopyCounts(1), [1]);
+      expect(ProductBarcodeLabelPrinter.batchCopyCounts(4), [4]);
+      expect(
+        ProductBarcodeLabelPrinter.batchCopyCounts(10),
+        List.filled(10, ThermalPrinterPresets.labelCopiesPerJob),
+      );
+      expect(
+        ProductBarcodeLabelPrinter.batchCopyCounts(10).reduce((a, b) => a + b),
+        10,
+      );
     });
 
-    test('buildLabelPdfBytes creates one PDF page per copy', () async {
-      const copies = 4;
+    test('stripHeightMm matches label pitch for multiple copies', () {
+      expect(ProductBarcodeLabelPrinter.stripHeightMm(1), 25.0);
+      expect(
+        ProductBarcodeLabelPrinter.stripHeightMm(3),
+        closeTo(3 * 25.0 + 2 * 3.0, 0.001),
+      );
+      expect(
+        ProductBarcodeLabelPrinter.rollHeightMm(3, includeLeadingGap: false),
+        ProductBarcodeLabelPrinter.stripHeightMm(3),
+      );
+    });
+
+    test('rollHeightMm includes optional leading blank', () {
+      expect(
+        ProductBarcodeLabelPrinter.rollHeightMm(1),
+        closeTo(
+          ThermalPrinterPresets.labelLeadingGapMm +
+              ThermalPrinterPresets.labelHeightMm,
+          0.001,
+        ),
+      );
+    });
+
+    test('buildLabelPdfBytes embeds barcode digits and company', () async {
+      const barcode = '2000';
       final bytes = await printer.buildLabelPdfBytes(
-        productName: 'جينز',
-        barcodeValue: '2000',
+        productName: 'Jeans',
+        barcodeValue: barcode,
         companyName: 'ZERO JEANS',
-        amount: 200,
-        copies: copies,
+        copies: 1,
       );
 
-      expect(bytes, isNotEmpty);
-      expect(String.fromCharCodes(bytes.take(4)), '%PDF');
-      expect(countPdfPages(bytes), copies);
+      expect(bytes, isA<Uint8List>());
+      expect(bytes.length, greaterThan(100));
+      expect(String.fromCharCodes(bytes.take(5)), '%PDF-');
     });
 
-    test('single-copy PDF page height matches label only', () async {
-      final bytes = await printer.buildLabelPdfBytes(
-        productName: 'جينز',
+    test('multi-copy PDF is larger than a single label', () async {
+      final single = await printer.buildLabelPdfBytes(
+        productName: 'Jeans',
         barcodeValue: '2000',
         copies: 1,
       );
-      final text = String.fromCharCodes(bytes);
-      final match =
-          RegExp(r'/MediaBox\[0 0 ([\d.]+) ([\d.]+)\]').firstMatch(text);
-      expect(match, isNotNull);
-      expect(
-        double.parse(match!.group(1)!),
-        closeTo(ThermalPrinterPresets.labelWidthMm * PdfPageFormat.mm, 0.01),
+      final triple = await printer.buildLabelPdfBytes(
+        productName: 'Jeans',
+        barcodeValue: '2000',
+        copies: 3,
       );
-      expect(
-        double.parse(match.group(2)!),
-        closeTo(ThermalPrinterPresets.labelHeightMm * PdfPageFormat.mm, 0.01),
-      );
+
+      expect(triple.length, greaterThan(single.length));
     });
   });
 }

@@ -1,7 +1,10 @@
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
+import 'package:delta_erp/core/printing/invoice_print_dispatch.dart';
+import 'package:delta_erp/core/printing/print_user_feedback.dart';
 import 'package:delta_erp/features/invoices/domain/invoice_print_model.dart';
 import 'package:delta_erp/core/widgets/app_inline_loading_indicator.dart';
 import 'package:delta_erp/core/config/company_settings_service.dart';
@@ -75,6 +78,7 @@ class _InvoicePrintPreviewPageState extends State<InvoicePrintPreviewPage> {
             printerType: _printerType,
             supportsArabic: _supportsArabic,
             useImageFallback: _useImageFallback,
+            showImageFallbackToggle: !_isEscPosThermalPrint(_printerType),
             printing: _printing,
             onPrinterTypeChanged: (value) {
               setState(() {
@@ -168,20 +172,29 @@ class _InvoicePrintPreviewPageState extends State<InvoicePrintPreviewPage> {
       final config = InvoicePrintConfiguration(
         printerType: _printerType,
         printerSupportsArabic: _supportsArabic,
-        useImageFallback: _useImageFallback,
+        useImageFallback:
+            _isEscPosThermalPrint(_printerType) ? false : _useImageFallback,
       );
       await _preferences.save(config);
-      await widget.printManager.printInvoice(widget.invoice, config);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Invoice sent to printer.'.tr())),
+      await printInvoiceToSavedPrinter(
+        printManager: widget.printManager,
+        invoice: widget.invoice,
       );
+      if (!mounted) return;
+      showPrintSentToPrinterSnackBar(context);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(
-        SnackBar(content: Text('${'invoice.print_failed_reason'.tr()}: $e')),
+        SnackBar(
+          content: Text(
+            formatPrintFailureMessage(
+              e,
+              fallbackKey: 'invoice.print_failed_reason',
+            ),
+          ),
+        ),
       );
     } finally {
       if (mounted) {
@@ -198,8 +211,15 @@ class _InvoicePrintPreviewPageState extends State<InvoicePrintPreviewPage> {
     setState(() {
       _printerType = config.printerType;
       _supportsArabic = config.printerSupportsArabic;
-      _useImageFallback = config.useImageFallback;
+      _useImageFallback = _isEscPosThermalPrint(config.printerType)
+          ? false
+          : config.useImageFallback;
     });
+  }
+
+  static bool _isEscPosThermalPrint(PrinterType type) {
+    if (!Platform.isWindows) return false;
+    return type == PrinterType.thermal58 || type == PrinterType.thermal80;
   }
 
   Future<void> _persistConfig() {
@@ -207,7 +227,8 @@ class _InvoicePrintPreviewPageState extends State<InvoicePrintPreviewPage> {
       InvoicePrintConfiguration(
         printerType: _printerType,
         printerSupportsArabic: _supportsArabic,
-        useImageFallback: _useImageFallback,
+        useImageFallback:
+            _isEscPosThermalPrint(_printerType) ? false : _useImageFallback,
       ),
     );
   }
@@ -240,6 +261,7 @@ class _Toolbar extends StatelessWidget {
     required this.printerType,
     required this.supportsArabic,
     required this.useImageFallback,
+    required this.showImageFallbackToggle,
     required this.printing,
     required this.onPrinterTypeChanged,
     required this.onSupportsArabicChanged,
@@ -250,6 +272,7 @@ class _Toolbar extends StatelessWidget {
   final PrinterType printerType;
   final bool supportsArabic;
   final bool useImageFallback;
+  final bool showImageFallbackToggle;
   final bool printing;
   final ValueChanged<PrinterType> onPrinterTypeChanged;
   final ValueChanged<bool> onSupportsArabicChanged;
@@ -301,16 +324,17 @@ class _Toolbar extends StatelessWidget {
                   ),
                 ],
               ),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text('invoice.image_fallback'.tr()),
-                  Switch(
-                    value: useImageFallback,
-                    onChanged: onImageFallbackChanged,
-                  ),
-                ],
-              ),
+              if (showImageFallbackToggle)
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('invoice.image_fallback'.tr()),
+                    Switch(
+                      value: useImageFallback,
+                      onChanged: onImageFallbackChanged,
+                    ),
+                  ],
+                ),
               ElevatedButton.icon(
                 onPressed: onPrintPressed,
                 icon: printing

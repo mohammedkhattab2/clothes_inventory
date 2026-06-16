@@ -6,6 +6,7 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:delta_erp/core/printing/print_user_feedback.dart';
 import 'package:delta_erp/core/barcode/barcode_pos_input.dart';
 import 'package:delta_erp/core/widgets/app_empty_state.dart';
 import 'package:delta_erp/core/widgets/app_loading_indicator.dart';
@@ -23,8 +24,10 @@ import 'package:delta_erp/features/products/domain/product.dart';
 import 'package:delta_erp/features/products/domain/product_price_validators.dart';
 import 'package:delta_erp/core/config/company_settings_service.dart';
 import 'package:delta_erp/services/di/service_locator.dart';
+import 'package:delta_erp/features/products/presentation/widgets/barcode_label_preview_dialog.dart';
 import 'package:delta_erp/services/printing/product_barcode_label_printer.dart';
 import 'package:delta_erp/services/printing/thermal_printer_preferences.dart';
+import 'package:delta_erp/services/printing/thermal_printer_presets.dart';
 
 class InventoryPage extends StatelessWidget {
   const InventoryPage({super.key});
@@ -44,10 +47,12 @@ class _InventoryView extends StatefulWidget {
 
 class _InventoryViewState extends State<_InventoryView> {
   static const int _lazyChunkSize = 150;
+  static const int _maxBarcodeLabelCopies =
+      ThermalPrinterPresets.maxBarcodeLabelCopies;
 
   late Future<List<InventoryStockRow>> _rowsFuture;
   final _productRepository = getIt<ProductRepository>();
-  final _barcodeLabelPrinter = const ProductBarcodeLabelPrinter(
+  final _barcodeLabelPrinter = ProductBarcodeLabelPrinter(
     printerPrefs: ThermalPrinterPreferences(),
   );
   final _inventoryImportService = InventoryProductsImportService();
@@ -713,8 +718,17 @@ class _InventoryViewState extends State<_InventoryView> {
     required String barcode,
     required int quantity,
     double? amount,
+    bool notifyIfCapped = false,
   }) async {
-    final copies = quantity < 1 ? 1 : quantity;
+    final requested = quantity < 1 ? 1 : quantity;
+    final copies = requested.clamp(1, _maxBarcodeLabelCopies);
+    if (notifyIfCapped && requested > _maxBarcodeLabelCopies && mounted) {
+      _showLatestSnackBar(
+        'purchases.barcode_labels_limited'.tr(
+          namedArgs: {'max': '$_maxBarcodeLabelCopies'},
+        ),
+      );
+    }
     try {
       final companyName = getIt<CompanySettingsService>().settings.name;
       await _barcodeLabelPrinter.printLabel(
@@ -725,11 +739,221 @@ class _InventoryViewState extends State<_InventoryView> {
         copies: copies,
       );
       if (!mounted) return;
-      _showLatestSnackBar('Barcode label sent to printer'.tr());
+      showPrintSentToPrinterSnackBar(context);
     } catch (e) {
       if (!mounted) return;
-      _showLatestSnackBar('${'Failed to print barcode'.tr()}: $e');
+      _showLatestSnackBar(formatPrintFailureMessage(e, fallbackKey: 'Failed to print barcode'));
     }
+  }
+
+  int _resolveBarcodeLabelQuantity(String raw) {
+    final parsed = _parseFlexibleNumber(raw.trim()) ?? 1;
+    final requested = parsed < 1 ? 1 : parsed.round();
+    return requested.clamp(1, _maxBarcodeLabelCopies);
+  }
+
+  void _notifyIfBarcodeLabelQuantityCapped(String raw) {
+    final parsed = _parseFlexibleNumber(raw.trim()) ?? 1;
+    final requested = parsed < 1 ? 1 : parsed.round();
+    if (requested <= _maxBarcodeLabelCopies || !mounted) return;
+    _showLatestSnackBar(
+      'purchases.barcode_labels_limited'.tr(
+        namedArgs: {'max': '$_maxBarcodeLabelCopies'},
+      ),
+    );
+  }
+
+  Future<void> _previewProductBarcodeLabel({
+    required BuildContext context,
+    required String productName,
+    required String barcode,
+    required int quantity,
+    double? amount,
+  }) async {
+    final copies = _resolveBarcodeLabelQuantity('$quantity');
+    try {
+      final companyName = getIt<CompanySettingsService>().settings.name;
+      if (!context.mounted) return;
+      await showBarcodeLabelPreviewDialog(
+        context: context,
+        title: 'purchases.barcode_labels_preview_title'.tr(
+          namedArgs: {'count': '$copies'},
+        ),
+        productName: productName,
+        barcodeValue: barcode,
+        companyName: companyName,
+        amount: amount,
+        footer: Padding(
+          padding: const EdgeInsets.all(8),
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: Builder(
+              builder: (ctx) => FilledButton.icon(
+                onPressed: () async {
+                  await _printProductBarcodeLabel(
+                    productName: productName,
+                    barcode: barcode,
+                    quantity: copies,
+                    amount: amount,
+                  );
+                  if (!ctx.mounted) return;
+                  Navigator.of(ctx).pop();
+                },
+                icon: const Icon(Icons.print_outlined),
+                label: Text('Print Barcode'.tr()),
+              ),
+            ),
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      _showLatestSnackBar('${'Preview failed'.tr()}: $e');
+    }
+  }
+
+  Widget _buildInventoryBarcodePrintSection({
+    required BuildContext dialogContext,
+    required TextEditingController barcodeLabelQty,
+    required TextEditingController name,
+    required TextEditingController barcode,
+    required TextEditingController salePriceRetail,
+    required bool actionsEnabled,
+  }) {
+    final colorScheme = Theme.of(dialogContext).colorScheme;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        color: colorScheme.primaryContainer.withValues(alpha: 0.22),
+        border: Border.all(
+          color: colorScheme.primary.withValues(alpha: 0.28),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Print Barcode'.tr(),
+            style: Theme.of(dialogContext).textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 8),
+          TextFormField(
+            controller: barcodeLabelQty,
+            enabled: actionsEnabled,
+            keyboardType: const TextInputType.numberWithOptions(
+              decimal: false,
+            ),
+            inputFormatters: [
+              FilteringTextInputFormatter.allow(RegExp(r'[0-9٠-٩]')),
+            ],
+            decoration: InputDecoration(
+              labelText: 'inventory.barcode_label_quantity'.tr(),
+              hintText: '1',
+              filled: true,
+              fillColor: colorScheme.surface,
+            ),
+            validator: (value) {
+              final parsed = _parseFlexibleNumber(value ?? '');
+              if (parsed == null || parsed <= 0) {
+                return 'Quantity must be greater than zero'.tr();
+              }
+              if (parsed != parsed.roundToDouble()) {
+                return 'Quantity must be a whole number'.tr();
+              }
+              return null;
+            },
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              OutlinedButton.icon(
+                onPressed: !actionsEnabled
+                    ? null
+                    : () async {
+                        final productName = name.text.trim();
+                        final productBarcode = _normalizeBarcodeForSave(
+                          barcode.text,
+                        );
+                        if (productName.isEmpty || productBarcode.isEmpty) {
+                          ScaffoldMessenger.of(dialogContext).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                'Enter product name and barcode first'.tr(),
+                              ),
+                            ),
+                          );
+                          return;
+                        }
+
+                        _notifyIfBarcodeLabelQuantityCapped(
+                          barcodeLabelQty.text,
+                        );
+                        final quantity = _resolveBarcodeLabelQuantity(
+                          barcodeLabelQty.text,
+                        );
+                        final salePrice = _parseFlexibleNumber(
+                          salePriceRetail.text,
+                        );
+                        await _previewProductBarcodeLabel(
+                          context: dialogContext,
+                          productName: productName,
+                          barcode: productBarcode,
+                          quantity: quantity,
+                          amount: salePrice,
+                        );
+                      },
+                icon: const Icon(Icons.visibility_outlined),
+                label: Text('Preview'.tr()),
+              ),
+              OutlinedButton.icon(
+                onPressed: !actionsEnabled
+                    ? null
+                    : () async {
+                        final productName = name.text.trim();
+                        final productBarcode = _normalizeBarcodeForSave(
+                          barcode.text,
+                        );
+                        if (productName.isEmpty || productBarcode.isEmpty) {
+                          ScaffoldMessenger.of(dialogContext).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                'Enter product name and barcode first'.tr(),
+                              ),
+                            ),
+                          );
+                          return;
+                        }
+
+                        _notifyIfBarcodeLabelQuantityCapped(
+                          barcodeLabelQty.text,
+                        );
+                        final quantity = _resolveBarcodeLabelQuantity(
+                          barcodeLabelQty.text,
+                        );
+                        final salePrice = _parseFlexibleNumber(
+                          salePriceRetail.text,
+                        );
+                        await _printProductBarcodeLabel(
+                          productName: productName,
+                          barcode: productBarcode,
+                          quantity: quantity,
+                          amount: salePrice,
+                        );
+                      },
+                icon: const Icon(Icons.print_outlined),
+                label: Text('Print Barcode'.tr()),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _showAddProductDialog() async {
@@ -1276,6 +1500,7 @@ class _InventoryViewState extends State<_InventoryView> {
             : 2,
       ),
     );
+    final barcodeLabelQty = TextEditingController(text: '1');
     final initialStock = row.currentStock;
     var unit = existing.unitType;
 
@@ -1330,6 +1555,15 @@ class _InventoryViewState extends State<_InventoryView> {
                             child: Column(
                               mainAxisSize: MainAxisSize.min,
                               children: [
+                                _buildInventoryBarcodePrintSection(
+                                  dialogContext: dialogContext,
+                                  barcodeLabelQty: barcodeLabelQty,
+                                  name: name,
+                                  barcode: barcode,
+                                  salePriceRetail: salePriceRetail,
+                                  actionsEnabled: !submitting,
+                                ),
+                                const SizedBox(height: 12),
                                 TextFormField(
                                   controller: name,
                                   decoration: InputDecoration(
@@ -1645,6 +1879,7 @@ class _InventoryViewState extends State<_InventoryView> {
       _disposeControllersSafely(<TextEditingController>[
         name,
         barcode,
+        barcodeLabelQty,
         currentStock,
         salePriceRetail,
         salePriceHalfWholesale,

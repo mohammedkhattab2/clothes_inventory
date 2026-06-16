@@ -26,9 +26,7 @@ import 'package:delta_erp/features/settings/presentation/widgets/settings_diagno
 import 'package:delta_erp/features/settings/presentation/widgets/settings_license_tab.dart';
 import 'package:delta_erp/features/settings/presentation/widgets/settings_overview_tab.dart';
 import 'package:delta_erp/services/database/maintenance_coordinator.dart';
-import 'package:delta_erp/services/printing/a4_invoice_printer.dart';
-import 'package:delta_erp/services/printing/invoice_print_manager.dart';
-import 'package:delta_erp/services/printing/thermal_pdf_invoice_printer.dart';
+import 'package:delta_erp/services/printing/thermal_invoice_printer_factory.dart';
 import 'package:delta_erp/services/printing/thermal_printer_preferences.dart';
 import 'package:printing/printing.dart';
 import 'package:delta_erp/services/di/service_locator.dart';
@@ -50,17 +48,7 @@ class _CompanySettingsPageState extends State<CompanySettingsPage> {
   final _phonesController = TextEditingController();
   final _invoiceFooterNoteController = TextEditingController();
   static const _invoiceMapper = InvoicePrintModelMapper();
-  final _invoicePrintManager = InvoicePrintManager(
-    a4Printer: const A4InvoicePrinter(),
-    thermal58Printer: ThermalPdfInvoicePrinter(
-      paperWidthMm: 58,
-      printerPrefs: const ThermalPrinterPreferences(),
-    ),
-    thermal80Printer: ThermalPdfInvoicePrinter(
-      paperWidthMm: 80,
-      printerPrefs: const ThermalPrinterPreferences(),
-    ),
-  );
+  final _invoicePrintManager = ThermalInvoicePrinterFactory.createPrintManager();
 
   static const _thermalPrefs = ThermalPrinterPreferences();
 

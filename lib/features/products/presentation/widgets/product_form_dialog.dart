@@ -5,8 +5,8 @@ import 'package:delta_erp/core/config/company_settings_service.dart';
 import 'package:delta_erp/features/products/domain/duplicate_product_barcode_exception.dart';
 import 'package:delta_erp/features/products/domain/product.dart';
 import 'package:delta_erp/services/di/service_locator.dart';
+import 'package:delta_erp/features/products/presentation/widgets/barcode_label_preview_dialog.dart';
 import 'package:delta_erp/services/printing/product_barcode_label_printer.dart';
-import 'package:printing/printing.dart';
 
 class ProductFormDialog extends StatefulWidget {
   const ProductFormDialog({
@@ -188,57 +188,13 @@ class _ProductFormDialogState extends State<ProductFormDialog> {
     final companyName = getIt<CompanySettingsService>().settings.name;
 
     try {
-      final bytes = await printer.buildLabelPdfBytes(
+      if (!mounted) return;
+      await showSingleBarcodeLabelPreviewDialog(
+        context: context,
         productName: name,
         barcodeValue: code,
         companyName: companyName,
         amount: salePrice,
-        copies: 1,
-      );
-      if (!mounted) return;
-      await showDialog<void>(
-        context: context,
-        builder: (ctx) => Dialog(
-          insetPadding: const EdgeInsets.all(16),
-          child: SizedBox(
-            width: 420,
-            height: 560,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 10, 8, 8),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          'Preview'.tr(),
-                          style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ),
-                      IconButton(
-                        onPressed: () => Navigator.of(ctx).pop(),
-                        icon: const Icon(Icons.close),
-                      ),
-                    ],
-                  ),
-                ),
-                const Divider(height: 1),
-                Expanded(
-                  child: PdfPreview(
-                    padding: EdgeInsets.zero,
-                    build: (format) async => bytes,
-                    canChangeOrientation: false,
-                    canChangePageFormat: false,
-                    canDebug: false,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
       );
     } catch (e) {
       if (!mounted) return;

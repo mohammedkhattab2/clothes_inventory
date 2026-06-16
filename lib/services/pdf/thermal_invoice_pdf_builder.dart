@@ -1,13 +1,17 @@
 import 'package:delta_erp/features/invoices/domain/invoice_print_model.dart';
 import 'package:delta_erp/services/pdf/invoice_pdf_theme.dart';
+import 'package:delta_erp/services/printing/thermal_printer_presets.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:pdf/widgets.dart' as pw;
 
+/// Extra safety when packing receipt segments into a 109 mm driver strip.
+const thermalStripPackSafetyMm = 2.0;
+
 /// Safety margin added to the content estimate so nothing is clipped on print.
-const thermalPageHeightSafetyBufferMm = 18.0;
+const thermalPageHeightSafetyBufferMm = 8.0;
 
 /// Minimum receipt page height in millimeters.
-const thermalPageMinHeightMm = 70.0;
+const thermalPageMinHeightMm = 50.0;
 
 int _thermalEstimatedTextLines(
   String text,
@@ -19,19 +23,21 @@ int _thermalEstimatedTextLines(
     return 0;
   }
 
-  final charsPerLine = paperWidthMm <= 58 ? 14 : 20;
+  final charsPerLine = paperWidthMm <= 58 ? 12 : 18;
   var lines = 0;
   for (final paragraph in trimmed.split('\n')) {
+    if (paragraph.trim().isEmpty) continue;
     lines += (paragraph.length / charsPerLine).ceil().clamp(1, maxLines);
   }
-  return lines.clamp(1, maxLines);
+  return lines;
 }
 
 double _thermalTextBlockHeightMm(int lines, double fontSizePt) {
   if (lines <= 0) {
     return 0;
   }
-  return lines * fontSizePt * 0.38 + 2;
+  // lineSpacing 1.15 in footer widgets — use conservative mm-per-line estimate.
+  return lines * fontSizePt * 0.42 + 4;
 }
 
 double _thermalItemRowHeightMm(InvoiceItem item, double paperWidthMm) {
@@ -49,9 +55,7 @@ double _thermalItemRowHeightMm(InvoiceItem item, double paperWidthMm) {
           maxLines: 2,
         ).clamp(1, 2);
   final rowLines = nameLines > barcodeLines ? nameLines : barcodeLines;
-  // Budget the worst case (3 lines) so short receipts still get enough height.
-  final budgetLines = rowLines < 3 ? 3 : rowLines;
-  return 6.0 + budgetLines * cellFontSize * 0.5;
+  return 8.0 + rowLines * cellFontSize * 0.55;
 }
 
 /// Estimates receipt height in millimeters for a content-fit thermal roll page.
@@ -62,7 +66,7 @@ double thermalEstimatedPageHeightMm(
   final footerMinFontSize =
       InvoicePdfTheme.thermalFooterMinFontSize(paperWidthMm);
 
-  var heightMm = 36.0; // letterhead + invoice meta
+  var heightMm = 40.0; // letterhead (company + address up to 3 lines) + meta
   heightMm += 10.0; // table header row
   for (final item in invoice.items) {
     heightMm += _thermalItemRowHeightMm(item, paperWidthMm);
@@ -77,7 +81,7 @@ double thermalEstimatedPageHeightMm(
       _thermalEstimatedTextLines(
         invoice.returnPolicyNote,
         paperWidthMm,
-        maxLines: 6,
+        maxLines: 10,
       ),
       footerMinFontSize,
     );
@@ -87,36 +91,47 @@ double thermalEstimatedPageHeightMm(
       _thermalEstimatedTextLines(
         invoice.invoiceFooterNote,
         paperWidthMm,
-        maxLines: 6,
+        maxLines: 10,
       ),
       footerMinFontSize,
     );
   }
   if (invoice.invoiceFooterImageBytes != null) {
-    heightMm += 14.0;
+    heightMm += 20.0; // 36pt image + spacing
   }
-  heightMm += 18.0; // developer footer block
-  heightMm += InvoicePdfTheme.thermalMarginVerticalMm * 2;
+  heightMm += 24.0; // developer footer block (icon + 3 lines)
+  heightMm += InvoicePdfTheme.thermalMarginVerticalMm;
+  heightMm += InvoicePdfTheme.thermalMarginBottomMm;
   heightMm += thermalPageHeightSafetyBufferMm;
-  heightMm += invoice.items.length * 1.5;
+  heightMm += invoice.items.length * 2.0;
 
   return heightMm.clamp(thermalPageMinHeightMm, double.infinity);
 }
 
 /// Builds a narrow receipt-style PDF for thermal printers (58 mm or 80 mm).
+///
+/// One continuous roll page — avoids inter-page gaps from 350B / Windows drivers
+/// that feed ~10 cm per PDF page when using multi-page jobs.
 void buildThermalRtlInvoicePage({
   required pw.Document document,
   required InvoicePrintModel invoice,
   required double paperWidthMm,
 }) {
-  final receiptWidgets = _buildThermalReceiptWidgets(
+  final footerImg = invoice.invoiceFooterImageBytes != null
+      ? pw.MemoryImage(invoice.invoiceFooterImageBytes!)
+      : null;
+  final appIcon = invoice.appIconBytes != null
+      ? pw.MemoryImage(invoice.appIconBytes!)
+      : null;
+
+  final widgets = _buildThermalReceiptWidgets(
     invoice: invoice,
     paperWidthMm: paperWidthMm,
+    footerImg: footerImg,
+    appIcon: appIcon,
   );
-
   final pageHeightMm = thermalEstimatedPageHeightMm(invoice, paperWidthMm);
 
-  // Single roll-length page — thermal drivers (e.g. 350B) clip fixed-height PDFs.
   document.addPage(
     pw.Page(
       pageFormat: InvoicePdfTheme.thermalPageFormat(
@@ -126,7 +141,7 @@ void buildThermalRtlInvoicePage({
       textDirection: pw.TextDirection.rtl,
       build: (context) => pw.Column(
         crossAxisAlignment: pw.CrossAxisAlignment.stretch,
-        children: receiptWidgets,
+        children: widgets,
       ),
     ),
   );
@@ -135,6 +150,8 @@ void buildThermalRtlInvoicePage({
 List<pw.Widget> _buildThermalReceiptWidgets({
   required InvoicePrintModel invoice,
   required double paperWidthMm,
+  pw.MemoryImage? footerImg,
+  pw.MemoryImage? appIcon,
 }) {
   final dateStr = DateFormat('yyyy-MM-dd HH:mm').format(invoice.date);
   final cellFontSize = InvoicePdfTheme.thermalCellFontSize(paperWidthMm);
@@ -144,13 +161,6 @@ List<pw.Widget> _buildThermalReceiptWidgets({
       InvoicePdfTheme.thermalCompanyNameFontSize(paperWidthMm);
   final footerMinFontSize =
       InvoicePdfTheme.thermalFooterMinFontSize(paperWidthMm);
-
-  final footerImg = invoice.invoiceFooterImageBytes != null
-      ? pw.MemoryImage(invoice.invoiceFooterImageBytes!)
-      : null;
-  final appIcon = invoice.appIconBytes != null
-      ? pw.MemoryImage(invoice.appIconBytes!)
-      : null;
 
   final widgets = <pw.Widget>[
     _buildThermalLetterhead(
@@ -209,55 +219,55 @@ List<pw.Widget> _buildThermalReceiptWidgets({
   );
 
   widgets.addAll([
-    pw.SizedBox(height: 6),
-    pw.Row(
-      children: [
-        pw.Expanded(
-          child: pw.Align(
-            alignment: pw.Alignment.centerRight,
-            child: pw.Text(
-              '${'Total'.tr()}:',
-              style: pw.TextStyle(
-                fontSize: metaFontSize + 1,
-                fontWeight: pw.FontWeight.bold,
-                color: InvoicePdfTheme.textColor,
+      pw.SizedBox(height: 6),
+      pw.Row(
+        children: [
+          pw.Expanded(
+            child: pw.Align(
+              alignment: pw.Alignment.centerRight,
+              child: pw.Text(
+                '${'Total'.tr()}:',
+                style: pw.TextStyle(
+                  fontSize: metaFontSize + 1,
+                  fontWeight: pw.FontWeight.bold,
+                  color: InvoicePdfTheme.textColor,
+                ),
               ),
             ),
           ),
-        ),
-        pw.Expanded(
-          child: pw.Align(
-            alignment: pw.Alignment.centerLeft,
-            child: pw.Text(
-              '${invoice.total.toStringAsFixed(2)} ${invoice.currency}',
-              style: pw.TextStyle(
-                fontSize: metaFontSize + 1,
-                fontWeight: pw.FontWeight.bold,
-                color: InvoicePdfTheme.textColor,
+          pw.Expanded(
+            child: pw.Align(
+              alignment: pw.Alignment.centerLeft,
+              child: pw.Text(
+                '${invoice.total.toStringAsFixed(2)} ${invoice.currency}',
+                style: pw.TextStyle(
+                  fontSize: metaFontSize + 1,
+                  fontWeight: pw.FontWeight.bold,
+                  color: InvoicePdfTheme.textColor,
+                ),
               ),
             ),
           ),
-        ),
-      ],
-    ),
-  ]);
-
-  if (invoice.paidAmount > 0.000001 ||
-      invoice.outstandingAmount > 0.000001) {
-    widgets.addAll([
-      pw.SizedBox(height: 4),
-      _metaRow(
-        'invoice.print.paid'.tr(),
-        invoice.paidAmount.toStringAsFixed(2),
-        fontSize: metaFontSize,
-      ),
-      _metaRow(
-        'invoice.print.outstanding'.tr(),
-        invoice.outstandingAmount.toStringAsFixed(2),
-        fontSize: metaFontSize,
+        ],
       ),
     ]);
-  }
+
+    if (invoice.paidAmount > 0.000001 ||
+        invoice.outstandingAmount > 0.000001) {
+      widgets.addAll([
+        pw.SizedBox(height: 4),
+        _metaRow(
+          'invoice.print.paid'.tr(),
+          invoice.paidAmount.toStringAsFixed(2),
+          fontSize: metaFontSize,
+        ),
+        _metaRow(
+          'invoice.print.outstanding'.tr(),
+          invoice.outstandingAmount.toStringAsFixed(2),
+          fontSize: metaFontSize,
+        ),
+      ]);
+    }
 
   widgets.add(pw.SizedBox(height: 6));
 
@@ -570,3 +580,397 @@ pw.Widget _metaRow(String label, String value, {required double fontSize}) =>
         ],
       ),
     );
+
+/// Sized receipt block used when packing a long invoice into driver strips.
+class ThermalReceiptSegment {
+  const ThermalReceiptSegment({
+    required this.widget,
+    required this.heightMm,
+  });
+
+  final pw.Widget widget;
+  final double heightMm;
+}
+
+/// One printable strip (≤ [ThermalPrinterPresets.driverMaxStripHeightMm]).
+class ThermalInvoicePrintStrip {
+  const ThermalInvoicePrintStrip({
+    required this.widgets,
+    required this.pageHeightMm,
+  });
+
+  final List<pw.Widget> widgets;
+  final double pageHeightMm;
+}
+
+/// Printable content budget inside one 350B driver PDF job.
+double thermalStripMaxContentHeightMm({
+  double maxStripHeightMm = ThermalPrinterPresets.driverMaxStripHeightMm,
+}) {
+  return maxStripHeightMm -
+      InvoicePdfTheme.thermalMarginVerticalMm -
+      InvoicePdfTheme.thermalMarginBottomMm -
+      thermalStripPackSafetyMm;
+}
+
+/// Splits a receipt into consecutive driver-safe strips with no blank gaps.
+List<ThermalInvoicePrintStrip> planThermalInvoicePrintStrips({
+  required InvoicePrintModel invoice,
+  required double paperWidthMm,
+  double maxStripHeightMm = ThermalPrinterPresets.driverMaxStripHeightMm,
+}) {
+  final segments = buildThermalReceiptSegments(
+    invoice: invoice,
+    paperWidthMm: paperWidthMm,
+  );
+  if (segments.isEmpty) {
+    throw StateError('Invoice has no printable segments.');
+  }
+
+  final marginTop = InvoicePdfTheme.thermalMarginVerticalMm;
+  final marginBottom = InvoicePdfTheme.thermalMarginBottomMm;
+  final maxContent = thermalStripMaxContentHeightMm(
+    maxStripHeightMm: maxStripHeightMm,
+  );
+
+  final strips = <ThermalInvoicePrintStrip>[];
+  var batch = <ThermalReceiptSegment>[];
+  var batchHeight = 0.0;
+
+  void flush() {
+    if (batch.isEmpty) return;
+    strips.add(
+      ThermalInvoicePrintStrip(
+        widgets: batch.map((segment) => segment.widget).toList(growable: false),
+        pageHeightMm: marginTop +
+            batchHeight +
+            marginBottom +
+            thermalStripPackSafetyMm,
+      ),
+    );
+    batch = <ThermalReceiptSegment>[];
+    batchHeight = 0;
+  }
+
+  for (final segment in segments) {
+    if (batch.isNotEmpty &&
+        batchHeight + segment.heightMm > maxContent + 0.001) {
+      flush();
+    }
+    batch.add(segment);
+    batchHeight += segment.heightMm;
+  }
+  flush();
+
+  return strips;
+}
+
+List<ThermalReceiptSegment> buildThermalReceiptSegments({
+  required InvoicePrintModel invoice,
+  required double paperWidthMm,
+}) {
+  final footerImg = invoice.invoiceFooterImageBytes != null
+      ? pw.MemoryImage(invoice.invoiceFooterImageBytes!)
+      : null;
+  final appIcon = invoice.appIconBytes != null
+      ? pw.MemoryImage(invoice.appIconBytes!)
+      : null;
+
+  final dateStr = DateFormat('yyyy-MM-dd HH:mm').format(invoice.date);
+  final cellFontSize = InvoicePdfTheme.thermalCellFontSize(paperWidthMm);
+  final headerFontSize = InvoicePdfTheme.thermalHeaderFontSize(paperWidthMm);
+  final metaFontSize = InvoicePdfTheme.thermalMetaFontSize(paperWidthMm);
+  final companyFontSize =
+      InvoicePdfTheme.thermalCompanyNameFontSize(paperWidthMm);
+  final footerMinFontSize =
+      InvoicePdfTheme.thermalFooterMinFontSize(paperWidthMm);
+
+  final segments = <ThermalReceiptSegment>[
+    ThermalReceiptSegment(
+      widget: _buildThermalLetterhead(
+        invoice: invoice,
+        companyFontSize: companyFontSize,
+        metaFontSize: metaFontSize,
+      ),
+      heightMm: 40,
+    ),
+    ThermalReceiptSegment(
+      widget: pw.SizedBox(height: 3),
+      heightMm: 3,
+    ),
+    ThermalReceiptSegment(
+      widget: pw.Align(
+        alignment: pw.Alignment.centerRight,
+        child: pw.Text(
+          invoice.invoiceNumber,
+          style: pw.TextStyle(
+            fontSize: metaFontSize,
+            fontWeight: pw.FontWeight.bold,
+            color: InvoicePdfTheme.textColor,
+          ),
+        ),
+      ),
+      heightMm: 10,
+    ),
+    ThermalReceiptSegment(
+      widget: pw.SizedBox(height: 2),
+      heightMm: 2,
+    ),
+  ];
+
+  if (invoice.cashierName.trim().isNotEmpty) {
+    segments.add(
+      ThermalReceiptSegment(
+        widget: _metaRow(
+          'invoice.print.cashier'.tr(),
+          invoice.cashierName,
+          fontSize: metaFontSize,
+        ),
+        heightMm: 6,
+      ),
+    );
+  }
+
+  segments.addAll([
+    ThermalReceiptSegment(
+      widget: _metaRow(
+        'invoice.print.customer'.tr(),
+        invoice.customerName,
+        fontSize: metaFontSize,
+      ),
+      heightMm: 6,
+    ),
+    ThermalReceiptSegment(
+      widget: _metaRow(
+        'invoice.print.datetime'.tr(),
+        dateStr,
+        fontSize: metaFontSize,
+      ),
+      heightMm: 6,
+    ),
+    ThermalReceiptSegment(
+      widget: pw.SizedBox(height: 4),
+      heightMm: 4,
+    ),
+  ]);
+
+  for (var index = 0; index < invoice.items.length; index++) {
+    final item = invoice.items[index];
+    final rowHeight = _thermalItemRowHeightMm(item, paperWidthMm);
+    final headerHeight = index == 0 ? 10.0 : 0.0;
+    segments.add(
+      ThermalReceiptSegment(
+        widget: _buildThermalItemsTable(
+          invoice: invoice,
+          items: [item],
+          paperWidthMm: paperWidthMm,
+          cellFontSize: cellFontSize,
+          headerFontSize: headerFontSize,
+          includeHeaderRow: index == 0,
+          includeTotalsRow: false,
+        ),
+        heightMm: headerHeight + rowHeight + 2,
+      ),
+    );
+  }
+
+  if (invoice.items.isNotEmpty) {
+    segments.add(
+      ThermalReceiptSegment(
+        widget: _buildThermalItemsTable(
+          invoice: invoice,
+          items: const [],
+          paperWidthMm: paperWidthMm,
+          cellFontSize: cellFontSize,
+          headerFontSize: headerFontSize,
+          includeHeaderRow: false,
+          includeTotalsRow: true,
+        ),
+        heightMm: 8,
+      ),
+    );
+  }
+
+  segments.addAll([
+    ThermalReceiptSegment(
+      widget: pw.SizedBox(height: 6),
+      heightMm: 6,
+    ),
+    ThermalReceiptSegment(
+      widget: pw.Row(
+        children: [
+          pw.Expanded(
+            child: pw.Align(
+              alignment: pw.Alignment.centerRight,
+              child: pw.Text(
+                '${'Total'.tr()}:',
+                style: pw.TextStyle(
+                  fontSize: metaFontSize + 1,
+                  fontWeight: pw.FontWeight.bold,
+                  color: InvoicePdfTheme.textColor,
+                ),
+              ),
+            ),
+          ),
+          pw.Expanded(
+            child: pw.Align(
+              alignment: pw.Alignment.centerLeft,
+              child: pw.Text(
+                '${invoice.total.toStringAsFixed(2)} ${invoice.currency}',
+                style: pw.TextStyle(
+                  fontSize: metaFontSize + 1,
+                  fontWeight: pw.FontWeight.bold,
+                  color: InvoicePdfTheme.textColor,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+      heightMm: 12,
+    ),
+  ]);
+
+  if (invoice.paidAmount > 0.000001 ||
+      invoice.outstandingAmount > 0.000001) {
+    segments.addAll([
+      ThermalReceiptSegment(
+        widget: pw.SizedBox(height: 4),
+        heightMm: 4,
+      ),
+      ThermalReceiptSegment(
+        widget: _metaRow(
+          'invoice.print.paid'.tr(),
+          invoice.paidAmount.toStringAsFixed(2),
+          fontSize: metaFontSize,
+        ),
+        heightMm: 6,
+      ),
+      ThermalReceiptSegment(
+        widget: _metaRow(
+          'invoice.print.outstanding'.tr(),
+          invoice.outstandingAmount.toStringAsFixed(2),
+          fontSize: metaFontSize,
+        ),
+        heightMm: 6,
+      ),
+    ]);
+  }
+
+  segments.add(
+    ThermalReceiptSegment(
+      widget: pw.SizedBox(height: 6),
+      heightMm: 6,
+    ),
+  );
+
+  if (invoice.returnPolicyNote.trim().isNotEmpty) {
+    final lines = _thermalEstimatedTextLines(
+      invoice.returnPolicyNote,
+      paperWidthMm,
+      maxLines: 10,
+    );
+    segments.addAll([
+      ThermalReceiptSegment(
+        widget: pw.Text(
+          invoice.returnPolicyNote.trim(),
+          textAlign: pw.TextAlign.center,
+          style: pw.TextStyle(
+            fontSize: footerMinFontSize,
+            lineSpacing: 1.15,
+            color: InvoicePdfTheme.textColor,
+          ),
+        ),
+        heightMm: _thermalTextBlockHeightMm(lines, footerMinFontSize),
+      ),
+      ThermalReceiptSegment(
+        widget: pw.SizedBox(height: 6),
+        heightMm: 6,
+      ),
+    ]);
+  }
+
+  if (invoice.invoiceFooterNote.trim().isNotEmpty) {
+    final lines = _thermalEstimatedTextLines(
+      invoice.invoiceFooterNote,
+      paperWidthMm,
+      maxLines: 10,
+    );
+    segments.addAll([
+      ThermalReceiptSegment(
+        widget: pw.Text(
+          invoice.invoiceFooterNote.trim(),
+          textAlign: pw.TextAlign.center,
+          style: pw.TextStyle(
+            fontSize: footerMinFontSize,
+            lineSpacing: 1.15,
+            color: InvoicePdfTheme.textColor,
+          ),
+        ),
+        heightMm: _thermalTextBlockHeightMm(lines, footerMinFontSize),
+      ),
+      ThermalReceiptSegment(
+        widget: pw.SizedBox(height: 4),
+        heightMm: 4,
+      ),
+    ]);
+  }
+
+  if (footerImg != null) {
+    segments.addAll([
+      ThermalReceiptSegment(
+        widget: pw.Center(child: pw.Image(footerImg, height: 36)),
+        heightMm: 20,
+      ),
+      ThermalReceiptSegment(
+        widget: pw.SizedBox(height: 4),
+        heightMm: 4,
+      ),
+    ]);
+  }
+
+  segments.add(
+    ThermalReceiptSegment(
+      widget: pw.Padding(
+        padding: const pw.EdgeInsets.symmetric(vertical: 3),
+        child: pw.Center(
+          child: pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.center,
+            mainAxisSize: pw.MainAxisSize.min,
+            children: [
+              if (appIcon != null) pw.Image(appIcon, width: 16, height: 16),
+              pw.Text(
+                invoice.developerBrand,
+                textAlign: pw.TextAlign.center,
+                style: pw.TextStyle(
+                  fontSize: footerMinFontSize,
+                  fontWeight: pw.FontWeight.bold,
+                  color: InvoicePdfTheme.textColor,
+                ),
+              ),
+              pw.Text(
+                invoice.developerName,
+                textAlign: pw.TextAlign.center,
+                style: pw.TextStyle(
+                  fontSize: footerMinFontSize,
+                  color: InvoicePdfTheme.textColor,
+                ),
+              ),
+              pw.Text(
+                invoice.developerPhone,
+                textAlign: pw.TextAlign.center,
+                style: pw.TextStyle(
+                  fontSize: footerMinFontSize,
+                  color: InvoicePdfTheme.textColor,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+      heightMm: 24,
+    ),
+  );
+
+  return segments;
+}

@@ -23,8 +23,11 @@ abstract final class InvoicePdfTheme {
   static const a4FooterNoteFontSize = 9.0;
   static const a4DeveloperFontSize = 8.0;
 
-  /// Vertical margins for thermal receipt pages.
+  /// Top margin for thermal receipt pages (mm).
   static const thermalMarginVerticalMm = 3.0;
+
+  /// Bottom margin for thermal receipts — visible whitespace below footer (mm).
+  static const thermalMarginBottomMm = 5.0;
 
   /// Physical left margin (mm) — wider whitespace on printed receipts.
   static const thermalMarginLeftMm = 2.0;
@@ -46,7 +49,7 @@ abstract final class InvoicePdfTheme {
       marginLeft: thermalMarginLeftMm * mm,
       marginRight: thermalMarginRightMm * mm,
       marginTop: thermalMarginVerticalMm * mm,
-      marginBottom: thermalMarginVerticalMm * mm,
+      marginBottom: thermalMarginBottomMm * mm,
     );
   }
 

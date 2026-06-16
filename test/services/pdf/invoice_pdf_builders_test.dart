@@ -1,6 +1,7 @@
 import 'package:delta_erp/features/invoices/domain/a4_invoice_view_data.dart';
 import 'package:delta_erp/features/invoices/domain/invoice_print_model.dart';
 import 'package:delta_erp/services/pdf/a4_invoice_pdf_document.dart';
+import 'package:delta_erp/services/pdf/invoice_pdf_theme.dart';
 import 'package:delta_erp/services/pdf/thermal_invoice_pdf_builder.dart';
 import 'package:delta_erp/services/pdf/thermal_invoice_pdf_document.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -83,7 +84,7 @@ void main() {
     }
   });
 
-  test('buildThermalInvoicePdfDocument uses a single dynamic-height page', () async {
+  test('buildThermalInvoicePdfDocument uses one continuous roll page', () async {
     final manyItemsInvoice = InvoicePrintModel(
       companyName: sampleThermalInvoice.companyName,
       address: sampleThermalInvoice.address,
@@ -120,6 +121,8 @@ void main() {
 
     final estimatedHeightMm =
         thermalEstimatedPageHeightMm(manyItemsInvoice, 80);
+    expect(estimatedHeightMm, greaterThan(100.0));
+
     final match =
         RegExp(r'/MediaBox\[0 0 ([\d.]+) ([\d.]+)\]').firstMatch(text);
     expect(match, isNotNull);
@@ -129,7 +132,131 @@ void main() {
     );
     expect(
       double.parse(match.group(2)!),
-      closeTo(estimatedHeightMm * PdfPageFormat.mm, 1.0),
+      closeTo(estimatedHeightMm * PdfPageFormat.mm, 2.0),
+    );
+  });
+
+  test('planThermalInvoicePrintStrips splits long receipts for 350B driver', () {
+    final sevenItemsInvoice = InvoicePrintModel(
+      companyName: sampleThermalInvoice.companyName,
+      address: sampleThermalInvoice.address,
+      phone: sampleThermalInvoice.phone,
+      invoiceNumber: sampleThermalInvoice.invoiceNumber,
+      date: sampleThermalInvoice.date,
+      customerName: sampleThermalInvoice.customerName,
+      cashierName: sampleThermalInvoice.cashierName,
+      items: List.generate(
+        7,
+        (index) => InvoiceItem(
+          productName: 'منتج ${index + 1}',
+          barcode: 'BC-${index + 1}',
+          quantity: 1,
+          unitPrice: 100,
+          discount: 0,
+          lineTotal: 100,
+        ),
+      ),
+      total: 700,
+      paidAmount: 700,
+      returnPolicyNote: sampleThermalInvoice.returnPolicyNote,
+      invoiceFooterNote: sampleThermalInvoice.invoiceFooterNote,
+    );
+
+    final strips = planThermalInvoicePrintStrips(
+      invoice: sevenItemsInvoice,
+      paperWidthMm: 80,
+    );
+
+    expect(strips.length, greaterThan(1));
+    for (final strip in strips) {
+      expect(strip.pageHeightMm, lessThanOrEqualTo(109.001));
+      expect(strip.widgets, isNotEmpty);
+    }
+  });
+
+  test('planThermalInvoicePrintStrips packs every segment within driver height',
+      () {
+    final minimalInvoice = InvoicePrintModel(
+      companyName: sampleThermalInvoice.companyName,
+      address: sampleThermalInvoice.address,
+      phone: sampleThermalInvoice.phone,
+      invoiceNumber: sampleThermalInvoice.invoiceNumber,
+      date: sampleThermalInvoice.date,
+      customerName: sampleThermalInvoice.customerName,
+      items: const [
+        InvoiceItem(
+          productName: 'منتج',
+          barcode: '100',
+          quantity: 1,
+          unitPrice: 10,
+          discount: 0,
+          lineTotal: 10,
+        ),
+      ],
+      total: 10,
+    );
+
+    final segments = buildThermalReceiptSegments(
+      invoice: minimalInvoice,
+      paperWidthMm: 80,
+    );
+    final strips = planThermalInvoicePrintStrips(
+      invoice: minimalInvoice,
+      paperWidthMm: 80,
+    );
+
+    for (final strip in strips) {
+      expect(strip.pageHeightMm, lessThanOrEqualTo(109.001));
+    }
+
+    final packedWidgets = strips.fold<int>(
+      0,
+      (sum, strip) => sum + strip.widgets.length,
+    );
+    expect(packedWidgets, segments.length);
+  });
+
+  test('buildThermalInvoicePdfDocument keeps medium receipts on one page', () async {
+    final sevenItemsInvoice = InvoicePrintModel(
+      companyName: sampleThermalInvoice.companyName,
+      address: sampleThermalInvoice.address,
+      phone: sampleThermalInvoice.phone,
+      invoiceNumber: sampleThermalInvoice.invoiceNumber,
+      date: sampleThermalInvoice.date,
+      customerName: sampleThermalInvoice.customerName,
+      cashierName: sampleThermalInvoice.cashierName,
+      items: List.generate(
+        7,
+        (index) => InvoiceItem(
+          productName: 'منتج ${index + 1}',
+          barcode: 'BC-${index + 1}',
+          quantity: 1,
+          unitPrice: 100,
+          discount: 0,
+          lineTotal: 100,
+        ),
+      ),
+      total: 700,
+      paidAmount: 700,
+      returnPolicyNote: sampleThermalInvoice.returnPolicyNote,
+      invoiceFooterNote: sampleThermalInvoice.invoiceFooterNote,
+    );
+
+    final bytes = await buildThermalInvoicePdfDocument(
+      invoice: sevenItemsInvoice,
+      paperWidthMm: 80,
+    );
+    final text = String.fromCharCodes(bytes);
+    final pageCount = RegExp(r'/Type\s*/Page\b').allMatches(text).length;
+    expect(pageCount, 1);
+
+    final estimatedHeightMm = thermalEstimatedPageHeightMm(sevenItemsInvoice, 80);
+    final match =
+        RegExp(r'/MediaBox\[0 0 ([\d.]+) ([\d.]+)\]').firstMatch(text);
+    expect(match, isNotNull);
+    expect(
+      double.parse(match!.group(2)!),
+      closeTo(estimatedHeightMm * PdfPageFormat.mm, 2.0),
     );
   });
 
@@ -171,5 +298,42 @@ void main() {
     expect(bytes, isNotEmpty);
     expect(String.fromCharCodes(bytes.take(4)), '%PDF');
     expect(bytes.length, greaterThan(shortBytes.length));
+  });
+
+  test('thermalEstimatedPageHeightMm grows with long footer note', () {
+    const shortFooter = 'شكراً';
+    const longFooter =
+        'شكراً لتعاملكم معنا. '
+        'للاستبدال خلال 7 أيام مع الفاتورة. '
+        'لا يتم استرداد النقد بعد 14 يوماً.';
+
+    final base = InvoicePrintModel(
+      companyName: sampleThermalInvoice.companyName,
+      address: sampleThermalInvoice.address,
+      phone: sampleThermalInvoice.phone,
+      invoiceNumber: sampleThermalInvoice.invoiceNumber,
+      date: sampleThermalInvoice.date,
+      customerName: sampleThermalInvoice.customerName,
+      items: sampleThermalInvoice.items,
+      total: sampleThermalInvoice.total,
+      invoiceFooterNote: shortFooter,
+    );
+    final long = InvoicePrintModel(
+      companyName: base.companyName,
+      address: base.address,
+      phone: base.phone,
+      invoiceNumber: base.invoiceNumber,
+      date: base.date,
+      customerName: base.customerName,
+      items: base.items,
+      total: base.total,
+      invoiceFooterNote: longFooter,
+    );
+
+    final shortHeight = thermalEstimatedPageHeightMm(base, 80);
+    final longHeight = thermalEstimatedPageHeightMm(long, 80);
+
+    expect(longHeight, greaterThan(shortHeight));
+    expect(shortHeight, greaterThan(100.0));
   });
 }

@@ -19,10 +19,7 @@ import 'package:delta_erp/features/sales/presentation/widgets/sales_invoices_exp
 import 'package:delta_erp/features/sales/presentation/widgets/sales_return_dialog.dart';
 import 'package:delta_erp/services/di/service_locator.dart';
 import 'package:delta_erp/services/pdf/sales_invoice_pdf_service.dart';
-import 'package:delta_erp/services/printing/a4_invoice_printer.dart';
-import 'package:delta_erp/services/printing/invoice_print_manager.dart';
-import 'package:delta_erp/services/printing/thermal_pdf_invoice_printer.dart';
-import 'package:delta_erp/services/printing/thermal_printer_preferences.dart';
+import 'package:delta_erp/services/printing/thermal_invoice_printer_factory.dart';
 
 enum InvoicesHubTab { sales, purchases }
 
@@ -62,17 +59,7 @@ class _InvoicesHubPageState extends State<InvoicesHubPage>
   final _purchasesRepo = getIt<PurchasesRepository>();
   final _salesPdfService = getIt<SalesInvoicePdfService>();
   final _dateFormat = DateFormat('yyyy-MM-dd HH:mm');
-  final _invoicePrintManager = InvoicePrintManager(
-    a4Printer: const A4InvoicePrinter(),
-    thermal58Printer: ThermalPdfInvoicePrinter(
-      paperWidthMm: 58,
-      printerPrefs: const ThermalPrinterPreferences(),
-    ),
-    thermal80Printer: ThermalPdfInvoicePrinter(
-      paperWidthMm: 80,
-      printerPrefs: const ThermalPrinterPreferences(),
-    ),
-  );
+  final _invoicePrintManager = ThermalInvoicePrinterFactory.createPrintManager();
 
   final _salesScrollController = ScrollController();
   final _purchasesScrollController = ScrollController();

@@ -28,6 +28,14 @@ class ThermalTextFormatter implements PrinterTextFormatter {
   }
 }
 
+/// Logical Unicode for ESC/POS CP1256 — no visual reordering/presentation forms.
+class EscPosThermalTextFormatter implements PrinterTextFormatter {
+  const EscPosThermalTextFormatter();
+
+  @override
+  String format(String text) => text;
+}
+
 PrinterTextFormatter formatterForPrinterType(PrinterType type) {
   switch (type) {
     case PrinterType.a4:

@@ -65,28 +65,24 @@ class _ThermalInvoicePdfPreviewState extends State<ThermalInvoicePdfPreview> {
               return const SizedBox.shrink();
             }
 
-            return Scrollbar(
+            return ListView.builder(
               controller: _scrollController,
-              thumbVisibility: true,
-              child: ListView.builder(
-                controller: _scrollController,
-                primary: false,
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                itemCount: pages.length,
-                itemBuilder: (context, index) {
-                  final page = pages[index];
-                  return Center(
-                    child: AspectRatio(
-                      aspectRatio: page.aspectRatio,
-                      child: Image(
-                        image: page.image,
-                        fit: BoxFit.contain,
-                        filterQuality: FilterQuality.high,
-                      ),
+              primary: false,
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              itemCount: pages.length,
+              itemBuilder: (context, index) {
+                final page = pages[index];
+                return Center(
+                  child: AspectRatio(
+                    aspectRatio: page.aspectRatio,
+                    child: Image(
+                      image: page.image,
+                      fit: BoxFit.contain,
+                      filterQuality: FilterQuality.high,
                     ),
-                  );
-                },
-              ),
+                  ),
+                );
+              },
             );
           },
         ),

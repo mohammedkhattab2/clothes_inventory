@@ -13,17 +13,7 @@ class _SalesPageState extends State<SalesPage> {
         getIt<AppDatabase>(),
         getIt<CompanySettingsService>(),
       );
-  final _invoicePrintManager = InvoicePrintManager(
-    a4Printer: const A4InvoicePrinter(),
-    thermal58Printer: ThermalPdfInvoicePrinter(
-      paperWidthMm: 58,
-      printerPrefs: const ThermalPrinterPreferences(),
-    ),
-    thermal80Printer: ThermalPdfInvoicePrinter(
-      paperWidthMm: 80,
-      printerPrefs: const ThermalPrinterPreferences(),
-    ),
-  );
+  final _invoicePrintManager = ThermalInvoicePrinterFactory.createPrintManager();
 
   final _nameSearchController = TextEditingController();
   final _barcodeController = TextEditingController();
@@ -297,7 +287,27 @@ class _SalesPageState extends State<SalesPage> {
       );
     } catch (e) {
       if (!mounted) return;
-      _showLatestSnackBar(context, '${'Failed to print invoice'.tr()}: $e');
+      _showLatestSnackBar(context, formatPrintFailureMessage(e, fallbackKey: 'Failed to print invoice'));
+    }
+  }
+
+  Future<void> _printInvoiceDirect(
+    BuildContext targetContext,
+    InvoicePrintModel invoice,
+  ) async {
+    try {
+      await printInvoiceToSavedPrinter(
+        printManager: _invoicePrintManager,
+        invoice: invoice,
+      );
+      if (!targetContext.mounted) return;
+      showPrintSentToPrinterSnackBar(targetContext);
+    } catch (e) {
+      if (!targetContext.mounted) return;
+      _showLatestSnackBar(
+        targetContext,
+        formatPrintFailureMessage(e, fallbackKey: 'Failed to print invoice'),
+      );
     }
   }
 
@@ -1471,14 +1481,7 @@ class _SalesPageState extends State<SalesPage> {
       },
       onPrintInvoice: (invoice) async {
         if (!pageContext.mounted) return;
-        await Navigator.of(pageContext).push(
-          MaterialPageRoute<void>(
-            builder: (_) => InvoicePrintPreviewPage(
-              invoice: invoice,
-              printManager: _invoicePrintManager,
-            ),
-          ),
-        );
+        await _printInvoiceDirect(pageContext, invoice);
       },
       onApplyReturn: (saleItemId, quantity) {
         _showReturnDialog(

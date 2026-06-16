@@ -5,6 +5,7 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:delta_erp/core/printing/print_user_feedback.dart';
 import 'package:delta_erp/features/products/data/product_repository.dart';
 import 'package:delta_erp/features/products/data/products_csv_service.dart';
 import 'package:delta_erp/features/products/data/products_import_service.dart';
@@ -73,7 +74,7 @@ class _ProductsPageState extends State<ProductsPage> {
     super.initState();
     _productsCubit = getIt<ProductsCubit>();
     _productRepository = getIt<ProductRepository>();
-    _barcodeLabelPrinter = const ProductBarcodeLabelPrinter(
+    _barcodeLabelPrinter = ProductBarcodeLabelPrinter(
       printerPrefs: ThermalPrinterPreferences(),
     );
     _restoreProductsPageState();
@@ -803,13 +804,11 @@ class _ProductsPageState extends State<ProductsPage> {
         amount: amount,
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Barcode label sent to printer'.tr())),
-      );
+      showPrintSentToPrinterSnackBar(context);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${'Failed to print barcode'.tr()}: $e')),
+        SnackBar(content: Text(formatPrintFailureMessage(e, fallbackKey: 'Failed to print barcode'))),
       );
     }
   }

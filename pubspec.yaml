@@ -61,6 +61,11 @@ dependencies:
   crypto: ^3.0.6
   archive: ^3.6.1
   barcode: ^2.2.8
+  esc_pos_utils_plus: ^2.0.4
+  image: ^4.3.0
+  win32: ^5.15.0
+  ffi: ^2.2.0
+  charset: ^2.0.1
 
 dev_dependencies:
   flutter_test:

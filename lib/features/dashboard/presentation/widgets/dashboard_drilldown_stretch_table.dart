@@ -154,12 +154,10 @@ class DashboardDrilldownStretchTable extends StatelessWidget {
         final body = table(w);
 
         if (w > 0 && w < horizontalScrollThreshold) {
-          return Scrollbar(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              primary: false,
-              child: body,
-            ),
+          return SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            primary: false,
+            child: body,
           );
         }
 

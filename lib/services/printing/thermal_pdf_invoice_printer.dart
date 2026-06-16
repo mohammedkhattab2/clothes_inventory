@@ -5,70 +5,107 @@ import 'package:delta_erp/services/pdf/invoice_pdf_theme.dart';
 import 'package:delta_erp/services/pdf/thermal_invoice_pdf_builder.dart';
 import 'package:delta_erp/services/pdf/thermal_invoice_pdf_document.dart';
 import 'package:delta_erp/services/printing/invoice_printer.dart';
+import 'package:delta_erp/services/printing/print_batch_failure.dart';
 import 'package:delta_erp/services/printing/thermal_printer_preferences.dart';
+import 'package:delta_erp/services/printing/thermal_printer_presets.dart';
+import 'package:delta_erp/services/printing/windows_driver_pdf_print_service.dart';
 import 'package:pdf/pdf.dart';
 import 'package:printing/printing.dart';
 
-/// Concrete thermal printer that generates a narrow receipt-style PDF
-/// and sends it to a Windows printer (USB or Bluetooth-paired).
+/// Sends narrow thermal receipt PDFs through the Windows printer driver.
 ///
-/// On first use (or when the saved printer disappears), it falls back to
-/// the system print dialog so the user can pick a printer. The selection
-/// can be persisted via [ThermalPrinterPreferences] from the settings UI.
+/// Long receipts are split into consecutive ~109 mm strips so the XP-350B
+/// driver prints the full invoice without truncating at ~10 cm.
 class ThermalPdfInvoicePrinter implements InvoicePrinter {
-  const ThermalPdfInvoicePrinter({
+  ThermalPdfInvoicePrinter({
     required this.paperWidthMm,
     required this.printerPrefs,
-  });
+    WindowsDriverPdfPrintService? pdfPrintService,
+  }) : _pdfPrintService =
+            pdfPrintService ?? const WindowsDriverPdfPrintService();
 
-  /// 58 or 80 mm paper roll width.
   final double paperWidthMm;
-
-  /// Persistent preferences used to look up the saved printer name.
   final ThermalPrinterPreferences printerPrefs;
+  final WindowsDriverPdfPrintService _pdfPrintService;
 
   @override
   Future<void> print(InvoicePrintModel invoice) async {
-    final pageFormat = _pageFormatFor(invoice);
-    final pdfBytes = await _buildPdf(invoice);
-    final jobName = 'invoice_${invoice.invoiceNumber}';
+    final strips = planThermalInvoicePrintStrips(
+      invoice: invoice,
+      paperWidthMm: paperWidthMm,
+    );
 
-    // Try to resolve the previously-saved printer first.
+    for (var stripIndex = 0; stripIndex < strips.length; stripIndex++) {
+      final strip = strips[stripIndex];
+      try {
+        final pdfBytes = await buildThermalInvoiceStripPdfDocument(
+          widgets: strip.widgets,
+          paperWidthMm: paperWidthMm,
+          pageHeightMm: strip.pageHeightMm,
+        );
+
+        if (pdfBytes.length < 32) {
+          throw StateError('Invoice PDF payload is too small to print.');
+        }
+
+        final suffix = strips.length > 1
+            ? '_${stripIndex + 1}of${strips.length}'
+            : '';
+        final jobName = 'invoice_${invoice.invoiceNumber}$suffix';
+        final pageFormat = InvoicePdfTheme.thermalPageFormat(
+          paperWidthMm: paperWidthMm,
+          pageHeightMm: strip.pageHeightMm,
+        );
+
+        await _sendPdfToPrinter(
+          bytes: pdfBytes,
+          pageFormat: pageFormat,
+          jobName: jobName,
+        );
+      } catch (error) {
+        throw PrintBatchFailure(
+          completedCopies: stripIndex,
+          requestedCopies: strips.length,
+          batchIndex: stripIndex + 1,
+          batchCount: strips.length,
+          cause: error,
+        );
+      }
+
+      if (stripIndex < strips.length - 1) {
+        await Future<void>.delayed(
+          Duration(
+            milliseconds: ThermalPrinterPresets.invoiceInterBatchDelayMs,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _sendPdfToPrinter({
+    required Uint8List bytes,
+    required PdfPageFormat pageFormat,
+    required String jobName,
+  }) async {
     final savedPrinter = await printerPrefs.resolveCurrentPrinter();
     if (savedPrinter != null) {
-      await Printing.directPrintPdf(
+      await _pdfPrintService.printDirectPdf(
         printer: savedPrinter,
-        onLayout: (_) async => pdfBytes,
+        printerName: savedPrinter.name,
+        jobName: jobName,
         format: pageFormat,
-        name: jobName,
+        onLayout: (_) async => bytes,
       );
       return;
     }
 
-    // No saved printer – show the system print dialog as a fallback.
-    // The user can later lock a printer in Settings → Thermal Printer.
     final ok = await Printing.layoutPdf(
       name: jobName,
-      onLayout: (_) async => pdfBytes,
+      onLayout: (_) async => bytes,
       format: pageFormat,
     );
-    if (ok == false) {
+    if (ok != true) {
       throw StateError('Printing was cancelled.');
     }
-  }
-
-  PdfPageFormat _pageFormatFor(InvoicePrintModel invoice) {
-    final pageHeightMm = thermalEstimatedPageHeightMm(invoice, paperWidthMm);
-    return InvoicePdfTheme.thermalPageFormat(
-      paperWidthMm: paperWidthMm,
-      pageHeightMm: pageHeightMm,
-    );
-  }
-
-  Future<Uint8List> _buildPdf(InvoicePrintModel invoice) async {
-    return buildThermalInvoicePdfDocument(
-      invoice: invoice,
-      paperWidthMm: paperWidthMm,
-    );
   }
 }

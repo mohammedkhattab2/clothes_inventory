@@ -2,6 +2,7 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:delta_erp/core/utils/invoice_number_display.dart';
 import 'package:delta_erp/features/products/domain/product.dart';
 import 'package:delta_erp/features/purchases/domain/purchase_models.dart';
+import 'package:delta_erp/services/printing/thermal_printer_presets.dart';
 
 double? parseFlexibleNumber(String raw) {
   final trimmed = raw.trim();
@@ -52,6 +53,26 @@ String formatDraftQuantity(PurchaseDraftItem item) {
     }
   }
   return item.quantity.toStringAsFixed(0);
+}
+
+/// Barcode label count from cart line quantity field (draft, editor, or cubit).
+({int copies, int requested}) resolvePurchaseCartBarcodeCopies({
+  required PurchaseDraftItem item,
+  required Map<int, String> inlineQuantityDrafts,
+  required String? controllerText,
+}) {
+  final draftRaw = inlineQuantityDrafts[item.productId];
+  final raw = (draftRaw != null && draftRaw.trim().isNotEmpty)
+      ? draftRaw.trim()
+      : (controllerText != null && controllerText.trim().isNotEmpty
+            ? controllerText.trim()
+            : null);
+  final parsed =
+      raw != null ? parseFlexibleNumber(raw) : null;
+  final quantity = parsed ?? item.quantity;
+  final requested = quantity < 1 ? 1 : quantity.round();
+  final copies = requested.clamp(1, ThermalPrinterPresets.maxBarcodeLabelCopies);
+  return (copies: copies, requested: requested);
 }
 
 String formatInvoiceQuantityValue(double value) {

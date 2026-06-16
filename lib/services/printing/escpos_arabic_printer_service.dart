@@ -33,6 +33,11 @@ class EscPosInvoicePayload {
     required this.lines,
     required this.total,
     this.currency = 'EGP',
+    this.cashierName = '',
+    this.paidAmount = '',
+    this.outstandingAmount = '',
+    this.returnPolicyNote = '',
+    this.invoiceFooterNote = '',
   });
 
   final String companyName;
@@ -46,6 +51,11 @@ class EscPosInvoicePayload {
   final List<EscPosInvoiceLine> lines;
   final String total;
   final String currency;
+  final String cashierName;
+  final String paidAmount;
+  final String outstandingAmount;
+  final String returnPolicyNote;
+  final String invoiceFooterNote;
 }
 
 abstract class EscPosGeneratorAdapter {
@@ -58,13 +68,13 @@ abstract class EscPosGeneratorAdapter {
 
 class EscPosArabicPrinterService {
   const EscPosArabicPrinterService({
-    ThermalTextFormatter formatter = const ThermalTextFormatter(),
+    EscPosThermalTextFormatter formatter = const EscPosThermalTextFormatter(),
     ArabicPrintModeResolver modeResolver = const ArabicPrintModeResolver(),
     this.lineWidth = kThermal58mmLineWidth,
   }) : _formatter = formatter,
        _modeResolver = modeResolver;
 
-  final ThermalTextFormatter _formatter;
+  final EscPosThermalTextFormatter _formatter;
   final ArabicPrintModeResolver _modeResolver;
   final int lineWidth;
 
@@ -102,6 +112,9 @@ class EscPosArabicPrinterService {
     generator.text(rtl.center(payload.title));
     generator.text(rtl.right('فاتورة: ${payload.invoiceNumber}'));
     generator.text(rtl.right('التاريخ: ${payload.createdAt}'));
+    if (payload.cashierName.trim().isNotEmpty) {
+      generator.text(rtl.right('الكاشير: ${payload.cashierName}'));
+    }
     generator.text(rtl.right('${payload.partyLabel}: ${payload.partyName}'));
     generator.hr();
 
@@ -134,6 +147,23 @@ class EscPosArabicPrinterService {
         value: '${payload.total} ${payload.currency}',
       ),
     );
-    generator.feed(2);
+    if (payload.paidAmount.trim().isNotEmpty) {
+      generator.text(
+        rtl.totalLine(label: 'المدفوع:', value: payload.paidAmount),
+      );
+    }
+    if (payload.outstandingAmount.trim().isNotEmpty) {
+      generator.text(
+        rtl.totalLine(label: 'المتبقي:', value: payload.outstandingAmount),
+      );
+    }
+    if (payload.returnPolicyNote.trim().isNotEmpty) {
+      generator.hr();
+      generator.text(rtl.right(payload.returnPolicyNote));
+    }
+    if (payload.invoiceFooterNote.trim().isNotEmpty) {
+      generator.text(rtl.right(payload.invoiceFooterNote));
+    }
+    generator.feed(3);
   }
 }

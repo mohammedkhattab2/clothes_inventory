@@ -6,6 +6,49 @@ import 'package:delta_erp/features/products/domain/product.dart';
 import 'package:delta_erp/features/purchases/domain/purchase_models.dart';
 import 'package:delta_erp/features/purchases/presentation/purchases_cubit.dart';
 
+void _applyInlineControllerText(TextEditingController controller, String text) {
+  controller.value = TextEditingValue(
+    text: text,
+    selection: TextSelection.collapsed(offset: text.length),
+    composing: TextRange.empty,
+  );
+}
+
+bool _isTextEditingValueValid(TextEditingValue value) {
+  final text = value.text;
+  final selection = value.selection;
+  if (!selection.isValid) return false;
+  if (selection.start < 0 ||
+      selection.end < 0 ||
+      selection.start > text.length ||
+      selection.end > text.length) {
+    return false;
+  }
+  final composing = value.composing;
+  if (composing.isValid &&
+      (composing.start < 0 ||
+          composing.end < 0 ||
+          composing.start > text.length ||
+          composing.end > text.length)) {
+    return false;
+  }
+  return true;
+}
+
+void _ensureInlineControllerValueValid(
+  TextEditingController controller,
+  String fallbackText,
+) {
+  if (_isTextEditingValueValid(controller.value)) return;
+  final text = controller.text.isEmpty ? fallbackText : controller.text;
+  final offset = controller.selection.baseOffset.clamp(0, text.length);
+  controller.value = TextEditingValue(
+    text: text,
+    selection: TextSelection.collapsed(offset: offset),
+    composing: TextRange.empty,
+  );
+}
+
 class PurchasesCartTableContent extends StatelessWidget {
   const PurchasesCartTableContent({
     required this.state,
@@ -16,7 +59,10 @@ class PurchasesCartTableContent extends StatelessWidget {
     required this.parseFlexibleNumber,
     required this.inlineQuantityDrafts,
     required this.applyInlineQuantityChange,
+    required this.onQuantityDraftCleared,
     required this.onShowEditItemDialog,
+    required this.onPreviewCartBarcode,
+    required this.onPrintCartBarcode,
     super.key,
   });
 
@@ -33,8 +79,18 @@ class PurchasesCartTableContent extends StatelessWidget {
   final Map<int, String> inlineQuantityDrafts;
   final void Function(BuildContext context, PurchaseDraftItem item, String raw)
   applyInlineQuantityChange;
+  final void Function(int productId) onQuantityDraftCleared;
   final Future<void> Function(BuildContext context, PurchaseDraftItem item)
   onShowEditItemDialog;
+  final Future<void> Function(BuildContext context, PurchaseDraftItem item)
+  onPreviewCartBarcode;
+  final Future<void> Function(BuildContext context, PurchaseDraftItem item)
+  onPrintCartBarcode;
+
+  bool _hasBarcode(PurchaseDraftItem item) {
+    final barcode = item.barcode?.trim();
+    return barcode != null && barcode.isNotEmpty;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -113,6 +169,7 @@ class PurchasesCartTableContent extends StatelessWidget {
                   ],
                 ),
                 ...state.cart.map((item) {
+                  final hasBarcode = _hasBarcode(item);
                   return TableRow(
                     children: [
                       Padding(
@@ -121,9 +178,7 @@ class PurchasesCartTableContent extends StatelessWidget {
                           vertical: 4,
                         ),
                         child: Text(
-                          (item.barcode == null || item.barcode!.isEmpty)
-                              ? '-'
-                              : item.barcode!,
+                          hasBarcode ? item.barcode! : '-',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -156,14 +211,21 @@ class PurchasesCartTableContent extends StatelessWidget {
                             final controller = qtyControllerFor(item);
                             final focusNode = qtyFocusNodeFor(item, controller);
                             final formatted = formatQuantity(item);
-                            if (!focusNode.hasFocus &&
+                            final draftRaw =
+                                inlineQuantityDrafts[item.productId];
+                            final hasActiveQtyDraft =
+                                draftRaw != null && draftRaw.trim().isNotEmpty;
+
+                            if (!hasActiveQtyDraft &&
                                 controller.text != formatted) {
-                              controller.value = TextEditingValue(
-                                text: formatted,
-                                selection: TextSelection.collapsed(
-                                  offset: formatted.length,
-                                ),
-                                composing: TextRange.empty,
+                              _applyInlineControllerText(
+                                controller,
+                                formatted,
+                              );
+                            } else if (focusNode.hasFocus) {
+                              _ensureInlineControllerValueValid(
+                                controller,
+                                formatted,
                               );
                             }
 
@@ -218,19 +280,22 @@ class PurchasesCartTableContent extends StatelessWidget {
                                       value,
                                     );
                                     inlineQuantityDrafts.remove(item.productId);
+                                    focusNode.unfocus();
                                   },
                                   onTapOutside: (_) {
                                     final draft =
                                         inlineQuantityDrafts[item.productId];
-                                    if (draft == null || draft.trim().isEmpty) {
-                                      return;
+                                    if (draft != null && draft.trim().isNotEmpty) {
+                                      applyInlineQuantityChange(
+                                        context,
+                                        item,
+                                        draft,
+                                      );
+                                      inlineQuantityDrafts.remove(
+                                        item.productId,
+                                      );
                                     }
-                                    applyInlineQuantityChange(
-                                      context,
-                                      item,
-                                      draft,
-                                    );
-                                    inlineQuantityDrafts.remove(item.productId);
+                                    focusNode.unfocus();
                                   },
                                 ),
                               ),
@@ -270,6 +335,30 @@ class PurchasesCartTableContent extends StatelessWidget {
                                 minWidth: 30,
                                 minHeight: 30,
                               ),
+                              tooltip: 'Preview'.tr(),
+                              icon: const Icon(Icons.visibility_outlined),
+                              onPressed: !hasBarcode
+                                  ? null
+                                  : () => onPreviewCartBarcode(context, item),
+                            ),
+                            IconButton(
+                              visualDensity: VisualDensity.compact,
+                              constraints: const BoxConstraints(
+                                minWidth: 30,
+                                minHeight: 30,
+                              ),
+                              tooltip: 'Print Barcode'.tr(),
+                              icon: const Icon(Icons.print_outlined),
+                              onPressed: !hasBarcode
+                                  ? null
+                                  : () => onPrintCartBarcode(context, item),
+                            ),
+                            IconButton(
+                              visualDensity: VisualDensity.compact,
+                              constraints: const BoxConstraints(
+                                minWidth: 30,
+                                minHeight: 30,
+                              ),
                               icon: const Icon(Icons.remove_circle_outline),
                               onPressed: () {
                                 final step =
@@ -277,6 +366,7 @@ class PurchasesCartTableContent extends StatelessWidget {
                                     ? 1.0
                                     : 0.25;
                                 final nextQuantity = item.quantity - step;
+                                onQuantityDraftCleared(item.productId);
                                 if (nextQuantity <= 0) {
                                   cubit.removeItem(item.productId);
                                   return;
@@ -299,6 +389,7 @@ class PurchasesCartTableContent extends StatelessWidget {
                                     item.unitType == UnitType.piece.name
                                     ? 1.0
                                     : 0.25;
+                                onQuantityDraftCleared(item.productId);
                                 cubit.updateItem(
                                   item.productId,
                                   quantity: item.quantity + step,
