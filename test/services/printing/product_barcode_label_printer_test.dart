@@ -30,30 +30,27 @@ void main() {
 
     test('label font sizes and feed presets', () {
       expect(ThermalPrinterPresets.labelCompanyNameFontSizePt, 8.5);
-      expect(ThermalPrinterPresets.labelPrintLeadingMarginMm, 8.0);
+      expect(ThermalPrinterPresets.labelPrintLeadingMarginMm, 2.5);
       expect(ThermalPrinterPresets.labelPitchFeedLines, 9);
       expect(ThermalPrinterPresets.labelLeadingFeedLines, 1);
     });
 
-    test('maxCopiesPerPrintJob matches 350B driver strip limit', () {
-      expect(ProductBarcodeLabelPrinter.maxCopiesPerPrintJob(), 4);
+    test('maxCopiesPerPrintJob uses reliable strip limit', () {
+      expect(ProductBarcodeLabelPrinter.maxCopiesPerPrintJob(), 3);
       expect(
-        ProductBarcodeLabelPrinter.stripHeightMm(4),
-        closeTo(ThermalPrinterPresets.labelMaxStripHeightMm, 0.001),
+        ProductBarcodeLabelPrinter.stripHeightMm(3),
+        lessThanOrEqualTo(ThermalPrinterPresets.labelReliableStripHeightMm),
       );
       expect(
-        ProductBarcodeLabelPrinter.stripHeightMm(5),
-        greaterThan(ThermalPrinterPresets.labelMaxStripHeightMm),
+        ProductBarcodeLabelPrinter.stripHeightMm(4),
+        greaterThan(ThermalPrinterPresets.labelReliableStripHeightMm),
       );
     });
 
     test('batchCopyCounts splits large jobs without losing copies', () {
       expect(ProductBarcodeLabelPrinter.batchCopyCounts(1), [1]);
-      expect(ProductBarcodeLabelPrinter.batchCopyCounts(4), [4]);
-      expect(
-        ProductBarcodeLabelPrinter.batchCopyCounts(10),
-        List.filled(10, ThermalPrinterPresets.labelCopiesPerJob),
-      );
+      expect(ProductBarcodeLabelPrinter.batchCopyCounts(4), [3, 1]);
+      expect(ProductBarcodeLabelPrinter.batchCopyCounts(10), [3, 3, 3, 1]);
       expect(
         ProductBarcodeLabelPrinter.batchCopyCounts(10).reduce((a, b) => a + b),
         10,

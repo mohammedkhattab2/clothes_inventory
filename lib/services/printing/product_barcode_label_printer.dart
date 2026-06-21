@@ -1,25 +1,26 @@
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:barcode/barcode.dart' as bc;
 import 'package:delta_erp/services/printing/print_batch_failure.dart';
 import 'package:delta_erp/services/printing/thermal_printer_preferences.dart';
-import 'package:delta_erp/services/printing/windows_driver_pdf_print_service.dart';
 import 'package:delta_erp/services/printing/thermal_printer_presets.dart';
+import 'package:delta_erp/services/printing/windows_driver_pdf_print_service.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 
 /// Prints 350B gap-sensor barcode labels through the Windows printer driver.
 ///
-/// XP-350B label mode speaks TSPL. One PDF page spans the full strip so the
-/// driver feeds once per job instead of re-detecting the gap after every copy.
+/// Labels are grouped into driver-safe strips to avoid 10 cm truncation while
+/// keeping the number of jobs low to reduce spooler drops on large copy counts.
 /// Content inside each 25 mm slot is laid out for bottom-to-top 350B feeds.
 class ProductBarcodeLabelPrinter {
   ProductBarcodeLabelPrinter({
     required this.printerPrefs,
     WindowsDriverPdfPrintService? pdfPrintService,
   }) : _pdfPrintService =
-            pdfPrintService ?? const WindowsDriverPdfPrintService();
+           pdfPrintService ?? const WindowsDriverPdfPrintService();
 
   static const double labelWidthMm = ThermalPrinterPresets.labelWidthMm;
   static const double labelHeightMm = ThermalPrinterPresets.labelHeightMm;
@@ -38,9 +39,9 @@ class ProductBarcodeLabelPrinter {
     return copies * labelHeightMm + (copies - 1) * gapMm;
   }
 
-  /// Largest copy count that fits one driver PDF job on 350B (~109 mm).
+  /// Legacy driver-safe copy limit used by older PDF batch flow.
   static int maxCopiesPerPrintJob({
-    double maxStripHeightMm = ThermalPrinterPresets.labelMaxStripHeightMm,
+    double maxStripHeightMm = ThermalPrinterPresets.labelReliableStripHeightMm,
   }) {
     var copies = 1;
     while (stripHeightMm(copies + 1) <= maxStripHeightMm + 0.001) {
@@ -50,21 +51,23 @@ class ProductBarcodeLabelPrinter {
   }
 
   /// Splits [totalCopies] into consecutive driver-safe batches.
-  ///
-  /// When [totalCopies] exceeds [maxCopiesPerPrintJob], each label is sent as
-  /// its own PDF job so the 350B gap sensor can sync between jobs.
   static List<int> batchCopyCounts(int totalCopies) {
     if (totalCopies < 1) {
       throw ArgumentError('Copies must be at least 1.');
     }
     final maxPerJob = maxCopiesPerPrintJob();
-    if (totalCopies > maxPerJob) {
-      return List.filled(
-        totalCopies,
-        ThermalPrinterPresets.labelCopiesPerJob,
-      );
+    if (totalCopies <= maxPerJob) {
+      return [totalCopies];
     }
-    return [totalCopies];
+
+    final batches = <int>[];
+    var remaining = totalCopies;
+    while (remaining > 0) {
+      final next = remaining > maxPerJob ? maxPerJob : remaining;
+      batches.add(next);
+      remaining -= next;
+    }
+    return batches;
   }
 
   /// Backward-compatible alias — one label slot height with optional gap.
@@ -273,12 +276,19 @@ class ProductBarcodeLabelPrinter {
                   ],
                 ),
               if (showProductRow) pw.SizedBox(height: 1.5),
-              pw.Expanded(
-                child: pw.BarcodeWidget(
-                  barcode: bc.Barcode.code128(),
-                  data: barcodeValue,
-                  height: ThermalPrinterPresets.labelBarcodeHeightMm * PdfPageFormat.mm,
-                  drawText: false,
+              pw.Center(
+                child: pw.SizedBox(
+                  height:
+                      ThermalPrinterPresets.labelBarcodeHeightMm *
+                      PdfPageFormat.mm,
+                  child: pw.BarcodeWidget(
+                    barcode: bc.Barcode.code128(),
+                    data: barcodeValue,
+                    height:
+                        ThermalPrinterPresets.labelBarcodeHeightMm *
+                        PdfPageFormat.mm,
+                    drawText: false,
+                  ),
                 ),
               ),
               pw.Text(
@@ -326,15 +336,14 @@ class ProductBarcodeLabelPrinter {
     required String amountText,
     required int copies,
   }) async {
-    final baseFont = await PdfGoogleFonts.notoNaskhArabicRegular();
-    final boldFont = await PdfGoogleFonts.notoNaskhArabicBold();
+    final fonts = await _resolveLabelFonts();
 
     final doc = pw.Document(
       theme: pw.ThemeData.withFont(
-        base: baseFont,
-        bold: boldFont,
-        italic: baseFont,
-        boldItalic: boldFont,
+        base: fonts.base,
+        bold: fonts.bold,
+        italic: fonts.base,
+        boldItalic: fonts.bold,
       ),
     );
 
@@ -377,5 +386,28 @@ class ProductBarcodeLabelPrinter {
     );
 
     return doc.save();
+  }
+
+  Future<({pw.Font base, pw.Font bold})> _resolveLabelFonts() async {
+    try {
+      final regularFile = File(r'C:\Windows\Fonts\arial.ttf');
+      final boldFile = File(r'C:\Windows\Fonts\arialbd.ttf');
+      if (await regularFile.exists() && await boldFile.exists()) {
+        final regularBytes = await regularFile.readAsBytes();
+        final boldBytes = await boldFile.readAsBytes();
+        return (
+          base: pw.Font.ttf(ByteData.sublistView(regularBytes)),
+          bold: pw.Font.ttf(ByteData.sublistView(boldBytes)),
+        );
+      }
+    } catch (_) {}
+
+    try {
+      final baseFont = await PdfGoogleFonts.notoNaskhArabicRegular();
+      final boldFont = await PdfGoogleFonts.notoNaskhArabicBold();
+      return (base: baseFont, bold: boldFont);
+    } catch (_) {
+      return (base: pw.Font.helvetica(), bold: pw.Font.helveticaBold());
+    }
   }
 }

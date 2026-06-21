@@ -63,8 +63,9 @@ double thermalEstimatedPageHeightMm(
   InvoicePrintModel invoice,
   double paperWidthMm,
 ) {
-  final footerMinFontSize =
-      InvoicePdfTheme.thermalFooterMinFontSize(paperWidthMm);
+  final footerMinFontSize = InvoicePdfTheme.thermalFooterMinFontSize(
+    paperWidthMm,
+  );
 
   var heightMm = 40.0; // letterhead (company + address up to 3 lines) + meta
   heightMm += 10.0; // table header row
@@ -157,10 +158,12 @@ List<pw.Widget> _buildThermalReceiptWidgets({
   final cellFontSize = InvoicePdfTheme.thermalCellFontSize(paperWidthMm);
   final headerFontSize = InvoicePdfTheme.thermalHeaderFontSize(paperWidthMm);
   final metaFontSize = InvoicePdfTheme.thermalMetaFontSize(paperWidthMm);
-  final companyFontSize =
-      InvoicePdfTheme.thermalCompanyNameFontSize(paperWidthMm);
-  final footerMinFontSize =
-      InvoicePdfTheme.thermalFooterMinFontSize(paperWidthMm);
+  final companyFontSize = InvoicePdfTheme.thermalCompanyNameFontSize(
+    paperWidthMm,
+  );
+  final footerMinFontSize = InvoicePdfTheme.thermalFooterMinFontSize(
+    paperWidthMm,
+  );
 
   final widgets = <pw.Widget>[
     _buildThermalLetterhead(
@@ -198,11 +201,7 @@ List<pw.Widget> _buildThermalReceiptWidgets({
       invoice.customerName,
       fontSize: metaFontSize,
     ),
-    _metaRow(
-      'invoice.print.datetime'.tr(),
-      dateStr,
-      fontSize: metaFontSize,
-    ),
+    _metaRow('invoice.print.datetime'.tr(), dateStr, fontSize: metaFontSize),
     pw.SizedBox(height: 4),
   ]);
 
@@ -219,55 +218,54 @@ List<pw.Widget> _buildThermalReceiptWidgets({
   );
 
   widgets.addAll([
-      pw.SizedBox(height: 6),
-      pw.Row(
-        children: [
-          pw.Expanded(
-            child: pw.Align(
-              alignment: pw.Alignment.centerRight,
-              child: pw.Text(
-                '${'Total'.tr()}:',
-                style: pw.TextStyle(
-                  fontSize: metaFontSize + 1,
-                  fontWeight: pw.FontWeight.bold,
-                  color: InvoicePdfTheme.textColor,
-                ),
+    pw.SizedBox(height: 6),
+    pw.Row(
+      children: [
+        pw.Expanded(
+          child: pw.Align(
+            alignment: pw.Alignment.centerRight,
+            child: pw.Text(
+              '${'Total'.tr()}:',
+              style: pw.TextStyle(
+                fontSize: metaFontSize + 1,
+                fontWeight: pw.FontWeight.bold,
+                color: InvoicePdfTheme.textColor,
               ),
             ),
           ),
-          pw.Expanded(
-            child: pw.Align(
-              alignment: pw.Alignment.centerLeft,
-              child: pw.Text(
-                '${invoice.total.toStringAsFixed(2)} ${invoice.currency}',
-                style: pw.TextStyle(
-                  fontSize: metaFontSize + 1,
-                  fontWeight: pw.FontWeight.bold,
-                  color: InvoicePdfTheme.textColor,
-                ),
+        ),
+        pw.Expanded(
+          child: pw.Align(
+            alignment: pw.Alignment.centerLeft,
+            child: pw.Text(
+              '${invoice.total.toStringAsFixed(2)} ${invoice.currency}',
+              style: pw.TextStyle(
+                fontSize: metaFontSize + 1,
+                fontWeight: pw.FontWeight.bold,
+                color: InvoicePdfTheme.textColor,
               ),
             ),
           ),
-        ],
+        ),
+      ],
+    ),
+  ]);
+
+  if (invoice.paidAmount > 0.000001 || invoice.outstandingAmount > 0.000001) {
+    widgets.addAll([
+      pw.SizedBox(height: 4),
+      _metaRow(
+        'invoice.print.paid'.tr(),
+        invoice.paidAmount.toStringAsFixed(2),
+        fontSize: metaFontSize,
+      ),
+      _metaRow(
+        'invoice.print.outstanding'.tr(),
+        invoice.outstandingAmount.toStringAsFixed(2),
+        fontSize: metaFontSize,
       ),
     ]);
-
-    if (invoice.paidAmount > 0.000001 ||
-        invoice.outstandingAmount > 0.000001) {
-      widgets.addAll([
-        pw.SizedBox(height: 4),
-        _metaRow(
-          'invoice.print.paid'.tr(),
-          invoice.paidAmount.toStringAsFixed(2),
-          fontSize: metaFontSize,
-        ),
-        _metaRow(
-          'invoice.print.outstanding'.tr(),
-          invoice.outstandingAmount.toStringAsFixed(2),
-          fontSize: metaFontSize,
-        ),
-      ]);
-    }
+  }
 
   widgets.add(pw.SizedBox(height: 6));
 
@@ -376,8 +374,7 @@ List<pw.Widget> _buildThermalFooterSection({
           crossAxisAlignment: pw.CrossAxisAlignment.center,
           mainAxisSize: pw.MainAxisSize.min,
           children: [
-            if (appIcon != null)
-              pw.Image(appIcon, width: 16, height: 16),
+            if (appIcon != null) pw.Image(appIcon, width: 16, height: 16),
             pw.Text(
               invoice.developerBrand,
               textAlign: pw.TextAlign.center,
@@ -465,11 +462,7 @@ pw.Widget _buildThermalItemsTable({
   final money = NumberFormat('#,##0.##');
   final qtyFmt = NumberFormat('#,##0.##');
 
-  pw.Widget cell(
-    String text, {
-    double? fontSize,
-    bool bold = false,
-  }) {
+  pw.Widget cell(String text, {double? fontSize, bool bold = false}) {
     return pw.Padding(
       padding: const pw.EdgeInsets.symmetric(horizontal: 1.5, vertical: 3),
       child: pw.Align(
@@ -583,10 +576,7 @@ pw.Widget _metaRow(String label, String value, {required double fontSize}) =>
 
 /// Sized receipt block used when packing a long invoice into driver strips.
 class ThermalReceiptSegment {
-  const ThermalReceiptSegment({
-    required this.widget,
-    required this.heightMm,
-  });
+  const ThermalReceiptSegment({required this.widget, required this.heightMm});
 
   final pw.Widget widget;
   final double heightMm;
@@ -642,10 +632,8 @@ List<ThermalInvoicePrintStrip> planThermalInvoicePrintStrips({
     strips.add(
       ThermalInvoicePrintStrip(
         widgets: batch.map((segment) => segment.widget).toList(growable: false),
-        pageHeightMm: marginTop +
-            batchHeight +
-            marginBottom +
-            thermalStripPackSafetyMm,
+        pageHeightMm:
+            marginTop + batchHeight + marginBottom + thermalStripPackSafetyMm,
       ),
     );
     batch = <ThermalReceiptSegment>[];
@@ -680,10 +668,12 @@ List<ThermalReceiptSegment> buildThermalReceiptSegments({
   final cellFontSize = InvoicePdfTheme.thermalCellFontSize(paperWidthMm);
   final headerFontSize = InvoicePdfTheme.thermalHeaderFontSize(paperWidthMm);
   final metaFontSize = InvoicePdfTheme.thermalMetaFontSize(paperWidthMm);
-  final companyFontSize =
-      InvoicePdfTheme.thermalCompanyNameFontSize(paperWidthMm);
-  final footerMinFontSize =
-      InvoicePdfTheme.thermalFooterMinFontSize(paperWidthMm);
+  final companyFontSize = InvoicePdfTheme.thermalCompanyNameFontSize(
+    paperWidthMm,
+  );
+  final footerMinFontSize = InvoicePdfTheme.thermalFooterMinFontSize(
+    paperWidthMm,
+  );
 
   final segments = <ThermalReceiptSegment>[
     ThermalReceiptSegment(
@@ -692,12 +682,9 @@ List<ThermalReceiptSegment> buildThermalReceiptSegments({
         companyFontSize: companyFontSize,
         metaFontSize: metaFontSize,
       ),
-      heightMm: 40,
+      heightMm: 36,
     ),
-    ThermalReceiptSegment(
-      widget: pw.SizedBox(height: 3),
-      heightMm: 3,
-    ),
+    ThermalReceiptSegment(widget: pw.SizedBox(height: 3), heightMm: 2),
     ThermalReceiptSegment(
       widget: pw.Align(
         alignment: pw.Alignment.centerRight,
@@ -710,12 +697,9 @@ List<ThermalReceiptSegment> buildThermalReceiptSegments({
           ),
         ),
       ),
-      heightMm: 10,
+      heightMm: 8,
     ),
-    ThermalReceiptSegment(
-      widget: pw.SizedBox(height: 2),
-      heightMm: 2,
-    ),
+    ThermalReceiptSegment(widget: pw.SizedBox(height: 2), heightMm: 2),
   ];
 
   if (invoice.cashierName.trim().isNotEmpty) {
@@ -726,7 +710,7 @@ List<ThermalReceiptSegment> buildThermalReceiptSegments({
           invoice.cashierName,
           fontSize: metaFontSize,
         ),
-        heightMm: 6,
+        heightMm: 5.5,
       ),
     );
   }
@@ -738,7 +722,7 @@ List<ThermalReceiptSegment> buildThermalReceiptSegments({
         invoice.customerName,
         fontSize: metaFontSize,
       ),
-      heightMm: 6,
+      heightMm: 5.5,
     ),
     ThermalReceiptSegment(
       widget: _metaRow(
@@ -746,12 +730,9 @@ List<ThermalReceiptSegment> buildThermalReceiptSegments({
         dateStr,
         fontSize: metaFontSize,
       ),
-      heightMm: 6,
+      heightMm: 5.5,
     ),
-    ThermalReceiptSegment(
-      widget: pw.SizedBox(height: 4),
-      heightMm: 4,
-    ),
+    ThermalReceiptSegment(widget: pw.SizedBox(height: 4), heightMm: 2.5),
   ]);
 
   for (var index = 0; index < invoice.items.length; index++) {
@@ -792,10 +773,7 @@ List<ThermalReceiptSegment> buildThermalReceiptSegments({
   }
 
   segments.addAll([
-    ThermalReceiptSegment(
-      widget: pw.SizedBox(height: 6),
-      heightMm: 6,
-    ),
+    ThermalReceiptSegment(widget: pw.SizedBox(height: 6), heightMm: 6),
     ThermalReceiptSegment(
       widget: pw.Row(
         children: [
@@ -831,13 +809,9 @@ List<ThermalReceiptSegment> buildThermalReceiptSegments({
     ),
   ]);
 
-  if (invoice.paidAmount > 0.000001 ||
-      invoice.outstandingAmount > 0.000001) {
+  if (invoice.paidAmount > 0.000001 || invoice.outstandingAmount > 0.000001) {
     segments.addAll([
-      ThermalReceiptSegment(
-        widget: pw.SizedBox(height: 4),
-        heightMm: 4,
-      ),
+      ThermalReceiptSegment(widget: pw.SizedBox(height: 4), heightMm: 4),
       ThermalReceiptSegment(
         widget: _metaRow(
           'invoice.print.paid'.tr(),
@@ -858,10 +832,7 @@ List<ThermalReceiptSegment> buildThermalReceiptSegments({
   }
 
   segments.add(
-    ThermalReceiptSegment(
-      widget: pw.SizedBox(height: 6),
-      heightMm: 6,
-    ),
+    ThermalReceiptSegment(widget: pw.SizedBox(height: 6), heightMm: 6),
   );
 
   if (invoice.returnPolicyNote.trim().isNotEmpty) {
@@ -883,10 +854,7 @@ List<ThermalReceiptSegment> buildThermalReceiptSegments({
         ),
         heightMm: _thermalTextBlockHeightMm(lines, footerMinFontSize),
       ),
-      ThermalReceiptSegment(
-        widget: pw.SizedBox(height: 6),
-        heightMm: 6,
-      ),
+      ThermalReceiptSegment(widget: pw.SizedBox(height: 6), heightMm: 6),
     ]);
   }
 
@@ -909,10 +877,7 @@ List<ThermalReceiptSegment> buildThermalReceiptSegments({
         ),
         heightMm: _thermalTextBlockHeightMm(lines, footerMinFontSize),
       ),
-      ThermalReceiptSegment(
-        widget: pw.SizedBox(height: 4),
-        heightMm: 4,
-      ),
+      ThermalReceiptSegment(widget: pw.SizedBox(height: 4), heightMm: 4),
     ]);
   }
 
@@ -922,10 +887,7 @@ List<ThermalReceiptSegment> buildThermalReceiptSegments({
         widget: pw.Center(child: pw.Image(footerImg, height: 36)),
         heightMm: 20,
       ),
-      ThermalReceiptSegment(
-        widget: pw.SizedBox(height: 4),
-        heightMm: 4,
-      ),
+      ThermalReceiptSegment(widget: pw.SizedBox(height: 4), heightMm: 4),
     ]);
   }
 

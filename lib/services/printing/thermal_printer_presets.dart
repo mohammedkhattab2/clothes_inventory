@@ -38,7 +38,7 @@ abstract final class ThermalPrinterPresets {
   static const labelVerticalPaddingTopMm = 0.5;
 
   /// Blank margin at sticker bottom — printed first on bottom-to-top 350B feeds.
-  static const labelPrintLeadingMarginMm = 8.0;
+  static const labelPrintLeadingMarginMm = 2.5;
 
   /// Backward-compatible alias for [labelPrintLeadingMarginMm].
   static const labelVerticalPaddingBottomMm = labelPrintLeadingMarginMm;
@@ -62,7 +62,7 @@ abstract final class ThermalPrinterPresets {
   static const labelBarcodeTextFontSizePt = 6.0;
 
   /// CODE128 bar height on barcode labels (mm).
-  static const labelBarcodeHeightMm = 4.5;
+  static const labelBarcodeHeightMm = 8.0;
 
   /// Maximum barcode labels per print job.
   static const maxBarcodeLabelCopies = 500;
@@ -71,11 +71,14 @@ abstract final class ThermalPrinterPresets {
   /// Four 25 mm labels + three 3 mm gaps = 109 mm.
   static const labelMaxStripHeightMm = 109.0;
 
+  /// Safer strip height for stable barcode batching on X350/350B drivers.
+  static const labelReliableStripHeightMm = 81.0;
+
   /// Pause between consecutive barcode PDF jobs so the 350B finishes feeding.
-  static const labelInterBatchDelayMs = 3500;
+  static const labelInterBatchDelayMs = 4500;
 
   /// Pause between consecutive invoice PDF strips on continuous 80 mm paper.
-  static const invoiceInterBatchDelayMs = 2500;
+  static const invoiceInterBatchDelayMs = 3500;
 
   /// One label per PDF job when total copies exceed [labelMaxStripHeightMm] capacity.
   static const labelCopiesPerJob = 1;

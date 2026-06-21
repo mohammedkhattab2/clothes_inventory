@@ -178,7 +178,7 @@ Future<void> showBarcodeLabelPreviewDialog({
                 amountText: amountText,
               ),
             ),
-            if (footer != null) footer,
+            ?footer,
           ],
         ),
       ),

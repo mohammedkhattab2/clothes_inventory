@@ -3,15 +3,13 @@ import 'dart:typed_data';
 import 'package:delta_erp/features/invoices/domain/invoice_print_model.dart';
 import 'package:delta_erp/services/printing/esc_pos_print_service.dart';
 import 'package:delta_erp/services/printing/invoice_print_preferences.dart';
-import 'package:delta_erp/services/printing/invoice_printer.dart';
 import 'package:delta_erp/services/printing/thermal_escpos_invoice_printer.dart';
 import 'package:delta_erp/services/printing/thermal_printer_preferences.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class _RecordingPrintService extends EscPosPrintService {
-  _RecordingPrintService({required ThermalPrinterPreferences printerPrefs})
-      : super(printerPrefs: printerPrefs);
+  _RecordingPrintService({required super.printerPrefs});
 
   int calls = 0;
   Uint8List? lastBytes;

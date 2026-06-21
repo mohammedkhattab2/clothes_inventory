@@ -3,7 +3,6 @@ import 'package:delta_erp/core/printing/print_user_feedback.dart';
 import 'package:delta_erp/features/invoices/domain/invoice_print_model.dart';
 import 'package:delta_erp/features/invoices/presentation/widgets/confirm_print_invoice_dialog.dart';
 import 'package:delta_erp/services/printing/invoice_print_manager.dart';
-import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 
 /// After checkout succeeds, asks whether to print and sends directly to the printer.
